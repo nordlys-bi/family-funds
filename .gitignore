@@ -25,3 +25,5 @@ logs/
 .DS_Store
 .fleet/
 .idea/
+.vscode/
+.agents/
