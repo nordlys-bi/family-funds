@@ -1,0 +1,27 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+
+# Nuxt / build outputs
+.nuxt/
+.nitro/
+.output/
+.cache/
+dist/
+coverage/
+.turbo/
+
+# Logs
+logs/
+*.log
+
+# OS / editor cruft
+.DS_Store
+.fleet/
+.idea/

@@ -1,0 +1,197 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  OWNER
+  MEMBER
+}
+
+enum Frequency {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  ONCE
+}
+
+model User {
+  id           String            @id @default(uuid())
+  oidcSubject  String            @unique // ID from Clerk
+  email        String
+  displayName  String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  memberships  HouseholdMember[]
+  householdInvitations HouseholdInvitation[] @relation("UserHouseholdInvitations")
+  expenses     ExpenseTransaction[]
+  incomes      IncomeTransaction[]
+}
+
+model Household {
+  id                 String               @id @default(uuid())
+  name               String
+  currency           String               @default("EUR") // default currency, e.g. "EUR", "USD", "CHF"
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  members            HouseholdMember[]
+  invitations        HouseholdInvitation[]
+  budgets            Budget[]
+  incomePlans        IncomePlan[]
+  fixedCosts         FixedCostPlan[]
+  expenses           ExpenseTransaction[]
+  incomeTransactions IncomeTransaction[]
+  savingsGoals       SavingsGoal[]
+}
+
+model HouseholdInvitation {
+  id              String      @id @default(uuid())
+  householdId     String
+  email           String
+  role            Role        @default(MEMBER)
+  invitedByUserId  String
+  acceptedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  household       Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  invitedBy       User        @relation("UserHouseholdInvitations", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+
+  @@unique([householdId, email])
+  @@index([email])
+}
+
+model HouseholdMember {
+  id           String            @id @default(uuid())
+  userId       String
+  householdId  String
+  role         Role              @default(MEMBER)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, householdId])
+}
+
+model Budget {
+  id           String            @id @default(uuid())
+  householdId  String
+  key          String
+  name         String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  versions     BudgetVersion[]
+  expenses     ExpenseTransaction[]
+
+  @@unique([householdId, key])
+  @@index([householdId, key])
+}
+
+model BudgetVersion {
+  id           String            @id @default(uuid())
+  budgetId     String
+  amount       Int               // Cent value
+  frequency    Frequency
+  validFrom    DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  budget       Budget            @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+
+  @@unique([budgetId, validFrom])
+  @@index([budgetId, validFrom])
+  @@index([validFrom])
+}
+
+model IncomePlan {
+  id           String            @id @default(uuid())
+  householdId  String
+  name         String
+  amount       Int               // Cent value
+  frequency    Frequency         @default(MONTHLY)
+  startDate    DateTime
+  endDate      DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model FixedCostPlan {
+  id           String            @id @default(uuid())
+  householdId  String
+  name         String
+  amount       Int               // Cent value
+  frequency    Frequency         @default(MONTHLY)
+  startDate    DateTime
+  endDate      DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+}
+
+model ExpenseTransaction {
+  id           String            @id @default(uuid())
+  householdId  String
+  budgetId     String?
+  userId       String
+  amount       Int               // Cent value
+  description  String?
+  date         DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model IncomeTransaction {
+  id           String            @id @default(uuid())
+  householdId  String
+  userId       String
+  amount       Int               // Cent value
+  description  String?
+  date         DateTime
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SavingsGoal {
+  id           String            @id @default(uuid())
+  householdId  String
+  name         String
+  targetAmount Int               // Cent value
+  monthlyRate  Int               // Planned savings per month in Cents
+  startDate    DateTime
+  endDate      DateTime?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  executions   SavingsGoalExecution[]
+}
+
+model SavingsGoalExecution {
+  id            String            @id @default(uuid())
+  savingsGoalId String
+  amount        Int               // Cent value actually saved in this month/period
+  date          DateTime          // Represents which month/date this execution is for
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  savingsGoal   SavingsGoal       @relation(fields: [savingsGoalId], references: [id], onDelete: Cascade)
+}
