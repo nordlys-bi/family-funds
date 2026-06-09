@@ -30,29 +30,51 @@ export function assertFrequency(value: unknown): PlanningFrequency {
 }
 
 export function parseMoneyToCents(value: unknown, fieldName: string) {
-  if (typeof value !== 'string' && typeof value !== 'number') {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${fieldName} must be a positive amount.`,
+      })
+    }
+
+    return Math.round(value * 100)
+  }
+
+  if (typeof value !== 'string') {
     throw createError({
       statusCode: 400,
       statusMessage: `${fieldName} is required.`,
     })
   }
 
-  const normalized = String(value)
-    .trim()
-    .replace(/\s+/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.')
+  const normalized = value.trim().replace(/\s+/g, '')
 
-  const amount = Number(normalized)
+  let parsedAmount: number
 
-  if (!Number.isFinite(amount) || amount <= 0) {
+  if (normalized.includes(',') && normalized.includes('.')) {
+    const lastComma = normalized.lastIndexOf(',')
+    const lastDot = normalized.lastIndexOf('.')
+
+    if (lastComma > lastDot) {
+      parsedAmount = Number(normalized.replace(/\./g, '').replace(',', '.'))
+    } else {
+      parsedAmount = Number(normalized.replace(/,/g, ''))
+    }
+  } else if (normalized.includes(',')) {
+    parsedAmount = Number(normalized.replace(',', '.'))
+  } else {
+    parsedAmount = Number(normalized)
+  }
+
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
     throw createError({
       statusCode: 400,
       statusMessage: `${fieldName} must be a positive amount.`,
     })
   }
 
-  return Math.round(amount * 100)
+  return Math.round(parsedAmount * 100)
 }
 
 export function parseDateInput(value: unknown, fieldName: string) {
