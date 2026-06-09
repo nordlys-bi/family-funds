@@ -48,6 +48,9 @@ const saveHouseholdLoading = ref(false)
 const inviteLoading = ref(false)
 const removeLoadingId = ref<string | null>(null)
 const cancelInvitationLoadingId = ref<string | null>(null)
+const createDialogOpen = ref(false)
+const editDialogOpen = ref(false)
+const inviteDialogOpen = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
 const createForm = ref({
@@ -75,6 +78,45 @@ const syncEditForm = () => {
   if (!currentHousehold.value) return
   editForm.value.name = currentHousehold.value.name
   editForm.value.currency = currentHousehold.value.currency
+}
+
+const openCreateHouseholdDialog = () => {
+  createForm.value.name = ''
+  createForm.value.currency = 'EUR'
+  createDialogOpen.value = true
+}
+
+const openEditHouseholdDialog = () => {
+  if (!currentHousehold.value) return
+  syncEditForm()
+  editDialogOpen.value = true
+}
+
+const openInviteDialog = () => {
+  inviteDialogOpen.value = true
+}
+
+const confirmDestructiveAction = (title: string, message: string) => {
+  if (typeof window === 'undefined') return true
+
+  return window.confirm(`${title}\n\n${message}`)
+}
+
+const closeCreateHouseholdDialog = () => {
+  createDialogOpen.value = false
+  createForm.value.name = ''
+  createForm.value.currency = 'EUR'
+}
+
+const closeEditHouseholdDialog = () => {
+  editDialogOpen.value = false
+  syncEditForm()
+}
+
+const closeInviteDialog = () => {
+  inviteDialogOpen.value = false
+  inviteForm.value.email = ''
+  inviteForm.value.role = 'MEMBER'
 }
 
 const loadCurrentHousehold = async () => {
@@ -112,7 +154,7 @@ const handleCreateHousehold = async () => {
       setActiveHousehold(data.household.id)
     }
     await loadCurrentHousehold()
-    createForm.value.name = ''
+    closeCreateHouseholdDialog()
     message.value = {
       severity: 'success',
       text: 'Haushalt wurde erstellt.',
@@ -139,6 +181,7 @@ const handleSaveHousehold = async () => {
     })
 
     await refreshAll()
+    closeEditHouseholdDialog()
     message.value = {
       severity: 'success',
       text: 'Haushalt wurde aktualisiert.',
@@ -165,8 +208,7 @@ const handleInviteMember = async () => {
     })
 
     await loadCurrentHousehold()
-    inviteForm.value.email = ''
-    inviteForm.value.role = 'MEMBER'
+    closeInviteDialog()
     message.value = {
       severity: 'success',
       text: 'Einladung oder Mitgliedschaft wurde angelegt.',
@@ -183,6 +225,7 @@ const handleInviteMember = async () => {
 
 const removeMember = async (membershipId: string) => {
   if (!activeHouseholdId.value) return
+  if (!confirmDestructiveAction('Mitglied entfernen?', 'Diese Person verliert sofort den Zugriff auf den Haushalt.')) return
 
   removeLoadingId.value = membershipId
   message.value = null
@@ -208,6 +251,7 @@ const removeMember = async (membershipId: string) => {
 
 const cancelInvitation = async (invitationId: string) => {
   if (!activeHouseholdId.value) return
+  if (!confirmDestructiveAction('Einladung löschen?', 'Die eingeladene Person kann diese Einladung danach nicht mehr annehmen.')) return
 
   cancelInvitationLoadingId.value = invitationId
   message.value = null
@@ -231,6 +275,12 @@ const cancelInvitation = async (invitationId: string) => {
   }
 }
 
+useDesktopShortcut('n', () => {
+  if (!createDialogOpen.value) {
+    openCreateHouseholdDialog()
+  }
+})
+
 onMounted(async () => {
   await fetchHouseholds()
   await loadCurrentHousehold()
@@ -242,193 +292,116 @@ watch(activeHouseholdId, async () => {
 </script>
 
 <template>
-  <div class="households-page">
-    <section class="hero-panel">
-      <div class="hero-copy">
-        <p class="eyebrow">Meilenstein 3</p>
-        <h1>Haushalts- & Mitgliederverwaltung</h1>
-        <p class="page-intro">
-          Erstelle Haushalte, passe sie an und verwalte Mitglieder sowie Einladungen direkt im System.
-        </p>
-      </div>
+  <ListPageShell
+    eyebrow="Meilenstein 3"
+    title="Haushalts- & Mitgliederverwaltung"
+    description="Verwalte den aktiven Haushalt, bearbeite Stammdaten und halte Mitglieder sowie Einladungen schlank in Listenform."
+  >
+    <template #summary>
+      <Tag severity="info" :value="`Haushalte ${households.length}`" />
+      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members.length || 0}`" />
+      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations.length || 0}`" />
+      <Tag severity="secondary" :value="`Aktiv ${activeHousehold?.name || 'Keiner'}`" />
+    </template>
 
-      <div class="hero-stats">
-        <div class="stat-chip">
-          <span class="stat-label">Haushalte</span>
-          <strong>{{ households.length }}</strong>
-        </div>
-        <div class="stat-chip stat-chip--accent">
-          <span class="stat-label">Aktiver Haushalt</span>
-          <strong>{{ activeHousehold?.name || 'Keiner' }}</strong>
-        </div>
+    <template #toolbar>
+      <div class="toolbar-note">
+        <span class="toolbar-note__label">Neu</span>
+        <Tag value="N" severity="secondary" rounded />
       </div>
-    </section>
+      <div class="toolbar-actions">
+        <Button
+          label="Neu"
+          icon="pi pi-plus"
+          severity="success"
+          @click="openCreateHouseholdDialog"
+        />
+        <Button
+          v-if="currentHousehold"
+          label="Bearbeiten"
+          icon="pi pi-pen-to-square"
+          severity="secondary"
+          outlined
+          :disabled="!canManageHousehold"
+          @click="openEditHouseholdDialog"
+        />
+        <Button
+          v-if="currentHousehold"
+          label="Einladen"
+          icon="pi pi-user-plus"
+          severity="secondary"
+          outlined
+          :disabled="!canManageHousehold"
+          @click="openInviteDialog"
+        />
+      </div>
+    </template>
 
-    <Message v-if="message" :severity="message.severity" variant="simple" class="mb-4">
+    <Message v-if="message" :severity="message.severity" variant="simple">
       {{ message.text }}
     </Message>
 
-    <div class="panel-grid">
-      <section class="panel panel-primary panel-accent">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Haushalt anlegen</p>
-            <h2>Neuen Haushalt erstellen</h2>
-          </div>
-          <Tag value="Owner" severity="success" rounded />
-        </div>
-
-        <div class="panel-body">
-          <div class="form-grid">
-            <label class="field">
-              <span>Name</span>
-              <InputText v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" class="w-full" />
-            </label>
-            <label class="field">
-              <span>Währung</span>
-              <InputText v-model="createForm.currency" placeholder="EUR" class="w-full" />
-            </label>
-          </div>
-
-          <div class="panel-actions">
-            <small class="helper-text">Ein neuer Haushalt startet immer mit dir als Owner.</small>
-            <Button
-              label="Haushalt erstellen"
-              icon="pi pi-plus"
-              severity="success"
-              :loading="createHouseholdLoading"
-              :disabled="!createForm.name.trim()"
-              @click="handleCreateHousehold"
-            />
-          </div>
-        </div>
-      </section>
-
-      <section class="panel panel-primary panel-strong">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Aktiv</p>
-            <h2>Aktiver Haushalt</h2>
-          </div>
-          <Tag v-if="currentHousehold" :value="currentHousehold.id.slice(0, 8)" severity="secondary" rounded />
-        </div>
-
-        <div class="panel-body">
-          <div v-if="currentLoading || householdsLoading" class="loading-block">
-            <ProgressSpinner style="width: 42px; height: 42px" strokeWidth="4" />
-          </div>
-
-          <div v-else-if="currentHousehold" class="stack">
-            <div class="form-grid">
-              <label class="field">
-                <span>Name</span>
-                <InputText v-model="editForm.name" class="w-full" :disabled="!canManageHousehold" />
-              </label>
-              <label class="field">
-                <span>Währung</span>
-                <InputText v-model="editForm.currency" class="w-full" :disabled="!canManageHousehold" />
-              </label>
-            </div>
-
-            <div class="meta-row">
-              <div class="meta-pill">
-                <span>Mitglieder</span>
-                <strong>{{ currentHousehold.members.length }}</strong>
-              </div>
-              <div class="meta-pill">
-                <span>Einladungen</span>
-                <strong>{{ currentHousehold.invitations.length }}</strong>
-              </div>
-            </div>
-
-            <Message v-if="canManageHousehold" severity="info" variant="simple">
-              Änderungen werden für alle Mitglieder des Haushalts sichtbar.
-            </Message>
-
-            <div class="panel-actions">
-              <span class="helper-text" v-if="!canManageHousehold">Nur Owner können diesen Haushalt bearbeiten.</span>
-              <Button
-                v-if="canManageHousehold"
-                label="Änderungen speichern"
-                icon="pi pi-save"
-                severity="success"
-                :loading="saveHouseholdLoading"
-                @click="handleSaveHousehold"
-              />
-            </div>
-          </div>
-
-          <Message v-else severity="warn" variant="simple">
-            Es ist aktuell kein Haushalt ausgewählt.
-          </Message>
-        </div>
-      </section>
-    </div>
-
-    <section class="panel panel-wide panel-muted">
-      <div class="panel-header">
-        <div>
-          <p class="panel-kicker">Zugang</p>
-          <h2>Mitglieder einladen</h2>
-        </div>
-        <Tag value="Clerk-ready" severity="info" rounded />
-      </div>
-
-      <div class="panel-body">
-        <div v-if="!currentHousehold" class="empty-state">
-          Wähle zuerst einen Haushalt aus, dann kannst du Mitglieder einladen.
-        </div>
-
-        <div v-else class="stack">
-          <div class="form-grid">
-            <label class="field">
-              <span>E-Mail</span>
-              <InputText v-model="inviteForm.email" type="email" placeholder="person@beispiel.de" class="w-full" :disabled="!canManageHousehold" />
-            </label>
-            <label class="field">
-              <span>Rolle</span>
-              <Select
-                v-model="inviteForm.role"
-                :options="[
-                  { label: 'Member', value: 'MEMBER' },
-                  { label: 'Owner', value: 'OWNER' },
-                ]"
-                optionLabel="label"
-                optionValue="value"
-                class="w-full"
-                :disabled="!canManageHousehold"
-              />
-            </label>
-          </div>
-
-          <div class="panel-actions">
-            <small class="helper-text">Eingeladene Personen werden beim nächsten Clerk-Login automatisch übernommen.</small>
-            <Button
-              label="Einladung senden"
-              icon="pi pi-send"
-              severity="success"
-              :loading="inviteLoading"
-              :disabled="!inviteForm.email.trim() || !canManageHousehold"
-              @click="handleInviteMember"
-            />
-          </div>
-        </div>
+    <section v-if="currentLoading || householdsLoading" class="empty-state">
+      <div class="empty-state__card">
+        <p class="empty-state__eyebrow">Lädt</p>
+        <h2>Haushaltsdaten werden geladen</h2>
+        <p>Wir holen den aktiven Haushalt, Mitglieder und Einladungen.</p>
+        <ProgressSpinner style="width: 42px; height: 42px" strokeWidth="4" />
       </div>
     </section>
 
-    <div class="panel-grid">
-      <section class="panel panel-secondary">
-        <div class="panel-header">
+    <section v-else-if="!currentHousehold" class="empty-state">
+      <div class="empty-state__card">
+        <p class="empty-state__eyebrow">Kein Haushalt aktiv</p>
+        <h2>Erstelle oder wähle zuerst einen Haushalt aus</h2>
+        <p>Danach kannst du Mitglieder und Einladungen verwalten.</p>
+        <Button label="Neuen Haushalt erstellen" icon="pi pi-plus" @click="openCreateHouseholdDialog" />
+      </div>
+    </section>
+
+    <section v-else class="household-overview">
+      <article class="list-panel">
+        <div class="list-panel__head">
           <div>
-            <p class="panel-kicker">Mitglieder</p>
-            <h2>Mitglieder</h2>
+            <p class="list-panel__kicker">Aktiv</p>
+            <h2>{{ currentHousehold.name }}</h2>
+            <p class="list-panel__description">Währung: {{ currentHousehold.currency }}</p>
           </div>
-          <Tag :value="String(currentHousehold?.members?.length || 0)" severity="secondary" rounded />
+          <Tag :value="currentHousehold.id.slice(0, 8)" severity="secondary" rounded />
         </div>
 
-        <div class="panel-body">
-          <div v-if="currentHousehold?.members?.length" class="table-list">
-            <div v-for="member in currentHousehold.members" :key="member.id" class="list-row">
+        <div class="detail-strip">
+          <div class="detail-card">
+            <span>Mitglieder</span>
+            <strong>{{ currentHousehold.members.length }}</strong>
+          </div>
+          <div class="detail-card">
+            <span>Einladungen</span>
+            <strong>{{ currentHousehold.invitations.length }}</strong>
+          </div>
+          <div class="detail-card detail-card--accent">
+            <span>Rolle</span>
+            <strong>{{ canManageHousehold ? 'Owner' : 'Member' }}</strong>
+          </div>
+        </div>
+
+        <Message v-if="canManageHousehold" severity="info" variant="simple">
+          Änderungen an diesem Haushalt gelten für alle Mitglieder sofort.
+        </Message>
+      </article>
+
+      <div class="list-panels">
+        <article class="list-panel">
+          <div class="list-panel__head">
+            <div>
+              <p class="list-panel__kicker">Mitglieder</p>
+              <h2>Mitglieder</h2>
+            </div>
+            <span class="panel-badge">{{ currentHousehold.members.length }}</span>
+          </div>
+
+          <div class="item-list">
+            <div v-for="member in currentHousehold.members" :key="member.id" class="item-card">
               <div class="member-meta">
                 <Avatar
                   :label="member.user.displayName?.charAt(0)?.toUpperCase() || member.user.email.charAt(0).toUpperCase()"
@@ -440,14 +413,11 @@ watch(activeHouseholdId, async () => {
                   <div class="subtle">{{ member.user.email }}</div>
                 </div>
               </div>
-              <div class="member-actions">
-                <Tag
-                  :value="member.role"
-                  :severity="member.role === 'OWNER' ? 'success' : 'info'"
-                  rounded
-                />
+              <div class="item-actions">
+                <Tag :value="member.role" :severity="member.role === 'OWNER' ? 'success' : 'info'" />
                 <Button
                   v-if="canManageHousehold && member.user.id !== user?.id"
+                  label="Entfernen"
                   icon="pi pi-trash"
                   severity="danger"
                   outlined
@@ -457,37 +427,33 @@ watch(activeHouseholdId, async () => {
                 />
               </div>
             </div>
-          </div>
-          <div v-else class="empty-state">
-            Noch keine Mitglieder vorhanden.
-          </div>
-        </div>
-      </section>
 
-      <section class="panel panel-secondary">
-        <div class="panel-header">
-          <div>
-            <p class="panel-kicker">Offen</p>
-            <h2>Offene Einladungen</h2>
+            <div v-if="currentHousehold.members.length === 0" class="empty-list">
+              Noch keine Mitglieder vorhanden.
+            </div>
           </div>
-          <Tag :value="String(currentHousehold?.invitations?.length || 0)" severity="secondary" rounded />
-        </div>
+        </article>
 
-        <div class="panel-body">
-          <div v-if="currentHousehold?.invitations?.length" class="table-list">
-            <div v-for="invitation in currentHousehold.invitations" :key="invitation.id" class="list-row">
+        <article class="list-panel">
+          <div class="list-panel__head">
+            <div>
+              <p class="list-panel__kicker">Offen</p>
+              <h2>Offene Einladungen</h2>
+            </div>
+            <span class="panel-badge">{{ currentHousehold.invitations.length }}</span>
+          </div>
+
+          <div class="item-list">
+            <div v-for="invitation in currentHousehold.invitations" :key="invitation.id" class="item-card">
               <div>
                 <strong>{{ invitation.email }}</strong>
                 <div class="subtle">Eingeladen von {{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</div>
               </div>
-              <div class="member-actions">
-                <Tag
-                  :value="invitation.role"
-                  :severity="invitation.role === 'OWNER' ? 'success' : 'info'"
-                  rounded
-                />
+              <div class="item-actions">
+                <Tag :value="invitation.role" :severity="invitation.role === 'OWNER' ? 'success' : 'info'" />
                 <Button
                   v-if="canManageHousehold"
+                  label="Löschen"
                   icon="pi pi-times"
                   severity="secondary"
                   outlined
@@ -497,147 +463,145 @@ watch(activeHouseholdId, async () => {
                 />
               </div>
             </div>
+
+            <div v-if="currentHousehold.invitations.length === 0" class="empty-list">
+              Keine offenen Einladungen.
+            </div>
           </div>
-          <div v-else class="empty-state">
-            Keine offenen Einladungen.
-          </div>
+        </article>
+      </div>
+    </section>
+
+    <Dialog
+      v-model:visible="createDialogOpen"
+      modal
+      header="Neuen Haushalt erstellen"
+      :style="{ width: 'min(34rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeCreateHouseholdDialog"
+    >
+      <form class="dialog-form" @submit.prevent="handleCreateHousehold">
+        <div class="field field--wide">
+          <label for="household-create-name">Name</label>
+          <InputText id="household-create-name" v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" />
         </div>
-      </section>
-    </div>
-  </div>
+        <div class="field field--wide">
+          <label for="household-create-currency">Währung</label>
+          <InputText id="household-create-currency" v-model="createForm.currency" placeholder="EUR" />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeCreateHouseholdDialog" />
+          <Button type="submit" label="Haushalt erstellen" icon="pi pi-check" :loading="createHouseholdLoading" :disabled="!createForm.name.trim()" />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="editDialogOpen"
+      modal
+      header="Haushalt bearbeiten"
+      :style="{ width: 'min(34rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeEditHouseholdDialog"
+    >
+      <form class="dialog-form" @submit.prevent="handleSaveHousehold">
+        <div class="field field--wide">
+          <label for="household-edit-name">Name</label>
+          <InputText id="household-edit-name" v-model="editForm.name" :disabled="!canManageHousehold" />
+        </div>
+        <div class="field field--wide">
+          <label for="household-edit-currency">Währung</label>
+          <InputText id="household-edit-currency" v-model="editForm.currency" :disabled="!canManageHousehold" />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeEditHouseholdDialog" />
+          <Button type="submit" label="Änderungen speichern" icon="pi pi-check" :loading="saveHouseholdLoading" :disabled="!canManageHousehold" />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="inviteDialogOpen"
+      modal
+      header="Mitglied einladen"
+      :style="{ width: 'min(34rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeInviteDialog"
+    >
+      <form class="dialog-form" @submit.prevent="handleInviteMember">
+        <div class="field field--wide">
+          <label for="household-invite-email">E-Mail</label>
+          <InputText id="household-invite-email" v-model="inviteForm.email" type="email" placeholder="person@beispiel.de" />
+        </div>
+        <div class="field field--wide">
+          <label for="household-invite-role">Rolle</label>
+          <Select
+            id="household-invite-role"
+            v-model="inviteForm.role"
+            :options="[
+              { label: 'Member', value: 'MEMBER' },
+              { label: 'Owner', value: 'OWNER' },
+            ]"
+            optionLabel="label"
+            optionValue="value"
+          />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeInviteDialog" />
+          <Button type="submit" label="Einladung senden" icon="pi pi-send" :loading="inviteLoading" :disabled="!inviteForm.email.trim()" />
+        </div>
+      </form>
+    </Dialog>
+  </ListPageShell>
 </template>
 
 <style scoped>
-.households-page {
+.household-overview {
   display: flex;
   flex-direction: column;
-  gap: 1.4rem;
-  padding-bottom: 1rem;
+  gap: 1rem;
 }
 
-.hero-panel {
-  display: flex;
-  justify-content: space-between;
-  gap: 1.25rem;
-  align-items: stretch;
-  flex-wrap: wrap;
-  padding: 1.5rem 1.6rem;
-  border-radius: 1.8rem;
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.16), transparent 36%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.72));
-  border: 1px solid rgba(148, 163, 184, 0.13);
-  box-shadow: 0 22px 54px rgba(2, 6, 23, 0.28);
-}
-
-.hero-copy {
-  flex: 1 1 42rem;
-}
-
-.hero-stats {
-  display: flex;
-  gap: 0.8rem;
-  flex-wrap: wrap;
-  align-content: flex-start;
-}
-
-.eyebrow {
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: var(--p-primary-500);
-  font-size: 0.78rem;
-  font-weight: 700;
-  margin: 0 0 0.5rem;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
-  line-height: 1.05;
-}
-
-.page-intro {
-  max-width: 60ch;
-  color: rgb(148 163 184);
-  margin: 0.75rem 0 0;
-  font-size: 1.02rem;
-  line-height: 1.58;
-}
-
-.stat-chip {
-  min-width: 180px;
-  padding: 0.95rem 1rem;
-  border-radius: 1.1rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16);
-}
-
-.stat-label {
-  display: block;
-  font-size: 0.8rem;
-  color: rgb(148 163 184);
-  margin-bottom: 0.35rem;
-}
-
-.stat-chip strong {
-  display: block;
-  font-size: 1.02rem;
-  line-height: 1.3;
-}
-
-.stat-chip--accent {
-  background: linear-gradient(180deg, rgba(59, 130, 246, 0.18), rgba(15, 23, 42, 0.52));
-  border-color: rgba(96, 165, 250, 0.22);
-}
-
-.panel-grid {
+.list-panels {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
-.panel {
+.toolbar-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #cbd5e1;
+}
+
+.toolbar-note__label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.list-panel {
   display: flex;
   flex-direction: column;
-  gap: 1.1rem;
-  border-radius: 1.5rem;
+  gap: 1rem;
   padding: 1.25rem;
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.64));
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.26);
-  backdrop-filter: blur(16px);
+  border-radius: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.66));
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.22);
 }
 
-.panel-wide {
-  grid-column: 1 / -1;
-}
-
-.panel-primary {
-  min-height: 100%;
-}
-
-.panel-strong {
-  background:
-    radial-gradient(circle at top right, rgba(16, 185, 129, 0.12), transparent 34%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.68));
-}
-
-.panel-accent {
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 34%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.84), rgba(15, 23, 42, 0.65));
-}
-
-.panel-muted {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.6));
-}
-
-.panel-secondary {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(15, 23, 42, 0.6));
-}
-
-.panel-header {
+.list-panel__head {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -645,96 +609,83 @@ h1 {
   flex-wrap: wrap;
 }
 
-.panel-header h2 {
-  margin: 0.18rem 0 0;
+.list-panel__kicker {
+  margin: 0 0 0.25rem;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.list-panel__head h2 {
+  margin: 0;
   font-size: 1.35rem;
   letter-spacing: -0.02em;
 }
 
-.panel-kicker {
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: rgb(148 163 184);
-  font-size: 0.72rem;
+.list-panel__description {
+  margin: 0.3rem 0 0;
+  color: #94a3b8;
+}
+
+.panel-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.18);
+  color: #bfdbfe;
+  font-size: 0.84rem;
   font-weight: 700;
 }
 
-.form-grid {
+.detail-strip {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  font-size: 0.92rem;
-}
-
-.field span {
-  color: rgb(226 232 240);
-  font-weight: 600;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: 1.1rem;
-}
-
-.meta-row {
-  display: flex;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
-  flex-wrap: wrap;
 }
 
-.meta-pill {
-  min-width: 130px;
+.detail-card {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.85rem 0.95rem;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.45);
+  gap: 0.3rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(15, 23, 42, 0.44);
 }
 
-.meta-pill span {
-  color: rgb(148 163 184);
-  font-size: 0.8rem;
+.detail-card span {
+  color: #94a3b8;
+  font-size: 0.82rem;
 }
 
-.meta-pill strong {
-  font-size: 1.15rem;
+.detail-card strong {
+  font-size: 1.1rem;
 }
 
-.loading-block,
-.empty-state {
-  display: grid;
-  place-items: center;
-  min-height: 160px;
-  color: rgb(148 163 184);
-  text-align: center;
-  padding: 1rem 0.5rem;
+.detail-card--accent {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(15, 23, 42, 0.48));
 }
 
-.table-list {
+.item-list {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
 }
 
-.list-row {
+.item-card {
   display: flex;
   justify-content: space-between;
   gap: 1rem;
   align-items: center;
   padding: 1rem 1.05rem;
-  border-radius: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
   background: rgba(15, 23, 42, 0.48);
-  border: 1px solid rgba(148, 163, 184, 0.12);
 }
 
 .member-meta {
@@ -744,28 +695,83 @@ h1 {
 }
 
 .subtle {
-  color: rgb(148 163 184);
+  color: #94a3b8;
   font-size: 0.88rem;
 }
 
-.member-actions {
+.item-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.55rem;
+  flex-shrink: 0;
 }
 
-.panel-actions {
+.empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  text-align: center;
+}
+
+.empty-state__card {
+  max-width: 32rem;
+  padding: 1.2rem 1rem;
+}
+
+.empty-state__eyebrow {
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: #93c5fd;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.empty-state__card h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.empty-state__card p {
+  margin: 0.65rem 0 1rem;
+  color: #94a3b8;
+}
+
+.empty-list {
+  color: #94a3b8;
+  text-align: center;
+  padding: 1.2rem 0.75rem;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.dialog-form {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.field {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  padding-top: 0.1rem;
+  flex-direction: column;
+  gap: 0.45rem;
 }
 
-.helper-text {
-  color: rgb(148 163 184);
+.field label {
+  color: #e2e8f0;
   font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.25rem;
 }
 
 .member-avatar {
@@ -774,28 +780,46 @@ h1 {
   font-weight: 700;
 }
 
-@media (max-width: 900px) {
-  .hero-panel {
-    padding: 1.2rem;
-  }
+:deep(.p-inputtext),
+:deep(.p-select),
+:deep(.p-datepicker-input),
+:deep(.p-inputnumber-input) {
+  width: 100%;
+}
 
-  .panel-grid,
-  .form-grid {
+:deep(.p-select),
+:deep(.p-datepicker),
+:deep(.p-inputnumber) {
+  width: 100%;
+}
+
+:deep(.p-button) {
+  border-radius: 14px;
+}
+
+@media (max-width: 1120px) {
+  .list-panels,
+  .detail-strip {
     grid-template-columns: 1fr;
   }
 
-  .list-row {
-    align-items: flex-start;
+  .item-card {
     flex-direction: column;
-  }
-
-  .member-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .panel-actions {
     align-items: flex-start;
+  }
+
+  .item-actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+  }
+
+  .dialog-actions {
+    grid-template-columns: 1fr;
   }
 }
 </style>
