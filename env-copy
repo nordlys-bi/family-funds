@@ -1,0 +1,15 @@
+# Database Configuration
+# DATABASE_URL="postgresql://postgres:postgrespassword@localhost:5432/family_funds?schema=public"
+# Connect to Postgres via the shared transaction-mode pooler (IPv4-only)
+DATABASE_URL="postgresql://postgres.lcqvpyldnbghewmblhfg:penpuf-1Nejry-jodwut@aws-1-eu-central-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+
+# Connect to Postgres via the shared session-mode pooler (used for migrations)
+DIRECT_URL="postgresql://postgres.lcqvpyldnbghewmblhfg:penpuf-1Nejry-jodwut@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
+
+
+# Clerk Authentication (OIDC)
+NUXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_cHJlc2VudC1xdWFnZ2EtMi5jbGVyay5hY2NvdW50cy5kZXYk
+NUXT_CLERK_SECRET_KEY=sk_test_ob6sqriLoqsiYZig3vF8966tEJrQio9oiC41mxz5ue
+
+NUXT_CLERK_WEBHOOK_SIGNING_SECRET="whsec_xYZpP1PuJu2w87EwMN4mfMFeARDNp4r/"
+

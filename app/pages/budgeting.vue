@@ -113,6 +113,10 @@ const incomeLoading = ref(false)
 const fixedCostLoading = ref(false)
 const savingsLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
+const budgetDialogOpen = ref(false)
+const incomeDialogOpen = ref(false)
+const fixedCostDialogOpen = ref(false)
+const savingsDialogOpen = ref(false)
 
 const budgetForm = ref({
   name: '',
@@ -321,6 +325,7 @@ const editBudget = (budget: BudgetItem) => {
     frequency: latestVersion?.frequency ?? 'MONTHLY',
     validFrom: latestVersion ? new Date(latestVersion.validFrom) : new Date(),
   }
+  budgetDialogOpen.value = true
 }
 
 const editIncomePlan = (plan: IncomePlanItem) => {
@@ -332,6 +337,7 @@ const editIncomePlan = (plan: IncomePlanItem) => {
     startDate: new Date(plan.startDate),
     endDate: parseDateInput(plan.endDate),
   }
+  incomeDialogOpen.value = true
 }
 
 const editFixedCostPlan = (plan: FixedCostPlanItem) => {
@@ -343,6 +349,7 @@ const editFixedCostPlan = (plan: FixedCostPlanItem) => {
     startDate: new Date(plan.startDate),
     endDate: parseDateInput(plan.endDate),
   }
+  fixedCostDialogOpen.value = true
 }
 
 const editSavingsGoal = (goal: SavingsGoalItem) => {
@@ -354,6 +361,47 @@ const editSavingsGoal = (goal: SavingsGoalItem) => {
     startDate: new Date(goal.startDate),
     endDate: parseDateInput(goal.endDate),
   }
+  savingsDialogOpen.value = true
+}
+
+const openBudgetDialog = () => {
+  resetBudgetForm()
+  budgetDialogOpen.value = true
+}
+
+const openIncomeDialog = () => {
+  resetIncomeForm()
+  incomeDialogOpen.value = true
+}
+
+const openFixedCostDialog = () => {
+  resetFixedCostForm()
+  fixedCostDialogOpen.value = true
+}
+
+const openSavingsDialog = () => {
+  resetSavingsForm()
+  savingsDialogOpen.value = true
+}
+
+const closeBudgetDialog = () => {
+  budgetDialogOpen.value = false
+  resetBudgetForm()
+}
+
+const closeIncomeDialog = () => {
+  incomeDialogOpen.value = false
+  resetIncomeForm()
+}
+
+const closeFixedCostDialog = () => {
+  fixedCostDialogOpen.value = false
+  resetFixedCostForm()
+}
+
+const closeSavingsDialog = () => {
+  savingsDialogOpen.value = false
+  resetSavingsForm()
 }
 
 watch(
@@ -387,7 +435,7 @@ const saveBudget = async () => {
     })
 
     await loadPlanning()
-    resetBudgetForm()
+    closeBudgetDialog()
     notice.value = {
       severity: 'success',
       text: isEdit ? 'Budget wurde aktualisiert.' : 'Budget wurde angelegt.',
@@ -425,7 +473,7 @@ const saveIncomePlan = async () => {
     })
 
     await loadPlanning()
-    resetIncomeForm()
+    closeIncomeDialog()
     notice.value = {
       severity: 'success',
       text: isEdit ? 'Einnahmenplan wurde aktualisiert.' : 'Einnahmenplan wurde angelegt.',
@@ -463,7 +511,7 @@ const saveFixedCostPlan = async () => {
     })
 
     await loadPlanning()
-    resetFixedCostForm()
+    closeFixedCostDialog()
     notice.value = {
       severity: 'success',
       text: isEdit ? 'Fixkostenplan wurde aktualisiert.' : 'Fixkostenplan wurde angelegt.',
@@ -501,7 +549,7 @@ const saveSavingsGoal = async () => {
     })
 
     await loadPlanning()
-    resetSavingsForm()
+    closeSavingsDialog()
     notice.value = {
       severity: 'success',
       text: isEdit ? 'Sparziel wurde aktualisiert.' : 'Sparziel wurde angelegt.',
@@ -515,6 +563,11 @@ const saveSavingsGoal = async () => {
     savingsLoading.value = false
   }
 }
+
+useDesktopShortcut('n', () => {
+  if (!activeHouseholdId.value || budgetDialogOpen.value) return
+  openBudgetDialog()
+})
 
 const deletePlanningItem = async (kind: 'budget' | 'incomePlan' | 'fixedCostPlan' | 'savingsGoal', id: string) => {
   if (!activeHouseholdId.value) return
@@ -588,48 +641,29 @@ watch(activeHouseholdId, async () => {
 </script>
 
 <template>
-  <div class="planning-page">
-    <section class="hero-panel">
-      <div class="hero-copy">
-        <p class="eyebrow">Meilenstein 4</p>
-        <h1>Budgetierung & Sparpläne</h1>
-        <p class="page-intro">
-          Lege geplante Einnahmen, Fixkosten, Budgets und Sparziele für den aktiven Haushalt an.
-          Diese Werte bilden später die Grundlage für deine Buchungen und Auswertungen.
-        </p>
+  <ListPageShell
+    eyebrow="Meilenstein 4"
+    title="Budgetierung & Sparpläne"
+    description="Verwalte Budgets, Einnahmenpläne, Fixkosten und Sparziele als getrennte Listen. Neue und bearbeitete Einträge öffnest du nur noch im Modal."
+  >
+    <template #summary>
+      <Tag severity="info" :value="`Budget ${formatMoney(monthBudgetPlanned)}`" />
+      <Tag severity="warning" :value="`Ausgaben ${formatMoney(monthBudgetSpent)}`" />
+      <Tag severity="success" :value="`Restbudget ${formatMoney(monthBudgetBalance)}`" />
+      <Tag severity="secondary" :value="`Spielraum ${formatMoney(planableBalance)}`" />
+    </template>
 
-        <div v-if="notice" class="notice" :class="`notice--${notice.severity}`">
-          {{ notice.text }}
-        </div>
+    <template #toolbar>
+      <div class="toolbar-note">
+        <span class="toolbar-note__label">Neu</span>
+        <Tag value="N" severity="secondary" rounded />
       </div>
+      <Button label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
+    </template>
 
-      <div class="hero-stats">
-        <div class="stat-chip">
-          <span class="stat-label">Budgetvolumen</span>
-          <strong>{{ formatMoney(monthBudgetPlanned) }}</strong>
-        </div>
-        <div class="stat-chip stat-chip--accent">
-          <span class="stat-label">Ausgaben im Monat</span>
-          <strong>{{ formatMoney(monthBudgetSpent) }}</strong>
-        </div>
-        <div class="stat-chip">
-          <span class="stat-label">Restbudget</span>
-          <strong>{{ formatMoney(monthBudgetBalance) }}</strong>
-        </div>
-        <div class="stat-chip stat-chip--accent">
-          <span class="stat-label">Geplante Einnahmen</span>
-          <strong>{{ formatMoney(monthlyIncomeTotal) }}</strong>
-        </div>
-        <div class="stat-chip">
-          <span class="stat-label">Fixkosten</span>
-          <strong>{{ formatMoney(monthlyFixedCostTotal) }}</strong>
-        </div>
-        <div class="stat-chip stat-chip--accent">
-          <span class="stat-label">Planbarer Spielraum</span>
-          <strong>{{ formatMoney(planableBalance) }}</strong>
-        </div>
-      </div>
-    </section>
+    <Message v-if="notice" :severity="notice.severity" variant="simple">
+      {{ notice.text }}
+    </Message>
 
     <section v-if="loading" class="empty-state">
       <div class="empty-state__card">
@@ -648,68 +682,18 @@ watch(activeHouseholdId, async () => {
       </div>
     </section>
 
-    <div v-else class="planning-grid">
+    <div v-else class="planning-sections">
       <article class="plan-panel plan-panel--primary">
         <div class="panel-head">
           <div>
             <p class="panel-kicker">Budget</p>
             <h2>Budget pro Zeitraum</h2>
           </div>
-          <span class="panel-badge">{{ currentHousehold?.budgets.length ?? 0 }} Einträge</span>
+          <div class="section-toolbar">
+            <span class="panel-badge">{{ currentHousehold?.budgets.length ?? 0 }} Einträge</span>
+            <Button label="Neu" icon="pi pi-plus" severity="success" size="small" @click="openBudgetDialog" />
+          </div>
         </div>
-
-        <form class="plan-form" @submit.prevent="saveBudget">
-          <div class="field field--wide">
-            <label for="budget-name">Name</label>
-            <InputText
-              id="budget-name"
-              v-model="budgetForm.name"
-              class="w-full"
-              placeholder="z. B. Lebensmittel"
-            />
-          </div>
-          <div class="field">
-            <label for="budget-amount">Betrag</label>
-            <InputText
-              id="budget-amount"
-              v-model="budgetForm.amount"
-              class="w-full"
-              placeholder="0,00"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="field">
-            <label for="budget-frequency">Frequenz</label>
-            <Select
-              id="budget-frequency"
-              v-model="budgetForm.frequency"
-              :options="frequencyOptions"
-              optionLabel="label"
-              optionValue="value"
-              class="w-full"
-            />
-          </div>
-          <div class="field">
-            <label for="budget-valid-from">Gültig ab</label>
-            <DatePicker
-              id="budget-valid-from"
-              v-model="budgetForm.validFrom"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-
-          <div class="form-actions form-actions--split">
-            <Button type="button" label="Zurücksetzen" severity="secondary" outlined @click="resetBudgetForm" />
-            <Button
-              type="submit"
-              :label="budgetEditId ? 'Budget aktualisieren' : 'Budget anlegen'"
-              icon="pi pi-check"
-              :loading="budgetLoading"
-            />
-          </div>
-        </form>
 
         <div class="item-list">
           <article v-for="budget in currentHousehold?.budgets ?? []" :key="budget.id" class="item-card">
@@ -779,66 +763,11 @@ watch(activeHouseholdId, async () => {
             <p class="panel-kicker">Einnahmen</p>
             <h2>Geplante Einnahmen</h2>
           </div>
-          <span class="panel-badge">{{ currentHousehold?.incomePlans.length ?? 0 }} Einträge</span>
+          <div class="section-toolbar">
+            <span class="panel-badge">{{ currentHousehold?.incomePlans.length ?? 0 }} Einträge</span>
+            <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openIncomeDialog" />
+          </div>
         </div>
-
-        <form class="plan-form" @submit.prevent="saveIncomePlan">
-          <div class="field field--wide">
-            <label for="income-name">Name</label>
-            <InputText id="income-name" v-model="incomeForm.name" class="w-full" placeholder="z. B. Gehalt" />
-          </div>
-          <div class="field">
-            <label for="income-amount">Betrag</label>
-            <InputText
-              id="income-amount"
-              v-model="incomeForm.amount"
-              class="w-full"
-              placeholder="0,00"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="field">
-            <label for="income-frequency">Frequenz</label>
-            <Select
-              id="income-frequency"
-              v-model="incomeForm.frequency"
-              :options="frequencyOptions"
-              optionLabel="label"
-              optionValue="value"
-              class="w-full"
-            />
-          </div>
-          <div class="field">
-            <label for="income-start">Start</label>
-            <DatePicker
-              id="income-start"
-              v-model="incomeForm.startDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-          <div class="field">
-            <label for="income-end">Ende</label>
-            <DatePicker
-              id="income-end"
-              v-model="incomeForm.endDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-
-          <div class="form-actions form-actions--split">
-            <Button type="button" label="Zurücksetzen" severity="secondary" outlined @click="resetIncomeForm" />
-            <Button
-              type="submit"
-              :label="incomeEditId ? 'Einnahmenplan aktualisieren' : 'Einnahmenplan anlegen'"
-              icon="pi pi-check"
-              :loading="incomeLoading"
-            />
-          </div>
-        </form>
 
         <div class="item-list">
           <article v-for="plan in currentHousehold?.incomePlans ?? []" :key="plan.id" class="item-card">
@@ -882,66 +811,11 @@ watch(activeHouseholdId, async () => {
             <p class="panel-kicker">Fixkosten</p>
             <h2>Regelmäßige Ausgaben</h2>
           </div>
-          <span class="panel-badge">{{ currentHousehold?.fixedCosts.length ?? 0 }} Einträge</span>
+          <div class="section-toolbar">
+            <span class="panel-badge">{{ currentHousehold?.fixedCosts.length ?? 0 }} Einträge</span>
+            <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openFixedCostDialog" />
+          </div>
         </div>
-
-        <form class="plan-form" @submit.prevent="saveFixedCostPlan">
-          <div class="field field--wide">
-            <label for="fixed-name">Name</label>
-            <InputText id="fixed-name" v-model="fixedCostForm.name" class="w-full" placeholder="z. B. Miete" />
-          </div>
-          <div class="field">
-            <label for="fixed-amount">Betrag</label>
-            <InputText
-              id="fixed-amount"
-              v-model="fixedCostForm.amount"
-              class="w-full"
-              placeholder="0,00"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="field">
-            <label for="fixed-frequency">Frequenz</label>
-            <Select
-              id="fixed-frequency"
-              v-model="fixedCostForm.frequency"
-              :options="frequencyOptions"
-              optionLabel="label"
-              optionValue="value"
-              class="w-full"
-            />
-          </div>
-          <div class="field">
-            <label for="fixed-start">Start</label>
-            <DatePicker
-              id="fixed-start"
-              v-model="fixedCostForm.startDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-          <div class="field">
-            <label for="fixed-end">Ende</label>
-            <DatePicker
-              id="fixed-end"
-              v-model="fixedCostForm.endDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-
-          <div class="form-actions form-actions--split">
-            <Button type="button" label="Zurücksetzen" severity="secondary" outlined @click="resetFixedCostForm" />
-            <Button
-              type="submit"
-              :label="fixedCostEditId ? 'Fixkostenplan aktualisieren' : 'Fixkostenplan anlegen'"
-              icon="pi pi-check"
-              :loading="fixedCostLoading"
-            />
-          </div>
-        </form>
 
         <div class="item-list">
           <article v-for="plan in currentHousehold?.fixedCosts ?? []" :key="plan.id" class="item-card">
@@ -985,65 +859,11 @@ watch(activeHouseholdId, async () => {
             <p class="panel-kicker">Sparziele</p>
             <h2>Auf dem Weg zum Zielbetrag</h2>
           </div>
-          <span class="panel-badge">{{ currentHousehold?.savingsGoals.length ?? 0 }} Einträge</span>
+          <div class="section-toolbar">
+            <span class="panel-badge">{{ currentHousehold?.savingsGoals.length ?? 0 }} Einträge</span>
+            <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
+          </div>
         </div>
-
-        <form class="plan-form plan-form--goal" @submit.prevent="saveSavingsGoal">
-          <div class="field field--wide">
-            <label for="goal-name">Name</label>
-            <InputText id="goal-name" v-model="savingsForm.name" class="w-full" placeholder="z. B. Urlaub" />
-          </div>
-          <div class="field">
-            <label for="goal-target">Zielbetrag</label>
-            <InputText
-              id="goal-target"
-              v-model="savingsForm.targetAmount"
-              class="w-full"
-              placeholder="0,00"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="field">
-            <label for="goal-rate">Monatliche Rate</label>
-            <InputText
-              id="goal-rate"
-              v-model="savingsForm.monthlyRate"
-              class="w-full"
-              placeholder="0,00"
-              inputmode="decimal"
-            />
-          </div>
-          <div class="field">
-            <label for="goal-start">Start</label>
-            <DatePicker
-              id="goal-start"
-              v-model="savingsForm.startDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-          <div class="field">
-            <label for="goal-end">Ende</label>
-            <DatePicker
-              id="goal-end"
-              v-model="savingsForm.endDate"
-              class="w-full"
-              showIcon
-              dateFormat="dd.mm.yy"
-            />
-          </div>
-
-          <div class="form-actions form-actions--split form-actions--goal">
-            <Button type="button" label="Zurücksetzen" severity="secondary" outlined @click="resetSavingsForm" />
-            <Button
-              type="submit"
-              :label="savingsEditId ? 'Sparziel aktualisieren' : 'Sparziel anlegen'"
-              icon="pi pi-check"
-              :loading="savingsLoading"
-            />
-          </div>
-        </form>
 
         <div class="item-list item-list--goal">
           <article v-for="goal in currentHousehold?.savingsGoals ?? []" :key="goal.id" class="item-card">
@@ -1081,7 +901,269 @@ watch(activeHouseholdId, async () => {
         </div>
       </article>
     </div>
-  </div>
+
+    <Dialog
+      v-model:visible="budgetDialogOpen"
+      modal
+      :header="budgetEditId ? 'Budget bearbeiten' : 'Budget anlegen'"
+      :style="{ width: 'min(42rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeBudgetDialog"
+    >
+      <form class="plan-form" @submit.prevent="saveBudget">
+        <div class="field field--wide">
+          <label for="budget-name">Name</label>
+          <InputText
+            id="budget-name"
+            v-model="budgetForm.name"
+            class="w-full"
+            placeholder="z. B. Lebensmittel"
+          />
+        </div>
+        <div class="field">
+          <label for="budget-amount">Betrag</label>
+          <InputText
+            id="budget-amount"
+            v-model="budgetForm.amount"
+            class="w-full"
+            placeholder="0,00"
+            inputmode="decimal"
+          />
+        </div>
+        <div class="field">
+          <label for="budget-frequency">Frequenz</label>
+          <Select
+            id="budget-frequency"
+            v-model="budgetForm.frequency"
+            :options="frequencyOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-full"
+          />
+        </div>
+        <div class="field">
+          <label for="budget-valid-from">Gültig ab</label>
+          <DatePicker
+            id="budget-valid-from"
+            v-model="budgetForm.validFrom"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeBudgetDialog" />
+          <Button
+            type="submit"
+            :label="budgetEditId ? 'Budget aktualisieren' : 'Budget anlegen'"
+            icon="pi pi-check"
+            :loading="budgetLoading"
+          />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="incomeDialogOpen"
+      modal
+      :header="incomeEditId ? 'Einnahmenplan bearbeiten' : 'Einnahmenplan anlegen'"
+      :style="{ width: 'min(42rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeIncomeDialog"
+    >
+      <form class="plan-form" @submit.prevent="saveIncomePlan">
+        <div class="field field--wide">
+          <label for="income-name">Name</label>
+          <InputText id="income-name" v-model="incomeForm.name" class="w-full" placeholder="z. B. Gehalt" />
+        </div>
+        <div class="field">
+          <label for="income-amount">Betrag</label>
+          <InputText
+            id="income-amount"
+            v-model="incomeForm.amount"
+            class="w-full"
+            placeholder="0,00"
+            inputmode="decimal"
+          />
+        </div>
+        <div class="field">
+          <label for="income-frequency">Frequenz</label>
+          <Select
+            id="income-frequency"
+            v-model="incomeForm.frequency"
+            :options="frequencyOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-full"
+          />
+        </div>
+        <div class="field">
+          <label for="income-start">Start</label>
+          <DatePicker
+            id="income-start"
+            v-model="incomeForm.startDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+        <div class="field">
+          <label for="income-end">Ende</label>
+          <DatePicker
+            id="income-end"
+            v-model="incomeForm.endDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeIncomeDialog" />
+          <Button
+            type="submit"
+            :label="incomeEditId ? 'Einnahmenplan aktualisieren' : 'Einnahmenplan anlegen'"
+            icon="pi pi-check"
+            :loading="incomeLoading"
+          />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="fixedCostDialogOpen"
+      modal
+      :header="fixedCostEditId ? 'Fixkostenplan bearbeiten' : 'Fixkostenplan anlegen'"
+      :style="{ width: 'min(42rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeFixedCostDialog"
+    >
+      <form class="plan-form" @submit.prevent="saveFixedCostPlan">
+        <div class="field field--wide">
+          <label for="fixed-name">Name</label>
+          <InputText id="fixed-name" v-model="fixedCostForm.name" class="w-full" placeholder="z. B. Miete" />
+        </div>
+        <div class="field">
+          <label for="fixed-amount">Betrag</label>
+          <InputText
+            id="fixed-amount"
+            v-model="fixedCostForm.amount"
+            class="w-full"
+            placeholder="0,00"
+            inputmode="decimal"
+          />
+        </div>
+        <div class="field">
+          <label for="fixed-frequency">Frequenz</label>
+          <Select
+            id="fixed-frequency"
+            v-model="fixedCostForm.frequency"
+            :options="frequencyOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="w-full"
+          />
+        </div>
+        <div class="field">
+          <label for="fixed-start">Start</label>
+          <DatePicker
+            id="fixed-start"
+            v-model="fixedCostForm.startDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+        <div class="field">
+          <label for="fixed-end">Ende</label>
+          <DatePicker
+            id="fixed-end"
+            v-model="fixedCostForm.endDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeFixedCostDialog" />
+          <Button
+            type="submit"
+            :label="fixedCostEditId ? 'Fixkostenplan aktualisieren' : 'Fixkostenplan anlegen'"
+            icon="pi pi-check"
+            :loading="fixedCostLoading"
+          />
+        </div>
+      </form>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="savingsDialogOpen"
+      modal
+      :header="savingsEditId ? 'Sparziel bearbeiten' : 'Sparziel anlegen'"
+      :style="{ width: 'min(42rem, 94vw)' }"
+      :dismissableMask="true"
+      @hide="closeSavingsDialog"
+    >
+      <form class="plan-form plan-form--goal" @submit.prevent="saveSavingsGoal">
+        <div class="field field--wide">
+          <label for="goal-name">Name</label>
+          <InputText id="goal-name" v-model="savingsForm.name" class="w-full" placeholder="z. B. Urlaub" />
+        </div>
+        <div class="field">
+          <label for="goal-target">Zielbetrag</label>
+          <InputText
+            id="goal-target"
+            v-model="savingsForm.targetAmount"
+            class="w-full"
+            placeholder="0,00"
+            inputmode="decimal"
+          />
+        </div>
+        <div class="field">
+          <label for="goal-rate">Monatliche Rate</label>
+          <InputText
+            id="goal-rate"
+            v-model="savingsForm.monthlyRate"
+            class="w-full"
+            placeholder="0,00"
+            inputmode="decimal"
+          />
+        </div>
+        <div class="field">
+          <label for="goal-start">Start</label>
+          <DatePicker
+            id="goal-start"
+            v-model="savingsForm.startDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+        <div class="field">
+          <label for="goal-end">Ende</label>
+          <DatePicker
+            id="goal-end"
+            v-model="savingsForm.endDate"
+            class="w-full"
+            showIcon
+            dateFormat="dd.mm.yy"
+          />
+        </div>
+
+        <div class="dialog-actions">
+          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeSavingsDialog" />
+          <Button
+            type="submit"
+            :label="savingsEditId ? 'Sparziel aktualisieren' : 'Sparziel anlegen'"
+            icon="pi pi-check"
+            :loading="savingsLoading"
+          />
+        </div>
+      </form>
+    </Dialog>
+  </ListPageShell>
 </template>
 
 <style scoped>
@@ -1090,6 +1172,12 @@ watch(activeHouseholdId, async () => {
   flex-direction: column;
   gap: 1.4rem;
   animation: fadeIn 0.45s ease-out;
+}
+
+.planning-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
 }
 
 @keyframes fadeIn {
@@ -1122,6 +1210,18 @@ watch(activeHouseholdId, async () => {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(260px, 0.8fr);
   gap: 1.4rem;
+}
+
+.toolbar-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #cbd5e1;
+}
+
+.toolbar-note__label {
+  font-size: 0.85rem;
+  color: #94a3b8;
 }
 
 .eyebrow,
@@ -1232,6 +1332,14 @@ watch(activeHouseholdId, async () => {
 
 .plan-panel--wide {
   grid-column: 1 / -1;
+}
+
+.section-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .panel-head {
@@ -1351,6 +1459,14 @@ watch(activeHouseholdId, async () => {
 }
 
 .form-actions--split {
+  margin-top: 0.25rem;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  grid-column: 1 / -1;
   margin-top: 0.25rem;
 }
 
@@ -1547,6 +1663,10 @@ watch(activeHouseholdId, async () => {
 
   .plan-form--goal {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dialog-actions {
+    grid-template-columns: 1fr;
   }
 }
 
