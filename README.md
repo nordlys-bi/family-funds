@@ -30,7 +30,7 @@ Authentifizierung läuft über Clerk, lokal kann die App aber auch im Mock-Modus
 ## Voraussetzungen
 
 - Node.js 20 oder neuer
-- Docker und Docker Compose
+- Docker und Docker Compose für lokale Entwicklung
 - Optional: Clerk Account für den echten Auth-Modus
 
 ## Schnellstart
@@ -58,6 +58,7 @@ cp .env.example .env
 Im lokalen Mock-Modus reicht in der Regel:
 
 - `DATABASE_URL`
+- `DIRECT_URL`
 - keine Clerk-Keys
 
 Wenn du Clerk nutzen willst, setze zusätzlich:
@@ -65,6 +66,11 @@ Wenn du Clerk nutzen willst, setze zusätzlich:
 - `NUXT_PUBLIC_CLERK_PUBLISHABLE_KEY`
 - `NUXT_CLERK_SECRET_KEY`
 - `NUXT_CLERK_WEBHOOK_SIGNING_SECRET`
+
+Für Supabase in Produktion nutzt du ebenfalls beide Datenbank-URLs:
+
+- `DATABASE_URL` als Laufzeit-Connection, idealerweise über den Supabase Pooler
+- `DIRECT_URL` als direkte Verbindung für Prisma-Migrationen
 
 ### 4. Datenbank vorbereiten
 
@@ -81,6 +87,24 @@ npm run dev
 ```
 
 Die App läuft dann auf `http://localhost:3000`.
+
+## Deployment
+
+Eine ausführliche Schritt-für-Schritt-Liste findest du in [DEPLOYMENT_CHECKLIST.md](/Users/jan/Code/family-funds/DEPLOYMENT_CHECKLIST.md).
+
+### Vercel
+
+- Repository mit Vercel verbinden
+- Build Command: `npm run build`
+- Install Command: `npm install`
+- In Vercel die Environment Variables für `DATABASE_URL`, `DIRECT_URL` und Clerk setzen
+
+### Supabase
+
+- Neues Supabase-Projekt anlegen
+- `DATABASE_URL` und `DIRECT_URL` aus Supabase übernehmen
+- Prisma-Migrationen mit `npx prisma migrate deploy` ausführen
+- Seed-Daten nur bei Bedarf mit `npx prisma db seed` einspielen
 
 ## Auth-Modi
 
@@ -101,6 +125,10 @@ Wenn die Clerk-Keys gesetzt sind, verwendet die App Clerk für Authentifizierung
 - Neue Nutzer bekommen beim ersten Login automatisch einen Start-Haushalt
 
 Für lokale Webhooks brauchst du einen Tunnel, zum Beispiel mit `cloudflared` oder `ngrok`.
+
+In Produktion zeigt der Clerk Webhook auf:
+
+`https://<deine-vercel-domain>/api/webhooks/clerk`
 
 ## Wichtige Scripts
 
@@ -147,4 +175,4 @@ Als Nächstes stehen typischerweise weitere Auswertungen und Feinschliff im Fron
 - `.env` wird nicht ins Repository committed.
 - `.env.example` ist die Vorlage für neue Umgebungen.
 - `node_modules/`, `.nuxt/` und `.output/` sind in der `.gitignore` ausgeschlossen.
-
+- Prisma benötigt sowohl `DATABASE_URL` als auch `DIRECT_URL`.
