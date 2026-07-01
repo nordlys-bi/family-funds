@@ -4,6 +4,13 @@ Family Funds ist eine Haushalts- und Finanzverwaltungs-App für mehrere Personen
 Die Anwendung unterstützt geplante Einnahmen, Fixkosten, Budgets, Sparziele und echte Buchungen.  
 Authentifizierung läuft über Clerk, lokal kann die App aber auch im Mock-Modus ohne Clerk verwendet werden.
 
+## Dokumentation
+
+- **Domain-Glossar und Konzept-Modell** (Haushalt, Buchungs-Logik, Rollen, Onboarding): [CONTEXT.md](./CONTEXT.md)
+- **Architektur-Entscheidungen (ADRs)**: [docs/adr/](./docs/adr/)
+- **Engineering-Skill-Konfiguration** (Issue-Tracker, Triage, Domain-Doc-Konsumenten): [AGENTS.md](./AGENTS.md) und [docs/agents/](./docs/agents/)
+- **Deployment-Checkliste** (Vercel + Supabase + Clerk): [DEPLOYMENT_CHECKLIST.md](./DEPLOYMENT_CHECKLIST.md)
+
 ## Funktionen
 
 - Mehrere Haushalte pro Benutzer
