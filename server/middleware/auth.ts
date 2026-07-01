@@ -1,8 +1,16 @@
 import { defineEventHandler, getCookie } from 'h3'
-import { clerkClient, clerkMiddleware } from '@clerk/nuxt/server'
 import { prisma } from '../utils/prisma'
 import { syncClerkUser } from '../utils/clerk-sync'
 
+/**
+ * Auth middleware — runs after clerk.ts. Branches on runtime config:
+ *   - 'clerk': sync the Clerk user into our local DB on demand.
+ *   - 'mock' : trust the session_user_id cookie.
+ *
+ * `@clerk/nuxt/server` is dynamically imported inside the Clerk branch only.
+ * Static imports of the package would try to resolve its broken Node-ESM
+ * entry even in mock mode (see middleware/clerk.ts for the long explanation).
+ */
 export default defineEventHandler(async (event) => {
   // Skip static assets
   if (event.node.req.url?.startsWith('/_nuxt') || event.node.req.url?.startsWith('/__nuxt')) {
@@ -19,6 +27,7 @@ export default defineEventHandler(async (event) => {
   const authMode = config.public.authMode
 
   if (authMode === 'clerk') {
+    const { clerkClient, clerkMiddleware } = await import('@clerk/nuxt/server')
     try {
       // Fallback: if the Clerk middleware has not run yet for this request,
       // run it here so event.context.auth() is still available.
