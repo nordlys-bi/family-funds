@@ -95,8 +95,8 @@ Dev-Server läuft fehlerfrei auf `http://localhost:3001/`.
 
 ---
 
-## Nächster Schritt
+## Nächster Schritt (historisch)
 
 > **Bitte öffne `http://localhost:3001/` im Browser**, um Login, Dashboard und Haushalts-Switcher visuell zu überprüfen.
 
-Danach geht es weiter mit **Meilenstein 2: Haushalts- & Mitgliederverwaltung**.
+**Status-Update (Stand: jetzt):** M2–M5 sind inzwischen ebenfalls umgesetzt. Aktuelle offene Punkte und Roadmap siehe `.agent/task.md` und `.agent/implementation_plan.md`.

@@ -1,125 +1,104 @@
 # Projekt-Roadmap & Implementierungsplan
 
-Das Setup mit Nuxt 4, PrimeVue (Aura), Docker-Compose (PostgreSQL) und Prisma ORM läuft erfolgreich. Die Datenbank-Migrationen sind auf dem aktuellen Stand.
+Stand: M1–M5 sind im Code umgesetzt, M6 läuft teilweise (Overview-Daten werden im Backend berechnet, das Dashboard-Frontend zeigt sie aber noch nicht an).
 
-Da die Anwendung wichtige Features wie **mehrere Haushalte pro Benutzer**, **mehrere Benutzer pro Haushalt** und **Rollenberechtigungen (Owner/Member)** unterstützt, schlagen wir vor, das Projekt in folgenden aufeinander aufbauenden Meilensteinen zu entwickeln.
-
----
-
-## Vorgeschlagene Meilensteine
+## Meilensteine
 
 ```mermaid
 graph TD
-    M1["Meilenstein 1: Auth & Haushalts-Kontext ✅"] --> M2[Meilenstein 2: Clerk OIDC-Integration]
-    M2 --> M3[Meilenstein 3: Haushalts- & Mitgliederverwaltung]
-    M3 --> M4[Meilenstein 4: Budgetierung & Sparpläne]
-    M4 --> M5[Meilenstein 5: Einnahmen- & Ausgaben-Erfassung]
-    M5 --> M6[Meilenstein 6: Dashboard & Analytics]
+    M1["M1: Auth & Haushalts-Kontext"] --> M2["M2: Clerk OIDC-Integration"]
+    M2 --> M3["M3: Haushalts- & Mitgliederverwaltung"]
+    M3 --> M4["M4: Budgetierung & Sparpläne"]
+    M4 --> M5["M5: Einnahmen- & Ausgaben-Erfassung"]
+    M5 --> M6["M6: Dashboard & Analytics"]
+    M6 --> M7["M7: Sparziel-Ist-Erfassung"]
+    M7 --> M8["M8: Tests & Quality"]
 ```
 
-### Meilenstein 1: Auth- & Haushalts-Kontext ✅
-* **Status**: Abgeschlossen
-* **Ergebnis**: Mock-Auth, Sidebar-Layout, Haushalts-Switcher, Seed-Daten
+### M1 — Auth & Haushalts-Kontext ✅
+Mock-Authentifizierung per Cookie, Sidebar-Layout, Haushalts-Switcher, Seed-Daten.
+Siehe `walkthrough.md` für die Details.
 
-### Meilenstein 2: Clerk OIDC-Integration 🔜
-* **Ziel**: Echte Authentifizierung über Clerk einbinden und den Mock-Modus als Fallback beibehalten.
-* **Details**:
-  * Installation von `vue-clerk` (offizielles Vue/Nuxt SDK für Clerk).
-  * **Dual-Mode Auth-Middleware**: Wenn Clerk-Keys in `.env` gesetzt sind → Clerk-JWT-Validierung. Wenn leer → weiterhin Mock-Modus.
-  * **Clerk Webhook** (`POST /api/webhooks/clerk`): Empfängt `user.created` / `user.updated` Events und synchronisiert `User`-Einträge in der lokalen DB (`oidcSubject` = Clerk User ID).
-  * **Login-Seite**: Im Clerk-Modus wird `<SignIn />` (Clerk-Komponente) gerendert statt der Mock-Auswahl.
-  * **useAuth-Composable**: Wird um Clerk-Session-Erkennung erweitert (Clerk liefert JWT → Server validiert → User-Context wird gesetzt).
-  * **Bestehender Mock-Modus bleibt erhalten** – kein Breaking Change für die lokale Entwicklung ohne Clerk-Keys.
+### M2 — Clerk OIDC-Integration ✅
+Dual-Mode-Auth: läuft mit Clerk wenn Keys gesetzt sind, sonst weiter im Mock-Modus.
+Wichtige Dateien:
+- `nuxt.config.ts` — bedingtes Laden von `@clerk/nuxt`
+- `server/middleware/auth.ts` — Modus-Switch (Clerk JWT vs. Mock-Cookie)
+- `server/middleware/clerk.ts` — `clerkMiddleware()` (muss vor `auth.ts` laufen)
+- `server/api/webhooks/clerk.post.ts` — Svix-verifizierter Webhook für User-Sync
+- `server/utils/clerk-sync.ts` — Upsert + Invitations annehmen + Default-Haushalt anlegen
+- `app/composables/useAppAuth.ts` — `@clerk/vue` Integration
 
-### Meilenstein 3: Haushalts- & Mitgliederverwaltung
-* **Ziel**: Verwalten von Haushalten und Einladen/Rollenvergabe von Mitgliedern.
-* **Details**:
-  * Dialog/Formular zur Erstellung neuer Haushalte.
-  * Mitglieder-Dashboard: Liste der Mitglieder mit Rollen (`OWNER`, `MEMBER`).
-  * Möglichkeit, Einladungen/Mitgliedschaften zu verwalten.
+### M3 — Haushalts- & Mitgliederverwaltung ✅
+Endpoints unter `server/api/households/`:
+- `households.post.ts` — Haushalt erstellen
+- `households/[householdId].patch.ts` — Umbenennen
+- `households/[householdId]/members.post.ts` — Mitglied hinzufügen
+- `households/[householdId]/members/[membershipId].delete.ts` — entfernen
+- `households/[householdId]/invitations/[invitationId].delete.ts` — Einladung widerrufen
+- Frontend: `app/pages/households.vue`
 
-### Meilenstein 4: Budgetierung & Sparpläne (Planungswerte)
-* **Ziel**: Anlegen von geplanten Werten (Budgets, Sparziele, geplante Einnahmen und Fixkosten).
-* **Details**:
-  * CRUD für geplante Einnahmen (`IncomePlan`) und Fixkosten (`FixedCostPlan`) mit Frequenz (monatlich, jährlich etc.).
-  * Erstellung von Budgets für Zeiträume (`Budget`).
-  * Sparziele-Verwaltung (`SavingsGoal`) mit monatlicher Zielrate.
+### M4 — Budgetierung & Sparpläne ✅
+Ein einziger Endpoint pro Haushalt mit `kind`-Dispatch:
+- `POST/PATCH /api/households/:id/planning` mit `{ kind: 'budget' | 'incomePlan' | 'fixedCostPlan' | 'savingsGoal' }`
+- `DELETE /api/households/:id/planning`
+- Frontend: `app/pages/budgeting.vue`
 
-### Meilenstein 5: Transaktionen (Ist-Werte & Anrechnung)
-* **Ziel**: Erfassen von tatsächlichen Ausgaben und Einnahmen und deren Zuweisung.
-* **Details**:
-  * Transaktionsbuch (Tabelle mit Filtern und Sortierung).
-  * Formulare für neue Ausgaben (`ExpenseTransaction`) und Einnahmen (`IncomeTransaction`).
-  * Zuweisung einer Ausgabe zu einem Budget (z.B. "Lebensmittel" Budget für Juni) oder Anrechnung auf ein Sparziel.
+Wichtige Helpers in `server/utils/planning.ts`:
+- `parseMoneyToCents` — DE/EU/US-Formate (`1.234,56`, `1,234.56`, `1234,56`)
+- `assertPeriodStart` — verlangt Periodenstart (1. des Monats, Montag bei WEEKLY, etc.)
+- `isPeriodStart` / `assertPlanningKind` / `assertFrequency`
 
-### Meilenstein 6: Dashboard & Visualisierungen (Rich Aesthetics)
-* **Ziel**: Interaktive Monatsübersicht und Finanz-Analytics.
-* **Details**:
-  * Fortschrittsbalken für Budgets und Sparziele.
-  * Einnahmen- vs. Ausgaben-Diagramme (mit PrimeVue Charts / Chart.js).
-  * Cashflow-Vorschau basierend auf Plänen und Ist-Werten.
+### M5 — Einnahmen- & Ausgaben-Erfassung ✅
+- `GET/POST/PATCH/DELETE /api/households/:id/transactions`
+- Frontend: `app/pages/transactions.vue`
+- Helper: `server/utils/transactions.ts` (`assertTransactionKind`)
 
----
+### M6 — Dashboard & Analytics ⚠️ Teilweise
+- Backend fertig: `GET /api/households/current` liefert `household` + `budgetOverview` (berechnet via `server/utils/budget-evaluation.ts`)
+- Frontend Lücke: `app/pages/index.vue` zeigt noch hardcoded Mock-Werte für Einnahmen/Fixkosten/Freies Budget/Sparziele
+- **Nächster Schritt:** `index.vue` an `current.get.ts` hängen, geplante Einnahmen/Fixkosten aus `currentHousehold` ziehen, Budget-Progress-Bars rendern
 
-## Detailplan: Meilenstein 2 (Clerk OIDC-Integration)
+### M7 — Sparziel-Ist-Erfassung 🔜
+Schema hat `SavingsGoalExecution` für monatliche Ist-Sparrate, aber keine UI. Ohne UI kein realistischer Progress.
 
-### Open Questions
+### M8 — Tests & Quality 🔜 (in Arbeit)
+Vitest-Suite für `server/utils/*`. Deckt aktuell:
+- Money-Parser (DE/EU/US-Formate, Edge-Cases)
+- Date-Parser
+- Period-Validation (WEEKLY/MONTHLY/QUARTERLY/YEARLY/ONCE)
+- `Budget-Overview`-Berechnung (alle Frequenzen, Version-Overlaps, unassigned-Bucket)
+- Auth-Mode-Switch
+- Clerk User-Sync (mocked Prisma)
+- Transaction-Kind-Validation
 
-> [!IMPORTANT]
-> 1. **Clerk-Account**: Hast du bereits ein Clerk-Projekt erstellt und die API-Keys (Publishable Key + Secret Key) verfügbar?
-> 2. **User-Sync-Strategie**: Soll beim ersten Clerk-Login automatisch ein neuer, leerer Haushalt für den User erstellt werden? Oder muss der User nach dem Login zuerst einem bestehenden Haushalt beitreten?
+Lokal ausführen:
+```bash
+npm install
+npm test           # watch mode
+npm run test:run   # einmaliger Lauf (CI)
+npm run test:coverage
+```
 
-### Proposed Changes
+## Architekturentscheidungen
 
-#### Clerk SDK & Konfiguration
+### Dual-Mode Auth
+`nuxt.config.ts` lädt `@clerk/nuxt` nur wenn beide Keys gesetzt sind. Wechsel zwischen Modi erfordert einen neuen Build — das ist Absicht (verhindert versehentliches Vermischen). `useAppAuth` und das `auth.ts`-Middleware prüfen den Modus zur Laufzeit.
 
-##### [MODIFY] [package.json](file:///Users/jan/Code/family-funds/package.json)
-* `vue-clerk` als Dependency hinzufügen.
+### Versionierte Budgets (`Budget` ↔ `BudgetVersion`)
+Budgets haben eine Historie von Versionen mit `validFrom`. Beim Speichern wird *nie* ein bestehendes Budget mutiert — wenn sich der Betrag ändert, wird eine neue Version angelegt. Das macht historische Auswertungen einfach.
 
-##### [MODIFY] [nuxt.config.ts](file:///Users/jan/Code/family-funds/nuxt.config.ts)
-* Clerk-Runtime-Config registrieren (`runtimeConfig.public.clerkPublishableKey`, `runtimeConfig.clerkSecretKey`).
+### Geplant vs. Ist (getrennte Tabellen)
+- Geplant: `IncomePlan`, `FixedCostPlan`, `Budget`, `SavingsGoal`
+- Ist: `ExpenseTransaction`, `IncomeTransaction`, `SavingsGoalExecution`
+Diese Trennung ist explizit gewollt — Forecasts und retrospective Auswertungen brauchen beide Perspektiven unabhängig voneinander.
 
-##### [MODIFY] [.env.example](file:///Users/jan/Code/family-funds/.env.example)
-* Dokumentation der benötigten Clerk-Variablen.
+### Cent-basierte Geldwerte
+Alle Geldbeträge in der DB sind `Int` (Cents). Keine Floats. Umrechnung passiert ausschließlich an Display-Grenzen.
 
----
+## Bekannte Quirks / offene Punkte
 
-#### Dual-Mode Auth-Middleware
-
-##### [MODIFY] [auth.ts](file:///Users/jan/Code/family-funds/server/middleware/auth.ts)
-* **Clerk-Modus** (Keys vorhanden): JWT aus `Authorization`-Header validieren, `oidcSubject` extrahieren, User in DB laden.
-* **Mock-Modus** (Keys leer): Bestehendes Cookie-Verhalten beibehalten.
-
----
-
-#### Clerk Webhook für User-Synchronisation
-
-##### [NEW] clerk-webhook.post.ts
-* `POST /api/webhooks/clerk` – empfängt Clerk-Events (`user.created`, `user.updated`).
-* Erstellt oder aktualisiert den `User`-Eintrag in der DB (`oidcSubject` = Clerk User ID, `email` und `displayName` aus Webhook-Payload).
-* Signaturverifikation via `svix` (Clerk nutzt Svix für Webhook-Signing).
-
----
-
-#### Login-Seite (Dual Mode)
-
-##### [MODIFY] [login.vue](file:///Users/jan/Code/family-funds/app/pages/login.vue)
-* **Clerk-Modus**: Zeigt die Clerk `<SignIn />`-Komponente.
-* **Mock-Modus**: Zeigt weiterhin die Test-User-Auswahl.
-* Modus-Erkennung über `useRuntimeConfig().public.clerkPublishableKey`.
-
-##### [MODIFY] [useAuth.ts](file:///Users/jan/Code/family-funds/app/composables/useAuth.ts)
-* Erweitern um Clerk-Session-Erkennung via `vue-clerk`.
-* Im Clerk-Modus: Token automatisch an API-Requests anhängen.
-
----
-
-### Verifikationsplan
-
-#### Automatisierte Tests
-* Dev-Server starten ohne Clerk-Keys → Mock-Login muss weiterhin funktionieren.
-* Dev-Server starten mit Clerk-Keys → Clerk `<SignIn />` wird angezeigt.
-
-#### Manuelle Verifikation
-* Clerk-Login im Browser durchführen und prüfen, ob User in der DB angelegt wird.
-* Webhook-Endpoint mit Clerk-Dashboard-Testdaten anstoßen.
+- **`buildBudgetOverview` zählt nur Perioden, die im aktuellen Monat starten.** Eine QUARTERLY-Version mit `validFrom=Apr 1` liefert für Juni `0 planned`, obwohl Q2 (April–Juni) Juni überdeckt. Designentscheidung ("Betrag wird am Periodenstart allokiert"), aber nicht offensichtlich. Falls du eine "Verteilung über den Monat"-Logik willst, müsste `countPeriodsInMonth` umgeschrieben werden.
+- **`dashboard` zeigt Mock-Werte.** Siehe M6 oben.
+- **Sparziel-Executions ohne UI.** Siehe M7 oben.
+- **Kein zentraler Multi-Household-Aggregations-Endpoint.** Aktuell lädt das Frontend pro Haushalt separat.
