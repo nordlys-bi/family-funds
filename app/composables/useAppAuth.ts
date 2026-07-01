@@ -20,6 +20,17 @@ export const useAppAuth = () => {
       return
     }
 
+    // Im SSR: User direkt aus dem h3-Event-Context lesen. `$fetch` leitet
+    // Cookies während SSR nicht automatisch weiter — selbst der gleiche
+    // Server bekommt dann keinen Cookie, der Session-Endpoint antwortet
+    // mit { user: null }, und die Route-Middleware redirected zu /login.
+    if (import.meta.server) {
+      const event = useRequestEvent()
+      user.value = event?.context.user ? (event.context.user as UserSession) : null
+      return
+    }
+
+    // Auf dem Client: API-Call — der Browser sendet das Cookie automatisch.
     loading.value = true
     try {
       const data = await $fetch<{ user: UserSession | null }>('/api/auth/session')
