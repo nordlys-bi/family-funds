@@ -59,7 +59,7 @@ export function getMonthWindow(baseDate = new Date()) {
   return { monthStart, monthEnd }
 }
 
-function startOfPeriod(date: Date, frequency: Frequency) {
+export function startOfPeriod(date: Date, frequency: Frequency) {
   const value = startOfDay(date)
 
   switch (frequency) {
@@ -87,7 +87,7 @@ function startOfPeriod(date: Date, frequency: Frequency) {
   return value
 }
 
-function addPeriod(date: Date, frequency: Frequency) {
+export function addPeriod(date: Date, frequency: Frequency) {
   const value = startOfDay(date)
 
   switch (frequency) {
