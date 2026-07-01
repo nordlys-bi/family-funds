@@ -1,6 +1,7 @@
 import { createError, defineEventHandler } from 'h3'
 import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
+import { assertCanRemoveOrDemoteOwner } from '../../../../utils/household-ownership'
 
 export default defineEventHandler(async (event) => {
   const householdId = event.context.params?.householdId
@@ -33,21 +34,10 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  if (membership.role === 'OWNER') {
-    const ownerCount = await prisma.householdMember.count({
-      where: {
-        householdId,
-        role: 'OWNER',
-      },
-    })
-
-    if (ownerCount <= 1) {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'You cannot remove the last owner from a household.',
-      })
-    }
-  }
+  // Enforce CONTEXT.md: a household must always have at least one OWNER.
+  // Throws 400 if deleting this membership would leave the household
+  // without any OWNER. No-op for non-OWNER memberships.
+  await assertCanRemoveOrDemoteOwner(prisma, householdId, membershipId)
 
   await prisma.householdMember.delete({
     where: {
