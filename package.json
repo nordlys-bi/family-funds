@@ -7,7 +7,13 @@
     "dev": "TMPDIR=/tmp nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "pretest": "node scripts/prisma-pretest.mjs",
+    "pretest:run": "node scripts/prisma-pretest.mjs",
+    "pretest:coverage": "node scripts/prisma-pretest.mjs",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@clerk/nuxt": "^2.5.3",
@@ -22,8 +28,10 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "dotenv": "^17.2.0",
     "prisma": "^6.19.3",
-    "tsx": "^4.22.4"
+    "tsx": "^4.22.4",
+    "vitest": "^2.1.9"
   }
 }

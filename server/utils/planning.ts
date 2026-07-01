@@ -49,6 +49,12 @@ export function parseMoneyToCents(value: unknown, fieldName: string) {
   }
 
   const normalized = value.trim().replace(/\s+/g, '')
+  if (!normalized) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${fieldName} is required.`,
+    })
+  }
 
   let parsedAmount: number
 
