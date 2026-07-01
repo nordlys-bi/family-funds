@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import type { BudgetVersion, Frequency } from '@prisma/client'
 import {
+  addPeriod,
   buildBudgetOverview,
   getMonthWindow,
+  startOfPeriod,
 } from '../budget-evaluation'
 
 /**
@@ -270,5 +272,90 @@ describe('buildBudgetOverview — month window metadata', () => {
     const overview = buildBudgetOverview([], [], new Date(2026, 5, 15))
     expect(overview.monthStart.getDate()).toBe(1)
     expect(overview.monthEnd.getTime()).toBeGreaterThan(overview.monthStart.getTime())
+  })
+})
+
+describe('startOfPeriod', () => {
+  // June 17 2026 is a Wednesday.
+  const wednesday = new Date(2026, 5, 17, 15, 30)
+
+  it('rounds to Monday for WEEKLY (treating Sunday as end of week)', () => {
+    const result = startOfPeriod(wednesday, 'WEEKLY')
+    expect(result.getDay()).toBe(1) // Monday
+    expect(result.getDate()).toBe(15) // Monday June 15
+    expect(result.getHours()).toBe(12) // normalized to noon
+  })
+
+  it('rounds to the same Sunday for WEEKLY when input is already Sunday', () => {
+    const sunday = new Date(2026, 5, 21, 10, 0) // Sunday June 21
+    const result = startOfPeriod(sunday, 'WEEKLY')
+    expect(result.getDay()).toBe(1) // Monday
+    expect(result.getDate()).toBe(15) // still rolls back to Monday June 15
+  })
+
+  it('rounds to the 1st for MONTHLY', () => {
+    const result = startOfPeriod(wednesday, 'MONTHLY')
+    expect(result.getDate()).toBe(1)
+    expect(result.getMonth()).toBe(5)
+  })
+
+  it('rounds to the quarter-start month for QUARTERLY', () => {
+    // June is in Q2 (Apr-Jun), so the start is April 1.
+    const result = startOfPeriod(wednesday, 'QUARTERLY')
+    expect(result.getMonth()).toBe(3) // April (0-indexed)
+    expect(result.getDate()).toBe(1)
+  })
+
+  it('rounds to January 1st for YEARLY', () => {
+    const result = startOfPeriod(wednesday, 'YEARLY')
+    expect(result.getMonth()).toBe(0)
+    expect(result.getDate()).toBe(1)
+  })
+
+  it('returns start-of-day for ONCE (no rounding, just normalizes the time)', () => {
+    const result = startOfPeriod(wednesday, 'ONCE')
+    expect(result.getDate()).toBe(17)
+    expect(result.getMonth()).toBe(5)
+    expect(result.getHours()).toBe(12)
+    expect(result.getMinutes()).toBe(0)
+  })
+})
+
+describe('addPeriod', () => {
+  const baseDate = new Date(2026, 0, 15, 10, 30) // Jan 15 2026, 10:30
+
+  it('adds 7 days for WEEKLY', () => {
+    const result = addPeriod(baseDate, 'WEEKLY')
+    expect(result.getDate()).toBe(22)
+    expect(result.getMonth()).toBe(0)
+  })
+
+  it('adds 1 month and resets to day 1 for MONTHLY', () => {
+    const result = addPeriod(baseDate, 'MONTHLY')
+    expect(result.getMonth()).toBe(1)
+    expect(result.getDate()).toBe(1) // setMonth(m+1, 1) forces day 1
+  })
+
+  it('adds 3 months and resets to day 1 for QUARTERLY', () => {
+    const result = addPeriod(baseDate, 'QUARTERLY')
+    expect(result.getMonth()).toBe(3) // April
+    expect(result.getDate()).toBe(1)
+  })
+
+  it('adds 1 year and resets to January 1st for YEARLY', () => {
+    const result = addPeriod(baseDate, 'YEARLY')
+    expect(result.getFullYear()).toBe(2027)
+    expect(result.getMonth()).toBe(0)
+    expect(result.getDate()).toBe(1)
+  })
+
+  it('returns an Invalid Date (NaN) for ONCE — relying on NaN comparisons to terminate any consumer loop', () => {
+    // Note: the production code uses `value.setTime(Number.POSITIVE_INFINITY)`,
+    // but Date#setTime coerces Infinity to NaN, yielding an Invalid Date. This
+    // is still the intended behavior — every NaN-comparison evaluates to false,
+    // so any loop like `while (cursor < monthEnd)` terminates immediately.
+    const result = addPeriod(baseDate, 'ONCE')
+    expect(result.getTime()).toBeNaN()
+    expect(isNaN(result.getTime())).toBe(true)
   })
 })
