@@ -72,23 +72,13 @@ onMounted(async () => {
       <div class="circle c2"></div>
     </div>
 
-    <Card v-if="isClerkMode" class="login-card clerk-card p-6">
-      <template #title>
-        <div class="login-header">
-          <div class="logo-container">
-            <i class="pi pi-shield logo-icon"></i>
-          </div>
-          <h1 class="brand-title">Family Funds</h1>
-          <p class="brand-subtitle">Login mit Clerk</p>
-        </div>
-      </template>
-
-      <template #content>
-        <div class="clerk-signin-shell">
-          <SignIn routing="path" path="/login" :fallback-redirect-url="'/'" />
-        </div>
-      </template>
-    </Card>
+    <!--
+      Lazy-loaded so the chunk (and its <SignIn> template compilation) is only
+      fetched when Clerk mode is actually active. In mock mode this never renders,
+      and the `<SignIn>` component — which is auto-imported from @clerk/nuxt and
+      doesn't exist when the module isn't loaded — is never referenced.
+    -->
+    <LazyClerkLoginCard v-if="isClerkMode" />
 
     <Card v-else class="login-card p-6">
       <template #title>
