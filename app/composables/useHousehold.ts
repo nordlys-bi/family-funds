@@ -22,7 +22,14 @@ export const useHousehold = () => {
   const fetchHouseholds = async () => {
     loading.value = true
     try {
-      const data = await $fetch<{ households: HouseholdInfo[] }>('/api/households')
+      // Im SSR leitet `$fetch` keine Cookies weiter — wir müssen den
+      // Cookie-Header explizit aus dem aktuellen Request übernehmen,
+      // sonst sieht `/api/households` den User nicht und antwortet mit
+      // { households: [] }.
+      const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+      const data = await $fetch<{ households: HouseholdInfo[] }>('/api/households', {
+        headers,
+      })
       households.value = data.households
 
       if (households.value.length > 0) {
