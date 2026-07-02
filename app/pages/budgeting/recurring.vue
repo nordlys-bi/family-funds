@@ -5,7 +5,17 @@ definePageMeta({ layout: 'default' })
 
 type Frequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
 
-type PlanItem = {
+type IncomePlanItem = {
+  id: string
+  name: string
+  amount: number
+  frequency: Frequency
+  startDate: string
+  endDate: string | null
+  createdAt: string
+}
+
+type FixedCostPlanItem = {
   id: string
   name: string
   amount: number
@@ -19,8 +29,8 @@ type PlanningHousehold = {
   id: string
   name: string
   currency: string
-  incomePlans: PlanItem[]
-  fixedCosts: PlanItem[]
+  incomePlans: IncomePlanItem[]
+  fixedCosts: FixedCostPlanItem[]
 }
 
 type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
@@ -62,6 +72,22 @@ const moneyFormatter = computed(
   () => new Intl.NumberFormat('de-DE', { style: 'currency', currency: currencyCode.value }),
 )
 
+const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
+const formatDate = (value: string | null) => {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
+}
+
+function formatDateInput(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
+}
+
+function parseDateInput(value: string | null | undefined) {
+  if (!value) return null
+  const date = new Date(`${value}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 const frequencyLabel = (frequency: Frequency) => {
   switch (frequency) {
     case 'WEEKLY': return 'Wöchentlich'
@@ -89,22 +115,6 @@ const frequencyOptions = [
   { label: 'Jährlich', value: 'YEARLY' as Frequency },
   { label: 'Einmalig', value: 'ONCE' as Frequency },
 ]
-
-const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
-const formatDate = (value: string | null) => {
-  if (!value) return 'Offen'
-  return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
-
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
-function parseDateInput(value: string | null | undefined) {
-  if (!value) return null
-  const date = new Date(`${value}T12:00:00`)
-  return Number.isNaN(date.getTime()) ? null : date
-}
 
 const loadPlanning = async () => {
   loading.value = true
@@ -137,7 +147,7 @@ const resetFixedCostForm = () => {
   fixedCostEditId.value = null
 }
 
-const editIncomePlan = (plan: PlanItem) => {
+const editIncomePlan = (plan: IncomePlanItem) => {
   incomeEditId.value = plan.id
   incomeForm.value = {
     name: plan.name,
@@ -149,7 +159,7 @@ const editIncomePlan = (plan: PlanItem) => {
   incomeDialogOpen.value = true
 }
 
-const editFixedCostPlan = (plan: PlanItem) => {
+const editFixedCostPlan = (plan: FixedCostPlanItem) => {
   fixedCostEditId.value = plan.id
   fixedCostForm.value = {
     name: plan.name,
@@ -172,22 +182,21 @@ const saveIncomePlan = async () => {
   notice.value = null
   try {
     const isEdit = Boolean(incomeEditId.value)
-    const payload = {
-      kind: 'incomePlan',
-      ...(incomeEditId.value ? { id: incomeEditId.value } : {}),
-      name: incomeForm.value.name,
-      amount: incomeForm.value.amount,
-      frequency: incomeForm.value.frequency,
-      startDate: incomeForm.value.startDate ? formatDateInput(incomeForm.value.startDate) : undefined,
-      endDate: incomeForm.value.endDate ? formatDateInput(incomeForm.value.endDate) : null,
-    }
     await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
-      method: incomeEditId.value ? 'PATCH' : 'POST',
-      body: payload,
+      method: isEdit ? 'PATCH' : 'POST',
+      body: {
+        kind: 'incomePlan',
+        ...(isEdit ? { id: incomeEditId.value } : {}),
+        name: incomeForm.value.name,
+        amount: incomeForm.value.amount,
+        frequency: incomeForm.value.frequency,
+        startDate: incomeForm.value.startDate ? formatDateInput(incomeForm.value.startDate) : undefined,
+        endDate: incomeForm.value.endDate ? formatDateInput(incomeForm.value.endDate) : null,
+      },
     })
     await loadPlanning()
     closeIncomeDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Einnahmenplan wurde aktualisiert.' : 'Einnahmenplan wurde angelegt.' }
+    notice.value = { severity: 'success', text: isEdit ? 'Einnahmenplan aktualisiert.' : 'Einnahmenplan angelegt.' }
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Einnahmenplan konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
   } finally {
@@ -201,22 +210,21 @@ const saveFixedCostPlan = async () => {
   notice.value = null
   try {
     const isEdit = Boolean(fixedCostEditId.value)
-    const payload = {
-      kind: 'fixedCostPlan',
-      ...(fixedCostEditId.value ? { id: fixedCostEditId.value } : {}),
-      name: fixedCostForm.value.name,
-      amount: fixedCostForm.value.amount,
-      frequency: fixedCostForm.value.frequency,
-      startDate: fixedCostForm.value.startDate ? formatDateInput(fixedCostForm.value.startDate) : undefined,
-      endDate: fixedCostForm.value.endDate ? formatDateInput(fixedCostForm.value.endDate) : null,
-    }
     await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
-      method: fixedCostEditId.value ? 'PATCH' : 'POST',
-      body: payload,
+      method: isEdit ? 'PATCH' : 'POST',
+      body: {
+        kind: 'fixedCostPlan',
+        ...(isEdit ? { id: fixedCostEditId.value } : {}),
+        name: fixedCostForm.value.name,
+        amount: fixedCostForm.value.amount,
+        frequency: fixedCostForm.value.frequency,
+        startDate: fixedCostForm.value.startDate ? formatDateInput(fixedCostForm.value.startDate) : undefined,
+        endDate: fixedCostForm.value.endDate ? formatDateInput(fixedCostForm.value.endDate) : null,
+      },
     })
     await loadPlanning()
     closeFixedCostDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Fixkostenplan wurde aktualisiert.' : 'Fixkostenplan wurde angelegt.' }
+    notice.value = { severity: 'success', text: isEdit ? 'Fixkostenplan aktualisiert.' : 'Fixkostenplan angelegt.' }
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Fixkostenplan konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
   } finally {
@@ -253,12 +261,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   <ListPageShell
     eyebrow="Meilenstein 4 / Recurring"
     title="Geplante Einnahmen & Fixkosten"
-    description="Wiederkehrende Einnahmen (Gehalt, etc.) und Fixkosten (Miete, Vertraege) als monatlich umgerechnete Plaene."
+    description="Wiederkehrende Einnahmen und Fixkosten als monatlich umgerechnete Pläne."
   >
     <template #summary>
-      <Tag severity="success" :value="`Einnahmen ${formatMoney(monthlyIncomeTotal)}/Monat`" />
-      <Tag severity="warning" :value="`Fixkosten ${formatMoney(monthlyFixedCostTotal)}/Monat`" />
-      <Tag severity="info" :value="`Spielraum ${formatMoney(planableBalance)}/Monat`" />
+      <Tag severity="success" :value="`Einnahmen ${formatMoney(monthlyIncomeTotal)} / Monat`" />
+      <Tag severity="warning" :value="`Fixkosten ${formatMoney(monthlyFixedCostTotal)} / Monat`" />
+      <Tag severity="info" :value="`Spielraum ${formatMoney(planableBalance)} / Monat`" />
     </template>
 
     <template #toolbar>
@@ -275,27 +283,41 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     />
 
     <template v-if="!loading && activeHousehold && currentHousehold">
-      <ListPanel kicker="Einnahmen" title="Geplante Einnahmen" :badge="`${currentHousehold.incomePlans.length} Einträge`">
+      <ListPanel
+        kicker="Einnahmen"
+        title="Geplante Einnahmen"
+        compact
+        :badge="`${currentHousehold.incomePlans.length} Einträge`"
+      >
         <template #actions>
           <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openIncomeDialog" />
         </template>
 
         <ItemCard v-for="plan in currentHousehold.incomePlans" :key="plan.id">
           <template #main>
-            <div class="plan-row">
-              <h3>{{ plan.name }}</h3>
-              <span class="plan-pill">{{ formatMoney(plan.amount) }}</span>
+            <span class="row-title">
+              {{ plan.name }}
+              <span class="row-tag row-tag--green">+ {{ formatMoney(monthlyEquivalent(plan.amount, plan.frequency)) }} / Mo</span>
+            </span>
+            <span class="row-sub">
+              <span class="row-tag">{{ frequencyLabel(plan.frequency) }}</span>
+              <span>{{ formatDate(plan.startDate) }} – {{ formatDate(plan.endDate) }}</span>
+            </span>
+          </template>
+          <template #aside>
+            <div>
+              {{ formatMoney(plan.amount) }}
+              <span class="amount-secondary">pro {{ frequencyLabel(plan.frequency) }}</span>
             </div>
-            <p>{{ frequencyLabel(plan.frequency) }} · {{ formatDate(plan.startDate) }} bis {{ formatDate(plan.endDate) }}</p>
           </template>
           <template #actions>
-            <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editIncomePlan(plan)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editIncomePlan(plan)" />
             <Button
-              label="Löschen"
               icon="pi pi-trash"
               severity="danger"
               outlined
               size="small"
+              text
               :loading="actionLoadingKey === `incomePlan:${plan.id}`"
               @click="deletePlanningItem('incomePlan', plan.id)"
             />
@@ -305,27 +327,41 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <div v-if="currentHousehold.incomePlans.length === 0" class="empty-list">Noch keine Einnahmenpläne angelegt.</div>
       </ListPanel>
 
-      <ListPanel kicker="Fixkosten" title="Regelmäßige Ausgaben" :badge="`${currentHousehold.fixedCosts.length} Einträge`">
+      <ListPanel
+        kicker="Fixkosten"
+        title="Regelmäßige Ausgaben"
+        compact
+        :badge="`${currentHousehold.fixedCosts.length} Einträge`"
+      >
         <template #actions>
           <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openFixedCostDialog" />
         </template>
 
         <ItemCard v-for="plan in currentHousehold.fixedCosts" :key="plan.id">
           <template #main>
-            <div class="plan-row">
-              <h3>{{ plan.name }}</h3>
-              <span class="plan-pill">{{ formatMoney(plan.amount) }}</span>
+            <span class="row-title">
+              {{ plan.name }}
+              <span class="row-tag row-tag--warning">− {{ formatMoney(monthlyEquivalent(plan.amount, plan.frequency)) }} / Mo</span>
+            </span>
+            <span class="row-sub">
+              <span class="row-tag">{{ frequencyLabel(plan.frequency) }}</span>
+              <span>{{ formatDate(plan.startDate) }} – {{ formatDate(plan.endDate) }}</span>
+            </span>
+          </template>
+          <template #aside>
+            <div>
+              {{ formatMoney(plan.amount) }}
+              <span class="amount-secondary">pro {{ frequencyLabel(plan.frequency) }}</span>
             </div>
-            <p>{{ frequencyLabel(plan.frequency) }} · {{ formatDate(plan.startDate) }} bis {{ formatDate(plan.endDate) }}</p>
           </template>
           <template #actions>
-            <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editFixedCostPlan(plan)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editFixedCostPlan(plan)" />
             <Button
-              label="Löschen"
               icon="pi pi-trash"
               severity="danger"
               outlined
               size="small"
+              text
               :loading="actionLoadingKey === `fixedCostPlan:${plan.id}`"
               @click="deletePlanningItem('fixedCostPlan', plan.id)"
             />
@@ -389,32 +425,60 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 </template>
 
 <style scoped>
-.plan-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.plan-pill {
+.row-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
+  gap: 8px;
+}
+
+.row-sub {
+  color: var(--color-text-muted);
   font-size: 0.78rem;
-  font-weight: 800;
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.row-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+}
+
+.row-tag--green {
+  background: rgba(52, 211, 153, 0.16);
+  color: #34d399;
+}
+
+.row-tag--warning {
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
+}
+
+.amount-secondary {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-top: 2px;
 }
 
 .empty-list {
-  padding: 1.1rem 1rem;
-  border-radius: 16px;
-  border: 1px dashed rgba(148, 163, 184, 0.16);
-  color: #94a3b8;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  color: var(--color-text-muted);
   text-align: center;
-  background: rgba(15, 23, 42, 0.36);
+  font-size: 0.85rem;
 }
 </style>

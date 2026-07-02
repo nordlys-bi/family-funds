@@ -118,6 +118,14 @@ const cancelInvitation = async (invitationId: string) => {
   }
 }
 
+const formatMemberSince = (createdAt: string) =>
+  new Intl.DateTimeFormat('de-DE', { month: 'short', year: 'numeric' }).format(new Date(createdAt))
+
+const memberInitials = (member: HouseholdMember) => {
+  const source = member.user.displayName || member.user.email
+  return source.charAt(0).toUpperCase()
+}
+
 onMounted(async () => {
   await fetchHouseholds()
   await loadCurrentHousehold()
@@ -156,61 +164,81 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
     />
 
     <template v-if="!currentLoading && currentHousehold">
-      <ListPanel kicker="Mitglieder" title="Mitglieder" :badge="`${currentHousehold.members.length}`">
-        <ItemCard v-for="member in currentHousehold.members" :key="member.id">
-          <template #main>
-            <div class="member-row">
-              <Avatar
-                :label="member.user.displayName?.charAt(0)?.toUpperCase() || member.user.email.charAt(0).toUpperCase()"
-                shape="circle"
-                class="member-avatar"
-              />
-              <div>
-                <strong>{{ member.user.displayName || member.user.email }}</strong>
-                <p>{{ member.user.email }}</p>
-              </div>
-            </div>
+      <ListPanel kicker="Mitglieder" title="Aktive Mitglieder" compact :badge="`${currentHousehold.members.length}`">
+        <ListTable dense accent="primary">
+          <template #head>
+            <th>Name</th>
+            <th class="muted">E-Mail</th>
+            <th>Rolle</th>
+            <th class="muted">Dabei seit</th>
+            <th class="actions"></th>
           </template>
-          <template #actions>
-            <Tag :value="member.role" :severity="member.role === 'OWNER' ? 'success' : 'info'" />
-            <Button
-              v-if="canManageHousehold && member.user.id !== user?.id"
-              label="Entfernen"
-              icon="pi pi-trash"
-              severity="danger"
-              outlined
-              size="small"
-              :loading="removeLoadingId === member.id"
-              @click="removeMember(member.id)"
-            />
-          </template>
-        </ItemCard>
 
-        <div v-if="currentHousehold.members.length === 0" class="empty-list">Noch keine Mitglieder vorhanden.</div>
+          <tr v-for="member in currentHousehold.members" :key="member.id">
+            <td class="name">
+              <span class="member-cell">
+                <Avatar :label="memberInitials(member)" shape="circle" class="member-avatar" />
+                <span>{{ member.user.displayName || member.user.email }}</span>
+              </span>
+            </td>
+            <td class="muted">{{ member.user.email }}</td>
+            <td>
+              <Tag :value="member.role" :severity="member.role === 'OWNER' ? 'success' : 'info'" />
+            </td>
+            <td class="muted">{{ formatMemberSince(member.createdAt) }}</td>
+            <td class="actions">
+              <Button
+                v-if="canManageHousehold && member.user.id !== user?.id"
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                size="small"
+                text
+                :loading="removeLoadingId === member.id"
+                @click="removeMember(member.id)"
+              />
+            </td>
+          </tr>
+
+          <tr v-if="currentHousehold.members.length === 0">
+            <td colspan="5" class="data-table__empty">Noch keine Mitglieder vorhanden.</td>
+          </tr>
+        </ListTable>
       </ListPanel>
 
-      <ListPanel kicker="Offen" title="Offene Einladungen" :badge="`${currentHousehold.invitations.length}`">
-        <ItemCard v-for="invitation in currentHousehold.invitations" :key="invitation.id">
-          <template #main>
-            <strong>{{ invitation.email }}</strong>
-            <p>Eingeladen von {{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</p>
+      <ListPanel kicker="Offen" title="Offene Einladungen" compact :badge="`${currentHousehold.invitations.length}`">
+        <ListTable dense>
+          <template #head>
+            <th>E-Mail</th>
+            <th>Rolle</th>
+            <th class="muted">Eingeladen von</th>
+            <th class="actions"></th>
           </template>
-          <template #actions>
-            <Tag :value="invitation.role" :severity="invitation.role === 'OWNER' ? 'success' : 'info'" />
-            <Button
-              v-if="canManageHousehold"
-              label="Löschen"
-              icon="pi pi-times"
-              severity="secondary"
-              outlined
-              size="small"
-              :loading="cancelInvitationLoadingId === invitation.id"
-              @click="cancelInvitation(invitation.id)"
-            />
-          </template>
-        </ItemCard>
 
-        <div v-if="currentHousehold.invitations.length === 0" class="empty-list">Keine offenen Einladungen.</div>
+          <tr v-for="invitation in currentHousehold.invitations" :key="invitation.id">
+            <td class="name">{{ invitation.email }}</td>
+            <td>
+              <Tag :value="invitation.role" :severity="invitation.role === 'OWNER' ? 'success' : 'info'" />
+            </td>
+            <td class="muted">{{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</td>
+            <td class="actions">
+              <Button
+                v-if="canManageHousehold"
+                icon="pi pi-times"
+                severity="secondary"
+                outlined
+                size="small"
+                text
+                :loading="cancelInvitationLoadingId === invitation.id"
+                @click="cancelInvitation(invitation.id)"
+              />
+            </td>
+          </tr>
+
+          <tr v-if="currentHousehold.invitations.length === 0">
+            <td colspan="4" class="data-table__empty">Keine offenen Einladungen.</td>
+          </tr>
+        </ListTable>
       </ListPanel>
     </template>
 
@@ -243,24 +271,18 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 </template>
 
 <style scoped>
-.member-row {
-  display: flex;
-  gap: 0.85rem;
+.member-cell {
+  display: inline-flex;
   align-items: center;
+  gap: 10px;
 }
 
 .member-avatar {
   background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(16, 185, 129, 0.24));
   color: white;
   font-weight: 700;
-}
-
-.empty-list {
-  color: #94a3b8;
-  text-align: center;
-  padding: 1.2rem 0.75rem;
-  border: 1px dashed rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.45);
+  width: 28px;
+  height: 28px;
+  font-size: 0.78rem;
 }
 </style>

@@ -76,6 +76,7 @@ const budgetSelectOptions = computed(() => [
 
 const visibleTransactions = computed(() => transactions.value.filter((transaction) => transaction.kind === 'expense'))
 const budgetLabel = (transaction: TransactionItem) => transaction.budgetName ?? 'Sonstiges'
+const isUnassigned = (transaction: TransactionItem) => !transaction.budgetId
 
 const loadData = async () => {
   loading.value = true
@@ -201,40 +202,56 @@ watch(activeHouseholdId, async () => { await loadData() })
       loading-title="Ausgaben werden geladen"
     />
 
-    <ListPanel
-      v-if="!loading && activeHousehold && currentHousehold"
-      kicker="Monat"
-      title="Aktuelle Ausgaben"
-      :badge="formatMoney(summary.expenseTotal)"
-    >
-      <ItemCard v-for="transaction in visibleTransactions" :key="transaction.id">
-        <template #main>
-          <div class="tx-row">
-            <h3>{{ transaction.description || 'Ausgabe' }}</h3>
-            <Tag severity="info" :value="formatMoney(transaction.amount)" class="tx-pill" />
-          </div>
-          <div class="tx-meta-row">
-            <Tag severity="secondary" :value="budgetLabel(transaction)" class="tx-tag" />
-          </div>
-          <p>{{ formatDate(transaction.date) }}</p>
-          <p class="tx-author">Von {{ transaction.user.displayName || transaction.user.email }}</p>
-        </template>
-        <template #actions>
-          <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editTransaction(transaction)" />
-          <Button
-            label="Löschen"
-            icon="pi pi-trash"
-            severity="danger"
-            outlined
-            size="small"
-            :loading="actionLoadingKey === `expense:${transaction.id}`"
-            @click="deleteTransaction(transaction)"
-          />
-        </template>
-      </ItemCard>
+    <template v-if="!loading && activeHousehold && currentHousehold">
+      <ListPanel
+        kicker="Monat"
+        title="Aktuelle Ausgaben"
+        compact
+        :badge="formatMoney(summary.expenseTotal)"
+      >
+        <ListTable dense accent="primary">
+          <template #head>
+            <th>Datum</th>
+            <th>Beschreibung</th>
+            <th>Budget</th>
+            <th class="muted">Von</th>
+            <th class="num">Betrag</th>
+            <th class="actions"></th>
+          </template>
 
-      <div v-if="visibleTransactions.length === 0" class="empty-list">Noch keine Ausgaben erfasst.</div>
-    </ListPanel>
+          <tr v-for="transaction in visibleTransactions" :key="transaction.id">
+            <td class="muted">{{ formatDate(transaction.date) }}</td>
+            <td class="name">
+              {{ transaction.description || 'Ausgabe' }}
+              <span v-if="isUnassigned(transaction)" class="sub">ohne Budgetzuordnung</span>
+            </td>
+            <td>
+              <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
+                {{ budgetLabel(transaction) }}
+              </span>
+            </td>
+            <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
+            <td class="num">−{{ formatMoney(transaction.amount) }}</td>
+            <td class="actions">
+              <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editTransaction(transaction)" />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                size="small"
+                text
+                :loading="actionLoadingKey === `expense:${transaction.id}`"
+                @click="deleteTransaction(transaction)"
+              />
+            </td>
+          </tr>
+
+          <tr v-if="visibleTransactions.length === 0">
+            <td colspan="6" class="data-table__empty">Noch keine Ausgaben erfasst.</td>
+          </tr>
+        </ListTable>
+      </ListPanel>
+    </template>
 
     <FormDialog
       v-model:visible="transactionDialogOpen"
@@ -271,38 +288,19 @@ watch(activeHouseholdId, async () => { await loadData() })
 </template>
 
 <style scoped>
-.tx-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.tx-pill {
+.budget-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  font-size: 0.74rem;
+  font-weight: 700;
   white-space: nowrap;
 }
 
-.tx-meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.tx-tag {
-  font-size: 0.76rem;
-}
-
-.tx-author {
-  color: #cbd5e1;
-}
-
-.empty-list {
+.budget-pill--muted {
+  background: rgba(148, 163, 184, 0.16);
   color: #94a3b8;
-  text-align: center;
-  padding: 1.25rem 0.75rem;
-  border: 1px dashed rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.5);
 }
 </style>
