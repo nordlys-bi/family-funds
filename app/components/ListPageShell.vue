@@ -10,7 +10,7 @@ defineProps<{
   <section class="list-page-shell">
     <header class="list-page-shell__header">
       <div class="list-page-shell__copy">
-        <p v-if="eyebrow" class="list-page-shell__eyebrow">{{ eyebrow }}</p>
+        <Kicker v-if="eyebrow" size="lg" as="p">{{ eyebrow }}</Kicker>
         <h1 class="list-page-shell__title">{{ title }}</h1>
         <p v-if="description" class="list-page-shell__description">
           {{ description }}
@@ -57,15 +57,6 @@ defineProps<{
 
 .list-page-shell__copy {
   max-width: 58ch;
-}
-
-.list-page-shell__eyebrow {
-  margin: 0 0 0.4rem;
-  font-size: 0.78rem;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-  color: #93c5fd;
-  font-weight: 700;
 }
 
 .list-page-shell__title {

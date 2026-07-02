@@ -343,7 +343,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-if="currentLoading || householdsLoading" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Lädt</p>
+        <Kicker>Lädt</Kicker>
         <h2>Haushaltsdaten werden geladen</h2>
         <p>Wir holen den aktiven Haushalt, Mitglieder und Einladungen.</p>
         <ProgressSpinner style="width: 42px; height: 42px" strokeWidth="4" />
@@ -352,7 +352,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-else-if="!currentHousehold" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Kein Haushalt aktiv</p>
+        <Kicker>Kein Haushalt aktiv</Kicker>
         <h2>Erstelle oder wähle zuerst einen Haushalt aus</h2>
         <p>Danach kannst du Mitglieder und Einladungen verwalten.</p>
         <Button label="Neuen Haushalt erstellen" icon="pi pi-plus" @click="openCreateHouseholdDialog" />
@@ -716,15 +716,6 @@ watch(activeHouseholdId, async () => {
 .empty-state__card {
   max-width: 32rem;
   padding: 1.2rem 1rem;
-}
-
-.empty-state__eyebrow {
-  margin: 0 0 0.35rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #93c5fd;
-  font-size: 0.76rem;
-  font-weight: 700;
 }
 
 .empty-state__card h2 {

@@ -61,19 +61,19 @@ const handleLogout = async () => {
         <NuxtLink to="/households" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-users nav-icon"></i>
           <span>Haushalte</span>
-          <span class="badge">M3</span>
+          <Badge>M3</Badge>
         </NuxtLink>
 
         <NuxtLink to="/budgeting" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-calendar-plus nav-icon"></i>
           <span>Budgetierung</span>
-          <span class="badge">M4</span>
+          <Badge>M4</Badge>
         </NuxtLink>
 
         <NuxtLink to="/transactions" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-list nav-icon"></i>
           <span>Transaktionen</span>
-          <span class="badge">M5</span>
+          <Badge>M5</Badge>
         </NuxtLink>
       </nav>
 
@@ -289,16 +289,6 @@ const handleLogout = async () => {
   opacity: 0.4;
   cursor: not-allowed;
   position: relative;
-}
-
-.badge {
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 0.1rem 0.35rem;
-  background: #374151;
-  color: #94a3b8;
-  border-radius: 4px;
-  margin-left: auto;
 }
 
 .sidebar-footer {

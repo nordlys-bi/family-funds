@@ -40,7 +40,9 @@ export default defineNuxtConfig({
     }
   },
   css: [
-    'primeicons/primeicons.css'
+    'primeicons/primeicons.css',
+    '~/assets/css/tokens.css',
+    '~/assets/css/base.css',
   ],
 
   runtimeConfig: {
