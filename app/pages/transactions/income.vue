@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
-definePageMeta({
-  layout: 'default',
-})
+definePageMeta({ layout: 'default' })
 
 type PlanningHousehold = {
   id: string
@@ -18,16 +16,7 @@ type TransactionItem = {
   amount: number
   description: string | null
   date: string
-  createdAt: string
-  updatedAt: string
-  budgetId?: string | null
-  budgetName?: string | null
-  budgetKey?: string | null
-  user: {
-    id: string
-    displayName: string | null
-    email: string
-  }
+  user: { displayName: string | null; email: string }
 }
 
 type TransactionSummary = {
@@ -41,12 +30,7 @@ const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const transactions = ref<TransactionItem[]>([])
-const summary = ref<TransactionSummary>({
-  incomeTotal: 0,
-  expenseTotal: 0,
-  netTotal: 0,
-  unassignedExpenseTotal: 0,
-})
+const summary = ref<TransactionSummary>({ incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 })
 const loading = ref(false)
 const transactionLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
@@ -58,27 +42,15 @@ const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
 
 const moneyFormatter = computed(
-  () =>
-    new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: currencyCode.value,
-    }),
+  () => new Intl.NumberFormat('de-DE', { style: 'currency', currency: currencyCode.value }),
 )
 
 const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
-
 const formatDate = (value: string) =>
-  new Intl.DateTimeFormat('de-DE', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value))
+  new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 
 function formatDateInput(value: Date) {
-  const year = value.getFullYear()
-  const month = String(value.getMonth() + 1).padStart(2, '0')
-  const day = String(value.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
 
 const transactionForm = ref({
@@ -87,7 +59,6 @@ const transactionForm = ref({
   date: new Date(),
 })
 
-// Nur Einnahmen anzeigen.
 const visibleTransactions = computed(() => transactions.value.filter((transaction) => transaction.kind === 'income'))
 
 const loadData = async () => {
@@ -102,43 +73,27 @@ const loadData = async () => {
           )
         : Promise.resolve(null),
     ])
-
     currentHousehold.value = current.household
     if (tx) {
       transactions.value = tx.transactions
       summary.value = tx.summary
     } else {
       transactions.value = []
-      summary.value = {
-        incomeTotal: 0,
-        expenseTotal: 0,
-        netTotal: 0,
-        unassignedExpenseTotal: 0,
-      }
+      summary.value = { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 }
     }
   } catch (error: any) {
-    notice.value = {
-      severity: 'error',
-      text: 'Transaktionen konnten nicht geladen werden: ' + (error.statusMessage || error.message),
-    }
+    notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
     loading.value = false
   }
 }
 
 const resetForm = () => {
-  transactionForm.value = {
-    amount: null,
-    description: '',
-    date: new Date(),
-  }
+  transactionForm.value = { amount: null, description: '', date: new Date() }
   editingTransactionId.value = null
 }
 
-const openCreateTransactionDialog = () => {
-  resetForm()
-  transactionDialogOpen.value = true
-}
+const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
 
 const editTransaction = (transaction: TransactionItem) => {
   editingTransactionId.value = transaction.id
@@ -150,14 +105,10 @@ const editTransaction = (transaction: TransactionItem) => {
   transactionDialogOpen.value = true
 }
 
-const closeTransactionDialog = () => {
-  transactionDialogOpen.value = false
-  resetForm()
-}
+const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
 
 const saveTransaction = async () => {
   if (!activeHouseholdId.value) return
-
   transactionLoading.value = true
   notice.value = null
   try {
@@ -169,23 +120,15 @@ const saveTransaction = async () => {
       description: transactionForm.value.description,
       date: transactionForm.value.date ? formatDateInput(transactionForm.value.date) : undefined,
     }
-
     await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
       method: editingTransactionId.value ? 'PATCH' : 'POST',
       body: payload,
     })
-
     await loadData()
     closeTransactionDialog()
-    notice.value = {
-      severity: 'success',
-      text: isEdit ? 'Einnahme wurde aktualisiert.' : 'Einnahme wurde angelegt.',
-    }
+    notice.value = { severity: 'success', text: isEdit ? 'Einnahme wurde aktualisiert.' : 'Einnahme wurde angelegt.' }
   } catch (error: any) {
-    notice.value = {
-      severity: 'error',
-      text: 'Einnahme konnte nicht gespeichert werden: ' + (error.statusMessage || error.message),
-    }
+    notice.value = { severity: 'error', text: 'Einnahme konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
   } finally {
     transactionLoading.value = false
   }
@@ -193,28 +136,17 @@ const saveTransaction = async () => {
 
 const deleteTransaction = async (transaction: TransactionItem) => {
   if (!activeHouseholdId.value) return
-
   actionLoadingKey.value = `income:${transaction.id}`
   notice.value = null
   try {
     await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
       method: 'DELETE',
-      body: {
-        kind: 'income',
-        id: transaction.id,
-      },
+      body: { kind: 'income', id: transaction.id },
     })
-
     await loadData()
-    notice.value = {
-      severity: 'success',
-      text: 'Einnahme wurde gelöscht.',
-    }
+    notice.value = { severity: 'success', text: 'Einnahme wurde gelöscht.' }
   } catch (error: any) {
-    notice.value = {
-      severity: 'error',
-      text: 'Einnahme konnte nicht gelöscht werden: ' + (error.statusMessage || error.message),
-    }
+    notice.value = { severity: 'error', text: 'Einnahme konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
   } finally {
     actionLoadingKey.value = null
   }
@@ -224,17 +156,14 @@ onMounted(async () => {
   await fetchHouseholds()
   await loadData()
 })
-
-watch(activeHouseholdId, async () => {
-  await loadData()
-})
+watch(activeHouseholdId, async () => { await loadData() })
 </script>
 
 <template>
   <ListPageShell
     eyebrow="Meilenstein 5 / Einnahmen"
     title="Einnahmen"
-    description="Erfasse alle Einnahmen für den aktuellen Monat — Gehalt, Boni, Rückerstattungen, Geschenke. Einnahmen fließen nicht in Budgets, sondern direkt in den Saldo."
+    description="Erfasse alle Einnahmen für den aktuellen Monat — Gehalt, Boni, Rückerstattungen, Geschenke."
   >
     <template #summary>
       <Tag severity="success" :value="`Einnahmen ${formatMoney(summary.incomeTotal)}`" />
@@ -245,247 +174,91 @@ watch(activeHouseholdId, async () => {
       <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
     </template>
 
-    <Message v-if="notice" :severity="notice.severity" variant="simple">
-      {{ notice.text }}
-    </Message>
+    <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
-    <section v-if="loading" class="empty-state">
-      <div class="empty-state__card">
-        <Kicker>Lädt</Kicker>
-        <h2>Einnahmen werden geladen</h2>
-        <p>Wir holen den aktiven Haushalt und die Buchungen des aktuellen Monats.</p>
-      </div>
-    </section>
+    <EmptyState
+      :loading="loading"
+      :no-household="!loading && !activeHousehold"
+      loading-title="Einnahmen werden geladen"
+    />
 
-    <section v-else-if="!activeHousehold" class="empty-state">
-      <div class="empty-state__card">
-        <Kicker>Kein Haushalt aktiv</Kicker>
-        <h2>Wähle zuerst einen Haushalt aus</h2>
-        <p>Erst dann können wir Einnahmen erfassen.</p>
-        <NuxtLink to="/households" class="empty-state__button">Zu den Haushalten</NuxtLink>
-      </div>
-    </section>
-
-    <section v-else class="list-panel">
-      <div class="list-panel__head">
-        <div>
-          <p class="list-panel__kicker">Monat</p>
-          <h2>Aktuelle Einnahmen</h2>
-        </div>
-        <span class="panel-badge">{{ formatMoney(summary.incomeTotal) }}</span>
-      </div>
-
-      <div class="item-list">
-        <article v-for="transaction in visibleTransactions" :key="transaction.id" class="item-card">
-          <div class="item-main">
-            <div class="item-title-row">
-              <h3>{{ transaction.description || 'Einnahme' }}</h3>
-              <Tag severity="success" :value="formatMoney(transaction.amount)" class="item-pill" />
-            </div>
-            <p>{{ formatDate(transaction.date) }}</p>
-            <p class="transaction-meta">Von {{ transaction.user.displayName || transaction.user.email }}</p>
-          </div>
-          <div class="item-actions">
-            <Button
-              type="button"
-              label="Bearbeiten"
-              icon="pi pi-pen-to-square"
-              severity="secondary"
-              outlined
-              size="small"
-              @click="editTransaction(transaction)"
-            />
-            <Button
-              type="button"
-              label="Löschen"
-              icon="pi pi-trash"
-              severity="danger"
-              outlined
-              size="small"
-              :loading="actionLoadingKey === `income:${transaction.id}`"
-              @click="deleteTransaction(transaction)"
-            />
-          </div>
-        </article>
-
-        <div v-if="visibleTransactions.length === 0" class="empty-list">Noch keine Einnahmen erfasst.</div>
-      </div>
-    </section>
-
-    <Dialog
-      v-model:visible="transactionDialogOpen"
-      modal
-      :header="editingTransactionId ? 'Einnahme bearbeiten' : 'Neue Einnahme'"
-      :style="{ width: 'min(44rem, 94vw)' }"
-      :dismissableMask="true"
-      @hide="closeTransactionDialog"
+    <ListPanel
+      v-if="!loading && activeHousehold && currentHousehold"
+      kicker="Monat"
+      title="Aktuelle Einnahmen"
+      :badge="formatMoney(summary.incomeTotal)"
     >
-      <form class="transaction-dialog" @submit.prevent="saveTransaction">
-        <div class="field">
-          <label for="transaction-amount">Betrag</label>
-          <InputNumber
-            id="transaction-amount"
-            v-model="transactionForm.amount"
-            mode="currency"
-            :currency="currencyCode"
-            locale="de-DE"
-            class="w-full"
-            inputClass="w-full"
-            :minFractionDigits="2"
-            :maxFractionDigits="2"
-            placeholder="0,00"
-          />
-        </div>
-        <div class="field">
-          <label for="transaction-date">Datum</label>
-          <DatePicker
-            id="transaction-date"
-            v-model="transactionForm.date"
-            dateFormat="dd.mm.yy"
-            showIcon
-            class="w-full"
-            inputClass="w-full"
-          />
-        </div>
-        <div class="field field--wide">
-          <label for="transaction-description">Beschreibung</label>
-          <InputText
-            id="transaction-description"
-            v-model="transactionForm.description"
-            class="w-full"
-            placeholder="z. B. Gehalt September"
-          />
-        </div>
-
-        <div class="dialog-actions">
+      <ItemCard v-for="transaction in visibleTransactions" :key="transaction.id">
+        <template #main>
+          <div class="tx-row">
+            <h3>{{ transaction.description || 'Einnahme' }}</h3>
+            <Tag severity="success" :value="formatMoney(transaction.amount)" class="tx-pill" />
+          </div>
+          <p>{{ formatDate(transaction.date) }}</p>
+          <p class="tx-author">Von {{ transaction.user.displayName || transaction.user.email }}</p>
+        </template>
+        <template #actions>
+          <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editTransaction(transaction)" />
           <Button
-            type="button"
-            label="Abbrechen"
-            severity="secondary"
+            label="Löschen"
+            icon="pi pi-trash"
+            severity="danger"
             outlined
-            @click="closeTransactionDialog"
+            size="small"
+            :loading="actionLoadingKey === `income:${transaction.id}`"
+            @click="deleteTransaction(transaction)"
           />
-          <Button
-            type="submit"
-            :label="editingTransactionId ? 'Einnahme aktualisieren' : 'Einnahme anlegen'"
-            icon="pi pi-check"
-            :loading="transactionLoading"
-          />
-        </div>
-      </form>
-    </Dialog>
+        </template>
+      </ItemCard>
+
+      <div v-if="visibleTransactions.length === 0" class="empty-list">Noch keine Einnahmen erfasst.</div>
+    </ListPanel>
+
+    <FormDialog
+      v-model:visible="transactionDialogOpen"
+      :header="editingTransactionId ? 'Einnahme bearbeiten' : 'Neue Einnahme'"
+      :submit-label="editingTransactionId ? 'Einnahme aktualisieren' : 'Einnahme anlegen'"
+      :saving="transactionLoading"
+      @save="saveTransaction"
+      @cancel="closeTransactionDialog"
+    >
+      <FormField label="Betrag" html-for="transaction-amount">
+        <InputNumber
+          id="transaction-amount"
+          v-model="transactionForm.amount"
+          mode="currency"
+          :currency="currencyCode"
+          locale="de-DE"
+          inputClass="w-full"
+          :minFractionDigits="2"
+          :maxFractionDigits="2"
+          placeholder="0,00"
+        />
+      </FormField>
+      <FormField label="Datum" html-for="transaction-date">
+        <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
+      </FormField>
+      <FormField label="Beschreibung" html-for="transaction-description" wide>
+        <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />
+      </FormField>
+    </FormDialog>
   </ListPageShell>
 </template>
 
 <style scoped>
-.list-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.list-panel__head {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.list-panel__kicker {
-  margin: 0 0 0.25rem;
-  color: #94a3b8;
-  font-size: 0.75rem;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.dialog-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.35rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.field--wide {
-  grid-column: 1 / -1;
-}
-
-.field label {
-  color: #e2e8f0;
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.transaction-dialog {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.95rem;
-}
-
-.transaction-meta {
-  color: #cbd5e1;
-}
-
-.item-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.item-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.82);
-}
-
-.item-main {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.item-title-row {
+.tx-row {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
 }
 
-.item-title-row h3 {
-  margin: 0;
-  color: #f8fafc;
-  font-size: 1rem;
-  letter-spacing: -0.02em;
-}
-
-.item-main p {
-  margin: 0.35rem 0 0;
-  color: #94a3b8;
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
-.item-pill {
+.tx-pill {
   white-space: nowrap;
 }
 
-.item-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
+.tx-author {
+  color: #cbd5e1;
 }
 
 .empty-list {
@@ -495,84 +268,5 @@ watch(activeHouseholdId, async () => {
   border: 1px dashed rgba(148, 163, 184, 0.2);
   border-radius: 18px;
   background: rgba(15, 23, 42, 0.5);
-}
-
-.empty-state {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.empty-state__card {
-  width: min(640px, 100%);
-  padding: 2rem;
-  text-align: center;
-  background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 14, 24, 0.98));
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 28px;
-}
-
-.empty-state__card h2 {
-  margin: 0;
-  font-size: 1.7rem;
-  color: #f8fafc;
-}
-
-.empty-state__card p {
-  margin: 0.75rem auto 0;
-  max-width: 48ch;
-  color: #94a3b8;
-  line-height: 1.65;
-}
-
-.empty-state__button {
-  display: inline-flex;
-  margin-top: 1.2rem;
-  padding: 0.85rem 1.1rem;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #2563eb, #60a5fa);
-  color: #fff;
-  text-decoration: none;
-  font-weight: 800;
-}
-
-:deep(.p-inputtext),
-:deep(.p-select),
-:deep(.p-datepicker-input),
-:deep(.p-inputnumber-input) {
-  width: 100%;
-}
-
-:deep(.p-select),
-:deep(.p-datepicker),
-:deep(.p-inputnumber) {
-  width: 100%;
-}
-
-:deep(.p-button) {
-  border-radius: 14px;
-}
-
-:deep(.p-tag) {
-  border-radius: 999px;
-}
-
-@media (max-width: 1120px) {
-  .transaction-dialog {
-    grid-template-columns: 1fr;
-  }
-
-  .item-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .item-actions {
-    width: 100%;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
 }
 </style>
