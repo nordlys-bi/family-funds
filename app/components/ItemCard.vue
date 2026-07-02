@@ -1,34 +1,75 @@
 <!--
-  ItemCard — wiederkehrende Card fuer einzelne Listen-Eintraege.
+  ItemCard — kompakte Listen-Card (A-Stil: Tight & Dense).
+
+  Slots:
+    - default:       kompletter Body-Inhalt (wenn kein main/actions-Format gewuenscht)
+    - #main:         linke Seite, Title + Meta
+    - #progress:     optionaler Progress-Bar-Slot zwischen Main und Actions
+    - #meta:         zusaetzliche Meta-Info unter dem Main-Inhalt
+    - #actions:      rechte Seite, Buttons (default unsichtbar, sichtbar bei Row-Hover)
+    - #aside:        optionaler Aside-Block zwischen Meta und Actions (z. B. Amount)
+
+  Props:
+    - variant:        'default' | 'primary' (Border-Left-Akzent) | 'muted' (Sonstiges-Bucket)
+    - density:        'compact' (default, 36px) | 'cozy' (44px) | 'spacious' (52px)
+    - hoverActions:   'true' (default) | 'false' — ob Actions nur bei Hover sichtbar sind
 
   Verwendung:
-  <ItemCard>
+  <ItemCard variant="primary">
     <template #main>
-      <h3>Mein Eintrag</h3>
-      <p>Details</p>
+      <strong>Lebensmittel</strong>
+      <span>Wöchentlich · 4 Perioden</span>
+    </template>
+    <template #progress>
+      <ListProgressBar :percent="1.8" tone="warning" />
+    </template>
+    <template #aside>
+      <div class="amount">18,06 € / 1.000,00 €</div>
     </template>
     <template #actions>
-      <Button label="Bearbeiten" />
-      <Button label="Loeschen" />
+      <button>✎</button>
+      <button>🗑</button>
     </template>
   </ItemCard>
 -->
 <script setup lang="ts">
-defineProps<{
-  /**
-   * Wenn 'wide', hat die Card mehr Padding. Wenn 'compact', weniger.
-   * Default ist Standardgroesse.
-   */
-  size?: 'compact' | 'default' | 'wide'
-}>()
+withDefaults(
+  defineProps<{
+    variant?: 'default' | 'primary' | 'muted'
+    density?: 'compact' | 'cozy' | 'spacious'
+    hoverActions?: boolean
+  }>(),
+  {
+    variant: 'default',
+    density: 'compact',
+    hoverActions: true,
+  },
+)
 </script>
 
 <template>
-  <article class="item-card" :class="`item-card--${size ?? 'default'}`">
-    <div class="item-main">
-      <slot name="main" />
+  <article
+    class="item-card"
+    :class="[`item-card--${variant}`, `item-card--${density}`, { 'item-card--hover-actions': hoverActions }]"
+  >
+    <div v-if="$slots.main || $slots.default" class="item-card__main">
+      <slot name="main">
+        <slot />
+      </slot>
+      <div v-if="$slots.meta" class="item-card__meta">
+        <slot name="meta" />
+      </div>
     </div>
-    <div v-if="$slots.actions" class="item-actions">
+
+    <div v-if="$slots.progress" class="item-card__progress">
+      <slot name="progress" />
+    </div>
+
+    <div v-if="$slots.aside" class="item-card__aside">
+      <slot name="aside" />
+    </div>
+
+    <div v-if="$slots.actions" class="item-card__actions">
       <slot name="actions" />
     </div>
   </article>
@@ -38,62 +79,136 @@ defineProps<{
 .item-card {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.82);
+  gap: 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card-row);
+  transition: background 0.12s ease, border-color 0.12s ease;
+  position: relative;
 }
 
-.item-card--compact {
-  padding: 0.75rem 0.9rem;
-  border-radius: 14px;
+.item-card--compact { padding: 10px 14px; min-height: 48px; }
+.item-card--cozy    { padding: 14px 18px; min-height: 56px; }
+.item-card--spacious { padding: 18px 22px; min-height: 64px; }
+
+.item-card:hover {
+  background: var(--bg-card-row-hover);
+  border-color: var(--border-row-hover);
 }
 
-.item-card--wide {
-  padding: 1.25rem 1.4rem;
+/* Border-Left-Akzent auf der linken Seite fuer Hervorhebungen */
+.item-card--primary {
+  border-left: 3px solid var(--accent);
+  padding-left: 12px;
 }
 
-.item-main {
-  min-width: 0;
+.item-card--muted {
+  border-style: dashed;
+  border-color: var(--border-muted);
+  background: var(--bg-card-row-muted);
+}
+
+.item-card__main {
   flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 4px;
 }
 
-.item-main h3 {
-  margin: 0;
-  color: #f8fafc;
-  font-size: 1rem;
-  letter-spacing: -0.02em;
-}
-
-.item-main p {
-  margin: 0;
-  color: #94a3b8;
-  font-size: 0.88rem;
-  line-height: 1.45;
-}
-
-.item-actions {
-  display: flex;
+.item-card__main :deep(strong),
+.item-card__main :deep(.item-card__title) {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  flex-shrink: 0;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 720px) {
-  .item-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
+.item-card__main :deep(.item-card__sub) {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
 
-  .item-actions {
-    width: 100%;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-  }
+.item-card__meta {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.item-card__progress {
+  flex: 0 0 auto;
+  min-width: 100px;
+  max-width: 200px;
+}
+
+.item-card__aside {
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 100px;
+}
+
+.item-card__aside :deep(.amount-secondary) {
+  display: block;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.item-card__actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  opacity: 1;
+  transition: opacity 0.12s ease;
+}
+
+/* Hover-Actions-Variante: Actions per Default versteckt, auf Row-Hover sichtbar */
+.item-card--hover-actions .item-card__actions {
+  opacity: 0;
+}
+
+.item-card--hover-actions:hover .item-card__actions {
+  opacity: 1;
+}
+
+.item-card__actions :deep(button) {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+.item-card__actions :deep(button:hover) {
+  background: var(--bg-card-button-hover);
+  border-color: var(--border-button-hover);
+  color: var(--text);
+}
+
+.item-card__actions :deep(button.is-danger:hover) {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 </style>

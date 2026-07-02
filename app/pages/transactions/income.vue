@@ -182,37 +182,47 @@ watch(activeHouseholdId, async () => { await loadData() })
       loading-title="Einnahmen werden geladen"
     />
 
-    <ListPanel
-      v-if="!loading && activeHousehold && currentHousehold"
-      kicker="Monat"
-      title="Aktuelle Einnahmen"
-      :badge="formatMoney(summary.incomeTotal)"
-    >
-      <ItemCard v-for="transaction in visibleTransactions" :key="transaction.id">
-        <template #main>
-          <div class="tx-row">
-            <h3>{{ transaction.description || 'Einnahme' }}</h3>
-            <Tag severity="success" :value="formatMoney(transaction.amount)" class="tx-pill" />
-          </div>
-          <p>{{ formatDate(transaction.date) }}</p>
-          <p class="tx-author">Von {{ transaction.user.displayName || transaction.user.email }}</p>
-        </template>
-        <template #actions>
-          <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editTransaction(transaction)" />
-          <Button
-            label="Löschen"
-            icon="pi pi-trash"
-            severity="danger"
-            outlined
-            size="small"
-            :loading="actionLoadingKey === `income:${transaction.id}`"
-            @click="deleteTransaction(transaction)"
-          />
-        </template>
-      </ItemCard>
+    <template v-if="!loading && activeHousehold && currentHousehold">
+      <ListPanel
+        kicker="Monat"
+        title="Aktuelle Einnahmen"
+        compact
+        :badge="formatMoney(summary.incomeTotal)"
+      >
+        <ListTable dense accent="primary">
+          <template #head>
+            <th>Datum</th>
+            <th>Beschreibung</th>
+            <th class="muted">Von</th>
+            <th class="num">Betrag</th>
+            <th class="actions"></th>
+          </template>
 
-      <div v-if="visibleTransactions.length === 0" class="empty-list">Noch keine Einnahmen erfasst.</div>
-    </ListPanel>
+          <tr v-for="transaction in visibleTransactions" :key="transaction.id">
+            <td class="muted">{{ formatDate(transaction.date) }}</td>
+            <td class="name">{{ transaction.description || 'Einnahme' }}</td>
+            <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
+            <td class="num income-amount">+{{ formatMoney(transaction.amount) }}</td>
+            <td class="actions">
+              <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editTransaction(transaction)" />
+              <Button
+                icon="pi pi-trash"
+                severity="danger"
+                outlined
+                size="small"
+                text
+                :loading="actionLoadingKey === `income:${transaction.id}`"
+                @click="deleteTransaction(transaction)"
+              />
+            </td>
+          </tr>
+
+          <tr v-if="visibleTransactions.length === 0">
+            <td colspan="5" class="data-table__empty">Noch keine Einnahmen erfasst.</td>
+          </tr>
+        </ListTable>
+      </ListPanel>
+    </template>
 
     <FormDialog
       v-model:visible="transactionDialogOpen"
@@ -246,27 +256,7 @@ watch(activeHouseholdId, async () => { await loadData() })
 </template>
 
 <style scoped>
-.tx-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.tx-pill {
-  white-space: nowrap;
-}
-
-.tx-author {
-  color: #cbd5e1;
-}
-
-.empty-list {
-  color: #94a3b8;
-  text-align: center;
-  padding: 1.25rem 0.75rem;
-  border: 1px dashed rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.5);
+.income-amount {
+  color: #34d399;
 }
 </style>

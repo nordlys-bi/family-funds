@@ -82,6 +82,19 @@ const monthlySavingsRateTotal = computed(
   () => currentHousehold.value?.savingsGoals.reduce((sum, goal) => sum + goal.monthlyRate, 0) ?? 0,
 )
 
+// Mock progress: zwischen 0 und 100% je nach Ziel — wir haben keine echten Buchungen
+// TODO: echte "Sparbuchungen"-Datenquelle anbinden, dann diesen Mock ersetzen
+const goalProgressPercent = (goal: SavingsGoalItem) => {
+  // Stabil basierend auf Monaten seit Start vs. erwarteter Dauer
+  const start = new Date(goal.startDate).getTime()
+  const end = goal.endDate ? new Date(goal.endDate).getTime() : start
+  const now = Date.now()
+  if (end <= start) return 0
+  const total = end - start
+  const elapsed = Math.max(0, Math.min(total, now - start))
+  return Math.round((elapsed / total) * 100)
+}
+
 const resetSavingsForm = () => {
   savingsForm.value = { name: '', targetAmount: '', monthlyRate: '', startDate: new Date(), endDate: null }
   savingsEditId.value = null
@@ -179,40 +192,52 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       loading-title="Sparziele werden geladen"
     />
 
-    <ListPanel
-      v-if="!loading && activeHousehold && currentHousehold"
-      kicker="Sparziele"
-      title="Auf dem Weg zum Zielbetrag"
-      :badge="`${currentHousehold.savingsGoals.length} Einträge`"
-    >
-      <template #actions>
-        <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
-      </template>
-
-      <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id">
-        <template #main>
-          <div class="goal-row">
-            <h3>{{ goal.name }}</h3>
-            <span class="goal-pill">{{ formatMoney(goal.monthlyRate) }}/Monat</span>
-          </div>
-          <p>Ziel: {{ formatMoney(goal.targetAmount) }} · {{ formatDate(goal.startDate) }} bis {{ formatDate(goal.endDate) }}</p>
-        </template>
+    <template v-if="!loading && activeHousehold && currentHousehold">
+      <ListPanel
+        kicker="Sparziele"
+        title="Auf dem Weg zum Zielbetrag"
+        compact
+        :badge="`${currentHousehold.savingsGoals.length} Einträge`"
+      >
         <template #actions>
-          <Button label="Bearbeiten" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" @click="editSavingsGoal(goal)" />
-          <Button
-            label="Löschen"
-            icon="pi pi-trash"
-            severity="danger"
-            outlined
-            size="small"
-            :loading="actionLoadingKey === `savingsGoal:${goal.id}`"
-            @click="deletePlanningItem(goal.id)"
-          />
+          <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
         </template>
-      </ItemCard>
 
-      <div v-if="currentHousehold.savingsGoals.length === 0" class="empty-list">Noch keine Sparziele angelegt.</div>
-    </ListPanel>
+        <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)">
+          <template #main>
+            <span class="row-title">
+              {{ goal.name }}
+              <span class="row-tag row-tag--green">{{ formatMoney(goal.monthlyRate) }}/Monat</span>
+            </span>
+            <span class="row-sub">
+              <span class="row-tag">{{ goalProgressPercent(goal) }}% Zeitfortschritt</span>
+              <span>Ziel {{ formatMoney(goal.targetAmount) }}</span>
+              <span>· {{ formatDate(goal.startDate) }} – {{ formatDate(goal.endDate) }}</span>
+            </span>
+          </template>
+          <template #aside>
+            <div>
+              {{ formatMoney(goal.targetAmount) }}
+              <span class="amount-secondary">Zielbetrag</span>
+            </div>
+          </template>
+          <template #actions>
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editSavingsGoal(goal)" />
+            <Button
+              icon="pi pi-trash"
+              severity="danger"
+              outlined
+              size="small"
+              text
+              :loading="actionLoadingKey === `savingsGoal:${goal.id}`"
+              @click="deletePlanningItem(goal.id)"
+            />
+          </template>
+        </ItemCard>
+
+        <div v-if="currentHousehold.savingsGoals.length === 0" class="empty-list">Noch keine Sparziele angelegt.</div>
+      </ListPanel>
+    </template>
 
     <FormDialog
       v-model:visible="savingsDialogOpen"
@@ -243,32 +268,55 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 </template>
 
 <style scoped>
-.goal-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.goal-pill {
+.row-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--color-text-primary);
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.35rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
+  gap: 8px;
+}
+
+.row-sub {
+  color: var(--color-text-muted);
   font-size: 0.78rem;
-  font-weight: 800;
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.row-tag {
+  display: inline-block;
+  padding: 1px 7px;
+  background: rgba(59, 130, 246, 0.16);
+  color: #93c5fd;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+}
+
+.row-tag--green {
+  background: rgba(52, 211, 153, 0.16);
+  color: #34d399;
+}
+
+.amount-secondary {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+  margin-top: 2px;
 }
 
 .empty-list {
-  padding: 1.1rem 1rem;
-  border-radius: 16px;
-  border: 1px dashed rgba(148, 163, 184, 0.16);
-  color: #94a3b8;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  color: var(--color-text-muted);
   text-align: center;
-  background: rgba(15, 23, 42, 0.36);
+  font-size: 0.85rem;
 }
 </style>
