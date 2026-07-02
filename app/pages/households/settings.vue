@@ -1,18 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
-definePageMeta({
-  layout: 'default',
-})
+definePageMeta({ layout: 'default' })
 
 type HouseholdMember = {
   id: string
   role: 'OWNER' | 'MEMBER'
-  user: {
-    id: string
-    email: string
-    displayName: string | null
-  }
+  user: { id: string; email: string; displayName: string | null }
 }
 
 type HouseholdDetail = {
@@ -32,10 +26,7 @@ const saveHouseholdLoading = ref(false)
 const editDialogOpen = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
-const editForm = ref({
-  name: '',
-  currency: 'EUR',
-})
+const editForm = ref({ name: '', currency: 'EUR' })
 
 const canManageHousehold = computed(() => {
   const role = currentHousehold.value?.members.find((member) => member.user.id === user.value?.id)?.role
@@ -53,7 +44,6 @@ const openEditHouseholdDialog = () => {
   syncEditForm()
   editDialogOpen.value = true
 }
-
 const closeEditHouseholdDialog = () => {
   editDialogOpen.value = false
   syncEditForm()
@@ -66,10 +56,7 @@ const loadCurrentHousehold = async () => {
     currentHousehold.value = data.household
     syncEditForm()
   } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Haushalt konnte nicht geladen werden: ' + (error.statusMessage || error.message),
-    }
+    message.value = { severity: 'error', text: 'Haushalt konnte nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
     currentLoading.value = false
   }
@@ -77,7 +64,6 @@ const loadCurrentHousehold = async () => {
 
 const handleSaveHousehold = async () => {
   if (!currentHousehold.value) return
-
   saveHouseholdLoading.value = true
   message.value = null
   try {
@@ -85,19 +71,12 @@ const handleSaveHousehold = async () => {
       method: 'PATCH',
       body: editForm.value,
     })
-
     await fetchHouseholds()
     await loadCurrentHousehold()
     closeEditHouseholdDialog()
-    message.value = {
-      severity: 'success',
-      text: 'Haushalt wurde aktualisiert.',
-    }
+    message.value = { severity: 'success', text: 'Haushalt wurde aktualisiert.' }
   } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Haushalt konnte nicht gespeichert werden: ' + (error.statusMessage || error.message),
-    }
+    message.value = { severity: 'error', text: 'Haushalt konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
   } finally {
     saveHouseholdLoading.value = false
   }
@@ -107,17 +86,14 @@ onMounted(async () => {
   await fetchHouseholds()
   await loadCurrentHousehold()
 })
-
-watch(activeHouseholdId, async () => {
-  await loadCurrentHousehold()
-})
+watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 </script>
 
 <template>
   <ListPageShell
     eyebrow="Meilenstein 3 / Settings"
     title="Haushalt-Einstellungen"
-    description="Bearbeite Name und Währung des aktiven Haushalts. Nur Owner können diese Werte ändern — andere Mitglieder sehen sie read-only."
+    description="Bearbeite Name und Währung des aktiven Haushalts. Nur Owner können diese Werte ändern."
   >
     <template #summary>
       <Tag severity="info" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
@@ -135,28 +111,17 @@ watch(activeHouseholdId, async () => {
       />
     </template>
 
-    <Message v-if="message" :severity="message.severity" variant="simple">
-      {{ message.text }}
-    </Message>
+    <Message v-if="message" :severity="message.severity" variant="simple">{{ message.text }}</Message>
 
-    <section v-if="currentLoading" class="empty-state">
-      <div class="empty-state__card">
-        <Kicker>Lädt</Kicker>
-        <h2>Einstellungen werden geladen</h2>
-        <p>Wir holen den aktiven Haushalt und seine Stammdaten.</p>
-      </div>
-    </section>
+    <EmptyState
+      :loading="currentLoading"
+      :no-household="!currentLoading && !currentHousehold"
+      loading-title="Einstellungen werden geladen"
+      no-household-title="Wähle zuerst einen Haushalt aus"
+      no-household-text="Danach kannst du hier Name und Währung anpassen."
+    />
 
-    <section v-else-if="!currentHousehold" class="empty-state">
-      <div class="empty-state__card">
-        <Kicker>Kein Haushalt aktiv</Kicker>
-        <h2>Wähle zuerst einen Haushalt aus</h2>
-        <p>Danach kannst du hier Name und Währung anpassen.</p>
-        <NuxtLink to="/households" class="empty-state__button">Zur Haushaltsübersicht</NuxtLink>
-      </div>
-    </section>
-
-    <article v-else class="settings-panel">
+    <article v-if="!currentLoading && currentHousehold" class="settings-card">
       <div class="settings-row">
         <span class="settings-label">Name</span>
         <span class="settings-value">{{ currentHousehold.name }}</span>
@@ -174,39 +139,31 @@ watch(activeHouseholdId, async () => {
         Änderungen an diesem Haushalt gelten für alle Mitglieder sofort.
       </Message>
       <Message v-else severity="warn" variant="simple">
-        Nur Owner können den Haushalt bearbeiten. Frage einen Owner im Team, falls du etwas ändern möchtest.
+        Nur Owner können den Haushalt bearbeiten.
       </Message>
     </article>
 
-    <Dialog
+    <FormDialog
       v-model:visible="editDialogOpen"
-      modal
       header="Haushalt bearbeiten"
-      :style="{ width: 'min(34rem, 94vw)' }"
-      :dismissableMask="true"
-      @hide="closeEditHouseholdDialog"
+      submit-label="Änderungen speichern"
+      :saving="saveHouseholdLoading"
+      @save="handleSaveHousehold"
+      @cancel="closeEditHouseholdDialog"
+      width="min(34rem, 94vw)"
     >
-      <form class="dialog-form" @submit.prevent="handleSaveHousehold">
-        <div class="field field--wide">
-          <label for="household-edit-name">Name</label>
-          <InputText id="household-edit-name" v-model="editForm.name" class="w-full" :disabled="!canManageHousehold" />
-        </div>
-        <div class="field field--wide">
-          <label for="household-edit-currency">Währung</label>
-          <InputText id="household-edit-currency" v-model="editForm.currency" class="w-full" :disabled="!canManageHousehold" />
-        </div>
-
-        <div class="dialog-actions">
-          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeEditHouseholdDialog" />
-          <Button type="submit" label="Änderungen speichern" icon="pi pi-check" :loading="saveHouseholdLoading" :disabled="!canManageHousehold" />
-        </div>
-      </form>
-    </Dialog>
+      <FormField label="Name" html-for="household-edit-name" wide>
+        <InputText id="household-edit-name" v-model="editForm.name" :disabled="!canManageHousehold" />
+      </FormField>
+      <FormField label="Währung" html-for="household-edit-currency" wide>
+        <InputText id="household-edit-currency" v-model="editForm.currency" :disabled="!canManageHousehold" />
+      </FormField>
+    </FormDialog>
   </ListPageShell>
 </template>
 
 <style scoped>
-.settings-panel {
+.settings-card {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -246,88 +203,5 @@ watch(activeHouseholdId, async () => {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   font-size: 0.92rem;
   color: #cbd5e1;
-}
-
-.empty-state {
-  display: grid;
-  place-items: center;
-  min-height: 260px;
-  text-align: center;
-}
-
-.empty-state__card {
-  max-width: 32rem;
-  padding: 1.2rem 1rem;
-}
-
-.empty-state__card h2 {
-  margin: 0;
-  font-size: 1.4rem;
-}
-
-.empty-state__card p {
-  margin: 0.65rem 0 1rem;
-  color: #94a3b8;
-}
-
-.empty-state__button {
-  display: inline-flex;
-  padding: 0.85rem 1.1rem;
-  border-radius: 14px;
-  background: linear-gradient(135deg, #2563eb, #60a5fa);
-  color: #fff;
-  text-decoration: none;
-  font-weight: 800;
-}
-
-.dialog-form {
-  display: grid;
-  gap: 0.95rem;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-
-.field label {
-  color: #e2e8f0;
-  font-size: 0.88rem;
-  font-weight: 700;
-}
-
-.field--wide {
-  grid-column: 1 / -1;
-}
-
-.dialog-actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem;
-  margin-top: 0.25rem;
-}
-
-:deep(.p-inputtext),
-:deep(.p-select),
-:deep(.p-datepicker-input),
-:deep(.p-inputnumber-input) {
-  width: 100%;
-}
-
-:deep(.p-select),
-:deep(.p-datepicker),
-:deep(.p-inputnumber) {
-  width: 100%;
-}
-
-:deep(.p-button) {
-  border-radius: 14px;
-}
-
-@media (max-width: 720px) {
-  .dialog-actions {
-    grid-template-columns: 1fr;
-  }
 }
 </style>
