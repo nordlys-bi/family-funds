@@ -44,28 +44,12 @@ const { households, activeHousehold, loading: householdsLoading, fetchHouseholds
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
 const createHouseholdLoading = ref(false)
-const saveHouseholdLoading = ref(false)
-const inviteLoading = ref(false)
-const removeLoadingId = ref<string | null>(null)
-const cancelInvitationLoadingId = ref<string | null>(null)
 const createDialogOpen = ref(false)
-const editDialogOpen = ref(false)
-const inviteDialogOpen = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
 const createForm = ref({
   name: '',
   currency: 'EUR',
-})
-
-const editForm = ref({
-  name: '',
-  currency: 'EUR',
-})
-
-const inviteForm = ref({
-  email: '',
-  role: 'MEMBER' as 'OWNER' | 'MEMBER',
 })
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
@@ -74,32 +58,10 @@ const canManageHousehold = computed(() => {
   return role === 'OWNER'
 })
 
-const syncEditForm = () => {
-  if (!currentHousehold.value) return
-  editForm.value.name = currentHousehold.value.name
-  editForm.value.currency = currentHousehold.value.currency
-}
-
 const openCreateHouseholdDialog = () => {
   createForm.value.name = ''
   createForm.value.currency = 'EUR'
   createDialogOpen.value = true
-}
-
-const openEditHouseholdDialog = () => {
-  if (!currentHousehold.value) return
-  syncEditForm()
-  editDialogOpen.value = true
-}
-
-const openInviteDialog = () => {
-  inviteDialogOpen.value = true
-}
-
-const confirmDestructiveAction = (title: string, message: string) => {
-  if (typeof window === 'undefined') return true
-
-  return window.confirm(`${title}\n\n${message}`)
 }
 
 const closeCreateHouseholdDialog = () => {
@@ -108,23 +70,11 @@ const closeCreateHouseholdDialog = () => {
   createForm.value.currency = 'EUR'
 }
 
-const closeEditHouseholdDialog = () => {
-  editDialogOpen.value = false
-  syncEditForm()
-}
-
-const closeInviteDialog = () => {
-  inviteDialogOpen.value = false
-  inviteForm.value.email = ''
-  inviteForm.value.role = 'MEMBER'
-}
-
 const loadCurrentHousehold = async () => {
   currentLoading.value = true
   try {
     const data = await $fetch<{ household: HouseholdDetail | null }>('/api/households/current')
     currentHousehold.value = data.household
-    syncEditForm()
   } catch (error: any) {
     message.value = {
       severity: 'error',
@@ -133,11 +83,6 @@ const loadCurrentHousehold = async () => {
   } finally {
     currentLoading.value = false
   }
-}
-
-const refreshAll = async () => {
-  await fetchHouseholds()
-  await loadCurrentHousehold()
 }
 
 const handleCreateHousehold = async () => {
@@ -169,112 +114,6 @@ const handleCreateHousehold = async () => {
   }
 }
 
-const handleSaveHousehold = async () => {
-  if (!currentHousehold.value) return
-
-  saveHouseholdLoading.value = true
-  message.value = null
-  try {
-    await $fetch(`/api/households/${currentHousehold.value.id}`, {
-      method: 'PATCH',
-      body: editForm.value,
-    })
-
-    await refreshAll()
-    closeEditHouseholdDialog()
-    message.value = {
-      severity: 'success',
-      text: 'Haushalt wurde aktualisiert.',
-    }
-  } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Haushalt konnte nicht gespeichert werden: ' + (error.statusMessage || error.message),
-    }
-  } finally {
-    saveHouseholdLoading.value = false
-  }
-}
-
-const handleInviteMember = async () => {
-  if (!activeHouseholdId.value) return
-
-  inviteLoading.value = true
-  message.value = null
-  try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/members`, {
-      method: 'POST',
-      body: inviteForm.value,
-    })
-
-    await loadCurrentHousehold()
-    closeInviteDialog()
-    message.value = {
-      severity: 'success',
-      text: 'Einladung oder Mitgliedschaft wurde angelegt.',
-    }
-  } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Mitglied konnte nicht hinzugefügt werden: ' + (error.statusMessage || error.message),
-    }
-  } finally {
-    inviteLoading.value = false
-  }
-}
-
-const removeMember = async (membershipId: string) => {
-  if (!activeHouseholdId.value) return
-  if (!confirmDestructiveAction('Mitglied entfernen?', 'Diese Person verliert sofort den Zugriff auf den Haushalt.')) return
-
-  removeLoadingId.value = membershipId
-  message.value = null
-  try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/members/${membershipId}`, {
-      method: 'DELETE',
-    })
-
-    await loadCurrentHousehold()
-    message.value = {
-      severity: 'success',
-      text: 'Mitglied wurde entfernt.',
-    }
-  } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Mitglied konnte nicht entfernt werden: ' + (error.statusMessage || error.message),
-    }
-  } finally {
-    removeLoadingId.value = null
-  }
-}
-
-const cancelInvitation = async (invitationId: string) => {
-  if (!activeHouseholdId.value) return
-  if (!confirmDestructiveAction('Einladung löschen?', 'Die eingeladene Person kann diese Einladung danach nicht mehr annehmen.')) return
-
-  cancelInvitationLoadingId.value = invitationId
-  message.value = null
-  try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/invitations/${invitationId}`, {
-      method: 'DELETE',
-    })
-
-    await loadCurrentHousehold()
-    message.value = {
-      severity: 'success',
-      text: 'Einladung wurde gelöscht.',
-    }
-  } catch (error: any) {
-    message.value = {
-      severity: 'error',
-      text: 'Einladung konnte nicht gelöscht werden: ' + (error.statusMessage || error.message),
-    }
-  } finally {
-    cancelInvitationLoadingId.value = null
-  }
-}
-
 useDesktopShortcut('n', () => {
   if (!createDialogOpen.value) {
     openCreateHouseholdDialog()
@@ -295,13 +134,13 @@ watch(activeHouseholdId, async () => {
   <ListPageShell
     eyebrow="Meilenstein 3"
     title="Haushalts- & Mitgliederverwaltung"
-    description="Verwalte den aktiven Haushalt, bearbeite Stammdaten und halte Mitglieder sowie Einladungen schlank in Listenform."
+    description="Übersicht über deinen aktiven Haushalt. Mitglieder und Einladungen verwaltest du unter Mitglieder; Name und Währung unter Settings."
   >
     <template #summary>
       <Tag severity="info" :value="`Haushalte ${households.length}`" />
-      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members.length || 0}`" />
-      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations.length || 0}`" />
-      <Tag severity="secondary" :value="`Aktiv ${activeHousehold?.name || 'Keiner'}`" />
+      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
+      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations.length ?? 0}`" />
+      <Tag severity="secondary" :value="`Aktiv ${activeHousehold?.name ?? 'Keiner'}`" />
     </template>
 
     <template #toolbar>
@@ -311,29 +150,17 @@ watch(activeHouseholdId, async () => {
       </div>
       <div class="toolbar-actions">
         <Button
-          label="Neu"
+          label="Neuer Haushalt"
           icon="pi pi-plus"
           severity="success"
           @click="openCreateHouseholdDialog"
         />
-        <Button
-          v-if="currentHousehold"
-          label="Bearbeiten"
-          icon="pi pi-pen-to-square"
-          severity="secondary"
-          outlined
-          :disabled="!canManageHousehold"
-          @click="openEditHouseholdDialog"
-        />
-        <Button
-          v-if="currentHousehold"
-          label="Einladen"
-          icon="pi pi-user-plus"
-          severity="secondary"
-          outlined
-          :disabled="!canManageHousehold"
-          @click="openInviteDialog"
-        />
+        <NuxtLink to="/households/members" class="toolbar-link">
+          <Button label="Mitglieder" icon="pi pi-users" severity="secondary" outlined />
+        </NuxtLink>
+        <NuxtLink to="/households/settings" class="toolbar-link">
+          <Button label="Settings" icon="pi pi-cog" severity="secondary" outlined :disabled="!currentHousehold" />
+        </NuxtLink>
       </div>
     </template>
 
@@ -345,7 +172,7 @@ watch(activeHouseholdId, async () => {
       <div class="empty-state__card">
         <Kicker>Lädt</Kicker>
         <h2>Haushaltsdaten werden geladen</h2>
-        <p>Wir holen den aktiven Haushalt, Mitglieder und Einladungen.</p>
+        <p>Wir holen den aktiven Haushalt und seine Eckdaten.</p>
         <ProgressSpinner style="width: 42px; height: 42px" strokeWidth="4" />
       </div>
     </section>
@@ -354,7 +181,7 @@ watch(activeHouseholdId, async () => {
       <div class="empty-state__card">
         <Kicker>Kein Haushalt aktiv</Kicker>
         <h2>Erstelle oder wähle zuerst einen Haushalt aus</h2>
-        <p>Danach kannst du Mitglieder und Einladungen verwalten.</p>
+        <p>Danach kannst du Mitglieder einladen und Settings anpassen.</p>
         <Button label="Neuen Haushalt erstellen" icon="pi pi-plus" @click="openCreateHouseholdDialog" />
       </div>
     </section>
@@ -371,14 +198,14 @@ watch(activeHouseholdId, async () => {
         </div>
 
         <div class="detail-strip">
-          <div class="detail-card">
+          <NuxtLink to="/households/members" class="detail-card">
             <span>Mitglieder</span>
             <strong>{{ currentHousehold.members.length }}</strong>
-          </div>
-          <div class="detail-card">
+          </NuxtLink>
+          <NuxtLink to="/households/members" class="detail-card">
             <span>Einladungen</span>
             <strong>{{ currentHousehold.invitations.length }}</strong>
-          </div>
+          </NuxtLink>
           <div class="detail-card detail-card--accent">
             <span>Rolle</span>
             <strong>{{ canManageHousehold ? 'Owner' : 'Member' }}</strong>
@@ -389,87 +216,6 @@ watch(activeHouseholdId, async () => {
           Änderungen an diesem Haushalt gelten für alle Mitglieder sofort.
         </Message>
       </article>
-
-      <div class="list-panels">
-        <article class="list-panel">
-          <div class="list-panel__head">
-            <div>
-              <p class="list-panel__kicker">Mitglieder</p>
-              <h2>Mitglieder</h2>
-            </div>
-            <span class="panel-badge">{{ currentHousehold.members.length }}</span>
-          </div>
-
-          <div class="item-list">
-            <div v-for="member in currentHousehold.members" :key="member.id" class="item-card">
-              <div class="member-meta">
-                <Avatar
-                  :label="member.user.displayName?.charAt(0)?.toUpperCase() || member.user.email.charAt(0).toUpperCase()"
-                  shape="circle"
-                  class="member-avatar"
-                />
-                <div>
-                  <strong>{{ member.user.displayName || member.user.email }}</strong>
-                  <div class="subtle">{{ member.user.email }}</div>
-                </div>
-              </div>
-              <div class="item-actions">
-                <Tag :value="member.role" :severity="member.role === 'OWNER' ? 'success' : 'info'" />
-                <Button
-                  v-if="canManageHousehold && member.user.id !== user?.id"
-                  label="Entfernen"
-                  icon="pi pi-trash"
-                  severity="danger"
-                  outlined
-                  size="small"
-                  :loading="removeLoadingId === member.id"
-                  @click="removeMember(member.id)"
-                />
-              </div>
-            </div>
-
-            <div v-if="currentHousehold.members.length === 0" class="empty-list">
-              Noch keine Mitglieder vorhanden.
-            </div>
-          </div>
-        </article>
-
-        <article class="list-panel">
-          <div class="list-panel__head">
-            <div>
-              <p class="list-panel__kicker">Offen</p>
-              <h2>Offene Einladungen</h2>
-            </div>
-            <span class="panel-badge">{{ currentHousehold.invitations.length }}</span>
-          </div>
-
-          <div class="item-list">
-            <div v-for="invitation in currentHousehold.invitations" :key="invitation.id" class="item-card">
-              <div>
-                <strong>{{ invitation.email }}</strong>
-                <div class="subtle">Eingeladen von {{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</div>
-              </div>
-              <div class="item-actions">
-                <Tag :value="invitation.role" :severity="invitation.role === 'OWNER' ? 'success' : 'info'" />
-                <Button
-                  v-if="canManageHousehold"
-                  label="Löschen"
-                  icon="pi pi-times"
-                  severity="secondary"
-                  outlined
-                  size="small"
-                  :loading="cancelInvitationLoadingId === invitation.id"
-                  @click="cancelInvitation(invitation.id)"
-                />
-              </div>
-            </div>
-
-            <div v-if="currentHousehold.invitations.length === 0" class="empty-list">
-              Keine offenen Einladungen.
-            </div>
-          </div>
-        </article>
-      </div>
     </section>
 
     <Dialog
@@ -483,75 +229,16 @@ watch(activeHouseholdId, async () => {
       <form class="dialog-form" @submit.prevent="handleCreateHousehold">
         <div class="field field--wide">
           <label for="household-create-name">Name</label>
-          <InputText id="household-create-name" v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" />
+          <InputText id="household-create-name" v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" class="w-full" />
         </div>
         <div class="field field--wide">
           <label for="household-create-currency">Währung</label>
-          <InputText id="household-create-currency" v-model="createForm.currency" placeholder="EUR" />
+          <InputText id="household-create-currency" v-model="createForm.currency" placeholder="EUR" class="w-full" />
         </div>
 
         <div class="dialog-actions">
           <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeCreateHouseholdDialog" />
           <Button type="submit" label="Haushalt erstellen" icon="pi pi-check" :loading="createHouseholdLoading" :disabled="!createForm.name.trim()" />
-        </div>
-      </form>
-    </Dialog>
-
-    <Dialog
-      v-model:visible="editDialogOpen"
-      modal
-      header="Haushalt bearbeiten"
-      :style="{ width: 'min(34rem, 94vw)' }"
-      :dismissableMask="true"
-      @hide="closeEditHouseholdDialog"
-    >
-      <form class="dialog-form" @submit.prevent="handleSaveHousehold">
-        <div class="field field--wide">
-          <label for="household-edit-name">Name</label>
-          <InputText id="household-edit-name" v-model="editForm.name" :disabled="!canManageHousehold" />
-        </div>
-        <div class="field field--wide">
-          <label for="household-edit-currency">Währung</label>
-          <InputText id="household-edit-currency" v-model="editForm.currency" :disabled="!canManageHousehold" />
-        </div>
-
-        <div class="dialog-actions">
-          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeEditHouseholdDialog" />
-          <Button type="submit" label="Änderungen speichern" icon="pi pi-check" :loading="saveHouseholdLoading" :disabled="!canManageHousehold" />
-        </div>
-      </form>
-    </Dialog>
-
-    <Dialog
-      v-model:visible="inviteDialogOpen"
-      modal
-      header="Mitglied einladen"
-      :style="{ width: 'min(34rem, 94vw)' }"
-      :dismissableMask="true"
-      @hide="closeInviteDialog"
-    >
-      <form class="dialog-form" @submit.prevent="handleInviteMember">
-        <div class="field field--wide">
-          <label for="household-invite-email">E-Mail</label>
-          <InputText id="household-invite-email" v-model="inviteForm.email" type="email" placeholder="person@beispiel.de" />
-        </div>
-        <div class="field field--wide">
-          <label for="household-invite-role">Rolle</label>
-          <Select
-            id="household-invite-role"
-            v-model="inviteForm.role"
-            :options="[
-              { label: 'Member', value: 'MEMBER' },
-              { label: 'Owner', value: 'OWNER' },
-            ]"
-            optionLabel="label"
-            optionValue="value"
-          />
-        </div>
-
-        <div class="dialog-actions">
-          <Button type="button" label="Abbrechen" severity="secondary" outlined @click="closeInviteDialog" />
-          <Button type="submit" label="Einladung senden" icon="pi pi-send" :loading="inviteLoading" :disabled="!inviteForm.email.trim()" />
         </div>
       </form>
     </Dialog>
@@ -562,12 +249,6 @@ watch(activeHouseholdId, async () => {
 .household-overview {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-}
-
-.list-panels {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
@@ -588,6 +269,10 @@ watch(activeHouseholdId, async () => {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+}
+
+.toolbar-link {
+  text-decoration: none;
 }
 
 .list-panel {
@@ -629,19 +314,6 @@ watch(activeHouseholdId, async () => {
   color: #94a3b8;
 }
 
-.panel-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2rem;
-  padding: 0.45rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(37, 99, 235, 0.18);
-  color: #bfdbfe;
-  font-size: 0.84rem;
-  font-weight: 700;
-}
-
 .detail-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -656,6 +328,14 @@ watch(activeHouseholdId, async () => {
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.12);
   background: rgba(15, 23, 42, 0.44);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.detail-card:hover {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(15, 23, 42, 0.6);
 }
 
 .detail-card span {
@@ -669,41 +349,6 @@ watch(activeHouseholdId, async () => {
 
 .detail-card--accent {
   background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(15, 23, 42, 0.48));
-}
-
-.item-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.item-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-  padding: 1rem 1.05rem;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.48);
-}
-
-.member-meta {
-  display: flex;
-  gap: 0.85rem;
-  align-items: center;
-}
-
-.subtle {
-  color: #94a3b8;
-  font-size: 0.88rem;
-}
-
-.item-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  flex-shrink: 0;
 }
 
 .empty-state {
@@ -726,15 +371,6 @@ watch(activeHouseholdId, async () => {
 .empty-state__card p {
   margin: 0.65rem 0 1rem;
   color: #94a3b8;
-}
-
-.empty-list {
-  color: #94a3b8;
-  text-align: center;
-  padding: 1.2rem 0.75rem;
-  border: 1px dashed rgba(148, 163, 184, 0.2);
-  border-radius: 18px;
-  background: rgba(15, 23, 42, 0.45);
 }
 
 .dialog-form {
@@ -765,12 +401,6 @@ watch(activeHouseholdId, async () => {
   margin-top: 0.25rem;
 }
 
-.member-avatar {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.28), rgba(16, 185, 129, 0.24));
-  color: white;
-  font-weight: 700;
-}
-
 :deep(.p-inputtext),
 :deep(.p-select),
 :deep(.p-datepicker-input),
@@ -789,20 +419,8 @@ watch(activeHouseholdId, async () => {
 }
 
 @media (max-width: 1120px) {
-  .list-panels,
   .detail-strip {
     grid-template-columns: 1fr;
-  }
-
-  .item-card {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .item-actions {
-    width: 100%;
-    justify-content: flex-end;
-    flex-wrap: wrap;
   }
 
   .toolbar-actions {

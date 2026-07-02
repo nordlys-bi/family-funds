@@ -55,26 +55,40 @@ const handleLogout = async () => {
           <i class="pi pi-chart-bar nav-icon"></i>
           <span>Dashboard</span>
         </NuxtLink>
-        
+
         <div class="nav-section-title">Module</div>
-        
+
         <NuxtLink to="/households" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-users nav-icon"></i>
           <span>Haushalte</span>
           <Badge>M3</Badge>
         </NuxtLink>
 
-        <NuxtLink to="/budgeting" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-calendar-plus nav-icon"></i>
-          <span>Budgetierung</span>
-          <Badge>M4</Badge>
-        </NuxtLink>
+        <NavSection prefix="/budgeting" icon="pi pi-calendar-plus" label="Budgetierung" badge="M4">
+          <NuxtLink to="/budgeting/budgets" class="sub-nav-item" active-class="sub-nav-item-active">
+            <i class="pi pi-wallet"></i>
+            <span>Budgets</span>
+          </NuxtLink>
+          <NuxtLink to="/budgeting/recurring" class="sub-nav-item" active-class="sub-nav-item-active">
+            <i class="pi pi-sync"></i>
+            <span>Recurring</span>
+          </NuxtLink>
+          <NuxtLink to="/budgeting/savings" class="sub-nav-item" active-class="sub-nav-item-active">
+            <i class="pi pi-flag"></i>
+            <span>Savings</span>
+          </NuxtLink>
+        </NavSection>
 
-        <NuxtLink to="/transactions" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-list nav-icon"></i>
-          <span>Transaktionen</span>
-          <Badge>M5</Badge>
-        </NuxtLink>
+        <NavSection prefix="/transactions" icon="pi pi-list" label="Transaktionen" badge="M5">
+          <NuxtLink to="/transactions/expenses" class="sub-nav-item" active-class="sub-nav-item-active">
+            <i class="pi pi-arrow-down"></i>
+            <span>Ausgaben</span>
+          </NuxtLink>
+          <NuxtLink to="/transactions/income" class="sub-nav-item" active-class="sub-nav-item-active">
+            <i class="pi pi-arrow-up"></i>
+            <span>Einnahmen</span>
+          </NuxtLink>
+        </NavSection>
       </nav>
 
       <div class="sidebar-footer">
