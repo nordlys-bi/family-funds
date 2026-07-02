@@ -40,7 +40,13 @@ type BudgetWithVersions = {
   id: string
   key: string
   name: string
-  versions: BudgetVersion[]
+  /**
+   * Die Funktion braucht nur die Felder, die sie auch liest (id, amount,
+   * frequency, validFrom). Prisma-Selects liefern meist einen Subset-Type
+   * ohne Relations wie `budget` oder `budgetId`. `Omit` macht den Type
+   * mit beiden Schreibweisen kompatibel.
+   */
+  versions: Array<Omit<BudgetVersion, 'budget' | 'budgetId'>>
 }
 
 function startOfDay(date: Date) {
