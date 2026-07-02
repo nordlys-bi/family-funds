@@ -667,7 +667,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-if="loading" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Lädt</p>
+        <Kicker>Lädt</Kicker>
         <h2>Planungsdaten werden geladen</h2>
         <p>Wir holen den aktuellen Haushalt und die vorhandenen Planungswerte.</p>
       </div>
@@ -675,7 +675,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-else-if="!activeHousehold" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Kein Haushalt aktiv</p>
+        <Kicker>Kein Haushalt aktiv</Kicker>
         <h2>Wähle zuerst einen Haushalt aus</h2>
         <p>Erst dann können wir Budgets und Sparpläne anlegen.</p>
         <NuxtLink to="/households" class="empty-state__button">Zu den Haushalten</NuxtLink>
@@ -686,7 +686,7 @@ watch(activeHouseholdId, async () => {
       <article class="plan-panel plan-panel--primary">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Budget</p>
+            <Kicker>Budget</Kicker>
             <h2>Budget pro Zeitraum</h2>
           </div>
           <div class="section-toolbar">
@@ -760,7 +760,7 @@ watch(activeHouseholdId, async () => {
       <article class="plan-panel">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Einnahmen</p>
+            <Kicker>Einnahmen</Kicker>
             <h2>Geplante Einnahmen</h2>
           </div>
           <div class="section-toolbar">
@@ -808,7 +808,7 @@ watch(activeHouseholdId, async () => {
       <article class="plan-panel">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Fixkosten</p>
+            <Kicker>Fixkosten</Kicker>
             <h2>Regelmäßige Ausgaben</h2>
           </div>
           <div class="section-toolbar">
@@ -856,7 +856,7 @@ watch(activeHouseholdId, async () => {
       <article class="plan-panel plan-panel--wide">
         <div class="panel-head">
           <div>
-            <p class="panel-kicker">Sparziele</p>
+            <Kicker>Sparziele</Kicker>
             <h2>Auf dem Weg zum Zielbetrag</h2>
           </div>
           <div class="section-toolbar">
@@ -1224,17 +1224,6 @@ watch(activeHouseholdId, async () => {
   color: #94a3b8;
 }
 
-.eyebrow,
-.panel-kicker,
-.empty-state__eyebrow {
-  margin: 0 0 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-size: 0.72rem;
-  font-weight: 800;
-  color: #93c5fd;
-}
-
 .hero-copy h1 {
   margin: 0;
   font-size: clamp(2.2rem, 4vw, 3.6rem);
@@ -1397,43 +1386,10 @@ watch(activeHouseholdId, async () => {
   color: #e2e8f0;
 }
 
-.field input,
-.field select {
-  width: 100%;
-  appearance: none;
-  border: 1px solid rgba(148, 163, 184, 0.34);
-  border-radius: 16px;
-  background: rgba(8, 15, 30, 0.96);
-  color: #f8fafc;
-  padding: 0.95rem 1rem;
-  font-size: 0.95rem;
-  line-height: 1.2;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease,
-    transform 0.18s ease,
-    background 0.18s ease;
-}
-
-.field input::placeholder {
-  color: #64748b;
-}
-
-.field input:hover,
-.field select:hover {
-  border-color: rgba(96, 165, 250, 0.6);
-}
-
-.field input:focus,
-.field select:focus {
-  outline: none;
-  border-color: rgba(96, 165, 250, 0.9);
-  box-shadow:
-    0 0 0 4px rgba(59, 130, 246, 0.16),
-    0 0 0 1px rgba(96, 165, 250, 0.3);
-  background: rgba(7, 14, 28, 1);
-}
+/* Form-Field-Styles werden zentral in ~/assets/css/base.css verwaltet.
+   Die frühere lokale Regel `.field input, .field select { padding: 0.95rem 1rem }`
+   hat InputText/InputNumber/DatePicker-Input größer gemacht als Select, weil
+   Select (div-basiert) nicht auf `input/select`-Selektoren matchte. */
 
 .field input[type='date'] {
   color-scheme: dark;

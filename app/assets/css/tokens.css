@@ -1,0 +1,89 @@
+/*
+ * Design Tokens — zentrale Quelle der Wahrheit für visuelle Konstanten.
+ *
+ * Verwendung:
+ *   - Eigene Komponenten und Page-CSS referenzieren diese Tokens per var(--...).
+ *   - Keine hardgecodeten Farben / Spacings in Komponenten-CSS, alles hier.
+ *   - Werte orientieren sich am bestehenden Dark-Theme (vorher inline in app.vue).
+ *
+ * Schema:
+ *   --color-bg-*        Hintergrundfarben (Panel, Input, Modal, Backdrop)
+ *   --color-text-*      Textfarben (Primary, Secondary, Muted, On-Action)
+ *   --color-border-*    Border-Farben (Subtle, Strong, Focus)
+ *   --color-accent-*    Akzentfarben (Primary, Success, Warning, Danger, Info)
+ *   --radius-*          Border-Radius (Small, Medium, Large, Full)
+ *   --space-*           Spacing (XS bis XL)
+ *   --touch-target-min  Mindest-Klickfläche für Touch-Elemente (44pt)
+ */
+
+:root {
+  /* Backgrounds */
+  --color-bg-page: #0b0f19;
+  --color-bg-panel: rgba(15, 23, 42, 0.82);
+  --color-bg-panel-soft: rgba(15, 23, 42, 0.66);
+  --color-bg-input: rgba(8, 15, 30, 0.96);
+  --color-bg-input-hover: rgba(15, 23, 42, 0.98);
+  --color-bg-modal: rgba(15, 23, 42, 0.98);
+  --color-bg-backdrop: rgba(0, 0, 0, 0.6);
+
+  /* Text */
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-muted: #94a3b8;
+  --color-text-subtle: #64748b;
+  --color-text-on-action: #ffffff;
+
+  /* Borders */
+  --color-border-subtle: rgba(148, 163, 184, 0.14);
+  --color-border-default: rgba(148, 163, 184, 0.28);
+  --color-border-strong: rgba(148, 163, 184, 0.34);
+  --color-border-focus: rgba(96, 165, 250, 0.9);
+
+  /* Accents */
+  --color-accent-primary: #3b82f6;
+  --color-accent-primary-hover: rgba(96, 165, 250, 0.58);
+  --color-accent-primary-soft: rgba(59, 130, 246, 0.15);
+  --color-accent-primary-text: #93c5fd;
+  --color-accent-success: #10b981;
+  --color-accent-success-soft: rgba(16, 185, 129, 0.12);
+  --color-accent-success-text: #6ee7b7;
+  --color-accent-warning: #f59e0b;
+  --color-accent-warning-soft: rgba(245, 158, 11, 0.12);
+  --color-accent-warning-text: #fbbf24;
+  --color-accent-danger: #ef4444;
+  --color-accent-danger-soft: rgba(239, 68, 68, 0.12);
+  --color-accent-danger-text: #fca5a5;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 999px;
+
+  /* Spacing (4px-Raster) */
+  --space-xs: 0.25rem;   /*  4px */
+  --space-sm: 0.5rem;    /*  8px */
+  --space-md: 0.75rem;   /* 12px */
+  --space-lg: 1rem;      /* 16px */
+  --space-xl: 1.5rem;    /* 24px */
+  --space-2xl: 2rem;     /* 32px */
+  --space-3xl: 3rem;     /* 48px */
+
+  /* Touch */
+  --touch-target-min: 2.75rem; /* 44pt — Apple HIG & Material Empfehlung */
+
+  /* Form-Field-Sizing (uniform für InputText/Select/DatePicker/InputNumber)
+     Werden von PrimeVue als Default für `padding: var(--p-form-field-padding-y) var(--p-form-field-padding-x)`
+     referenziert. Ohne explizite Werte fallen Aura-Presets auf kleinere Defaults
+     zurück, was Select und DatePicker sichtbar kleiner rendert als InputText. */
+  --p-form-field-padding-x: 0.75rem;
+  --p-form-field-padding-y: 0.5rem;
+  --p-form-field-border-radius: var(--radius-md);
+
+  /* Ziel-Höhe aller Form-Fields (40px). PrimeVue Aura rendert InputText per
+     Default auf ~40px; Select und DatePicker fallen kleiner aus, weil ihr
+     Padding-Y auf inneren Elementen (Label / Input) sitzt statt auf dem Wrapper.
+     Wir setzen deshalb die Höhe hart auf allen drei Wrappern. */
+  --form-field-height: 2.5rem;
+}

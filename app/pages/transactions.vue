@@ -329,7 +329,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-if="loading" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Lädt</p>
+        <Kicker>Lädt</Kicker>
         <h2>Transaktionen werden geladen</h2>
         <p>Wir holen den aktiven Haushalt und die Buchungen des aktuellen Monats.</p>
       </div>
@@ -337,7 +337,7 @@ watch(activeHouseholdId, async () => {
 
     <section v-else-if="!activeHousehold" class="empty-state">
       <div class="empty-state__card">
-        <p class="empty-state__eyebrow">Kein Haushalt aktiv</p>
+        <Kicker>Kein Haushalt aktiv</Kicker>
         <h2>Wähle zuerst einen Haushalt aus</h2>
         <p>Erst dann können wir Transaktionen erfassen.</p>
         <NuxtLink to="/households" class="empty-state__button">Zu den Haushalten</NuxtLink>
