@@ -99,10 +99,38 @@ defineProps<{
 @media (max-width: 639px) {
   .list-page-shell__header {
     flex-direction: column;
+    padding: 1rem 1rem 1.1rem;
+    gap: 0.85rem;
+  }
+
+  /* Mobile: kleinerer Titel, dichter — Desktop hat 3rem-Headline, Mobile
+     reichen 1.5rem (immer noch groesser als Standard-Text). Spart ~50px. */
+  .list-page-shell__title {
+    font-size: 1.5rem;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+  }
+
+  .list-page-shell__description {
+    font-size: 0.85rem;
+    line-height: 1.45;
+    margin-top: 0.5rem;
   }
 
   .list-page-shell__summary {
     justify-content: flex-start;
+    /* Horizontal scrollen wenn mehr als 2 Tags — vermeidet erzwungenes
+       3-Reihen-Layout, das sonst 90px frisst. */
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: wrap; /* Wenn 2-3 Tags passen, normal umbrechen statt scrollen */
+  }
+
+  .list-page-shell__summary::-webkit-scrollbar { display: none; }
+
+  .list-page-shell__toolbar {
+    padding: 0;
   }
 }
 </style>

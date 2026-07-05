@@ -91,6 +91,53 @@ withDefaults(
 .item-card--cozy    { padding: 14px 18px; min-height: 56px; }
 .item-card--spacious { padding: 18px 22px; min-height: 64px; }
 
+/* Mobile: Spalten-Layout statt horizontaler Row.
+   Auf < 360px Inhalts-Breite wuerden die Aside (min-width 100px) und die
+   Action-Buttons sonst den Main-Block auf ~76px zusammenquetschen. Stack
+   ist lesbarer und Touch-Target-freundlicher.
+
+   Reihenfolge (top → bottom):
+     1. Main (Title + Meta)
+     2. Progress (optional)
+     3. Aside (Amount)
+     4. Actions (Edit/Delete), abgesetzt durch Trennlinie */
+@media (max-width: 639px) {
+  .item-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .item-card__main,
+  .item-card__progress,
+  .item-card__aside,
+  .item-card__actions {
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+
+  /* Amount rechtsbuendig in eigener Row — wichtig genug, dass es
+     prominent sein soll, aber auf Mobile nicht direkt am Title kleben muss. */
+  .item-card__aside {
+    text-align: right;
+    align-self: stretch;
+  }
+
+  /* Actions als Footer rechtsbuendig, mit feiner Trennlinie drueber. */
+  .item-card__actions {
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-subtle);
+    padding-top: 8px;
+    margin-top: 2px;
+  }
+
+  /* Progress full-width in eigener Row, falls vorhanden. */
+  .item-card__progress {
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
 .item-card:hover {
   background: var(--bg-card-row-hover);
   border-color: var(--border-row-hover);
