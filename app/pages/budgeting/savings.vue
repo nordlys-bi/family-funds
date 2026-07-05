@@ -36,8 +36,8 @@ const savingsDialogOpen = ref(false)
 
 const savingsForm = ref({
   name: '',
-  targetAmount: '',
-  monthlyRate: '',
+  targetAmount: null as number | null,
+  monthlyRate: null as number | null,
   startDate: new Date() as DateFormValue,
   endDate: null as DateFormValue,
 })
@@ -96,7 +96,7 @@ const goalProgressPercent = (goal: SavingsGoalItem) => {
 }
 
 const resetSavingsForm = () => {
-  savingsForm.value = { name: '', targetAmount: '', monthlyRate: '', startDate: new Date(), endDate: null }
+  savingsForm.value = { name: '', targetAmount: null, monthlyRate: null, startDate: new Date(), endDate: null }
   savingsEditId.value = null
 }
 
@@ -104,8 +104,8 @@ const editSavingsGoal = (goal: SavingsGoalItem) => {
   savingsEditId.value = goal.id
   savingsForm.value = {
     name: goal.name,
-    targetAmount: (goal.targetAmount / 100).toFixed(2).replace('.', ','),
-    monthlyRate: (goal.monthlyRate / 100).toFixed(2).replace('.', ','),
+    targetAmount: goal.targetAmount / 100,
+    monthlyRate: goal.monthlyRate / 100,
     startDate: new Date(goal.startDate),
     endDate: parseDateInput(goal.endDate),
   }
@@ -252,10 +252,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText id="goal-name" v-model="savingsForm.name" placeholder="z. B. Urlaub" />
       </FormFieldRow>
       <FormFieldRow label="Zielbetrag" html-for="goal-target">
-        <InputText id="goal-target" v-model="savingsForm.targetAmount" placeholder="0,00" inputmode="decimal" />
+        <MoneyInput id="goal-target" v-model="savingsForm.targetAmount" :currency="currencyCode" />
       </FormFieldRow>
       <FormFieldRow label="Monatliche Rate" html-for="goal-rate">
-        <InputText id="goal-rate" v-model="savingsForm.monthlyRate" placeholder="0,00" inputmode="decimal" />
+        <MoneyInput id="goal-rate" v-model="savingsForm.monthlyRate" :currency="currencyCode" :min="0" />
       </FormFieldRow>
       <FormFieldRow label="Start" html-for="goal-start">
         <DatePicker id="goal-start" v-model="savingsForm.startDate" showIcon dateFormat="dd.mm.yy" />
