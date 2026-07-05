@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import type { Frequency, Notice } from '~/types/planning'
 
 definePageMeta({ layout: 'default' })
-
-type Frequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
 
 type IncomePlanItem = {
   id: string
@@ -33,9 +32,6 @@ type PlanningHousehold = {
   fixedCosts: FixedCostPlanItem[]
 }
 
-type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
-type DateFormValue = Date | null
-
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -51,8 +47,8 @@ const incomeForm = ref({
   name: '',
   amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
-  startDate: new Date() as DateFormValue,
-  endDate: null as DateFormValue,
+  startDate: new Date() as Date | null,
+  endDate: null as Date | null,
 })
 const incomeEditId = ref<string | null>(null)
 
@@ -60,61 +56,16 @@ const fixedCostForm = ref({
   name: '',
   amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
-  startDate: new Date() as DateFormValue,
-  endDate: null as DateFormValue,
+  startDate: new Date() as Date | null,
+  endDate: null as Date | null,
 })
 const fixedCostEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
 
-const moneyFormatter = computed(
-  () => new Intl.NumberFormat('de-DE', { style: 'currency', currency: currencyCode.value }),
-)
-
-const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
-const formatDate = (value: string | null) => {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
-
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
-function parseDateInput(value: string | null | undefined) {
-  if (!value) return null
-  const date = new Date(`${value}T12:00:00`)
-  return Number.isNaN(date.getTime()) ? null : date
-}
-
-const frequencyLabel = (frequency: Frequency) => {
-  switch (frequency) {
-    case 'WEEKLY': return 'Wöchentlich'
-    case 'MONTHLY': return 'Monatlich'
-    case 'QUARTERLY': return 'Quartalsweise'
-    case 'YEARLY': return 'Jährlich'
-    case 'ONCE': return 'Einmalig'
-  }
-}
-
-const monthlyFrequencyFactor = (frequency: Frequency) => {
-  switch (frequency) {
-    case 'WEEKLY': return 52 / 12
-    case 'MONTHLY': return 1
-    case 'QUARTERLY': return 1 / 3
-    case 'YEARLY': return 1 / 12
-    case 'ONCE': return 1
-  }
-}
-
-const frequencyOptions = [
-  { label: 'Wöchentlich', value: 'WEEKLY' as Frequency },
-  { label: 'Monatlich', value: 'MONTHLY' as Frequency },
-  { label: 'Quartalsweise', value: 'QUARTERLY' as Frequency },
-  { label: 'Jährlich', value: 'YEARLY' as Frequency },
-  { label: 'Einmalig', value: 'ONCE' as Frequency },
-]
+const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
+const formatDate = formatPlanningDate
 
 const loadPlanning = async () => {
   loading.value = true
@@ -149,25 +100,13 @@ const resetFixedCostForm = () => {
 
 const editIncomePlan = (plan: IncomePlanItem) => {
   incomeEditId.value = plan.id
-  incomeForm.value = {
-    name: plan.name,
-    amount: plan.amount / 100,
-    frequency: plan.frequency,
-    startDate: new Date(plan.startDate),
-    endDate: parseDateInput(plan.endDate),
-  }
+  incomeForm.value = { name: plan.name, amount: plan.amount / 100, frequency: plan.frequency, startDate: new Date(plan.startDate), endDate: parseDateInputString(plan.endDate) }
   incomeDialogOpen.value = true
 }
 
 const editFixedCostPlan = (plan: FixedCostPlanItem) => {
   fixedCostEditId.value = plan.id
-  fixedCostForm.value = {
-    name: plan.name,
-    amount: plan.amount / 100,
-    frequency: plan.frequency,
-    startDate: new Date(plan.startDate),
-    endDate: parseDateInput(plan.endDate),
-  }
+  fixedCostForm.value = { name: plan.name, amount: plan.amount / 100, frequency: plan.frequency, startDate: new Date(plan.startDate), endDate: parseDateInputString(plan.endDate) }
   fixedCostDialogOpen.value = true
 }
 
@@ -176,61 +115,45 @@ const openFixedCostDialog = () => { resetFixedCostForm(); fixedCostDialogOpen.va
 const closeIncomeDialog = () => { incomeDialogOpen.value = false; resetIncomeForm() }
 const closeFixedCostDialog = () => { fixedCostDialogOpen.value = false; resetFixedCostForm() }
 
-const saveIncomePlan = async () => {
+type PlanKind = 'incomePlan' | 'fixedCostPlan'
+
+async function savePlan(
+  kind: PlanKind,
+  form: typeof incomeForm.value,
+  editId: string | null,
+  loadingRef: typeof incomeLoading,
+  closeDialog: () => void,
+  successVerb: string,
+) {
   if (!activeHouseholdId.value) return
-  incomeLoading.value = true
+  loadingRef.value = true
   notice.value = null
   try {
-    const isEdit = Boolean(incomeEditId.value)
+    const isEdit = Boolean(editId)
     await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
       method: isEdit ? 'PATCH' : 'POST',
       body: {
-        kind: 'incomePlan',
-        ...(isEdit ? { id: incomeEditId.value } : {}),
-        name: incomeForm.value.name,
-        amount: incomeForm.value.amount,
-        frequency: incomeForm.value.frequency,
-        startDate: incomeForm.value.startDate ? formatDateInput(incomeForm.value.startDate) : undefined,
-        endDate: incomeForm.value.endDate ? formatDateInput(incomeForm.value.endDate) : null,
+        kind,
+        ...(isEdit ? { id: editId } : {}),
+        name: form.name,
+        amount: form.amount,
+        frequency: form.frequency,
+        startDate: form.startDate ? formatDateToInputString(form.startDate) : undefined,
+        endDate: form.endDate ? formatDateToInputString(form.endDate) : null,
       },
     })
     await loadPlanning()
-    closeIncomeDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Einnahmenplan aktualisiert.' : 'Einnahmenplan angelegt.' }
+    closeDialog()
+    notice.value = { severity: 'success', text: isEdit ? `${successVerb} aktualisiert.` : `${successVerb} angelegt.` }
   } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Einnahmenplan konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
+    notice.value = { severity: 'error', text: `${successVerb} konnte nicht gespeichert werden: ` + (error.statusMessage || error.message) }
   } finally {
-    incomeLoading.value = false
+    loadingRef.value = false
   }
 }
 
-const saveFixedCostPlan = async () => {
-  if (!activeHouseholdId.value) return
-  fixedCostLoading.value = true
-  notice.value = null
-  try {
-    const isEdit = Boolean(fixedCostEditId.value)
-    await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
-      method: isEdit ? 'PATCH' : 'POST',
-      body: {
-        kind: 'fixedCostPlan',
-        ...(isEdit ? { id: fixedCostEditId.value } : {}),
-        name: fixedCostForm.value.name,
-        amount: fixedCostForm.value.amount,
-        frequency: fixedCostForm.value.frequency,
-        startDate: fixedCostForm.value.startDate ? formatDateInput(fixedCostForm.value.startDate) : undefined,
-        endDate: fixedCostForm.value.endDate ? formatDateInput(fixedCostForm.value.endDate) : null,
-      },
-    })
-    await loadPlanning()
-    closeFixedCostDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Fixkostenplan aktualisiert.' : 'Fixkostenplan angelegt.' }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Fixkostenplan konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
-  } finally {
-    fixedCostLoading.value = false
-  }
-}
+const saveIncomePlan = () => savePlan('incomePlan', incomeForm.value, incomeEditId.value, incomeLoading, closeIncomeDialog, 'Einnahmenplan')
+const saveFixedCostPlan = () => savePlan('fixedCostPlan', fixedCostForm.value, fixedCostEditId.value, fixedCostLoading, closeFixedCostDialog, 'Fixkostenplan')
 
 const deletePlanningItem = async (kind: 'incomePlan' | 'fixedCostPlan', id: string) => {
   if (!activeHouseholdId.value) return
@@ -380,21 +303,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveIncomePlan"
       @cancel="closeIncomeDialog"
     >
-      <FormFieldRow label="Name" html-for="income-name" wide>
-        <InputText id="income-name" v-model="incomeForm.name" placeholder="z. B. Gehalt" />
-      </FormFieldRow>
-      <FormFieldRow label="Betrag" html-for="income-amount">
-        <MoneyInput id="income-amount" v-model="incomeForm.amount" :currency="currencyCode" />
-      </FormFieldRow>
-      <FormFieldRow label="Frequenz" html-for="income-frequency">
-        <Select id="income-frequency" v-model="incomeForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
-      </FormFieldRow>
-      <FormFieldRow label="Start" html-for="income-start">
-        <DatePicker id="income-start" v-model="incomeForm.startDate" showIcon dateFormat="dd.mm.yy" />
-      </FormFieldRow>
-      <FormFieldRow label="Ende" html-for="income-end">
-        <DatePicker id="income-end" v-model="incomeForm.endDate" showIcon dateFormat="dd.mm.yy" />
-      </FormFieldRow>
+      <RecurringPlanForm
+        v-model="incomeForm"
+        id-prefix="income"
+        :currency="currencyCode"
+        name-placeholder="z. B. Gehalt"
+      />
     </FormDialog>
 
     <FormDialog
@@ -405,21 +319,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveFixedCostPlan"
       @cancel="closeFixedCostDialog"
     >
-      <FormFieldRow label="Name" html-for="fixed-name" wide>
-        <InputText id="fixed-name" v-model="fixedCostForm.name" placeholder="z. B. Miete" />
-      </FormFieldRow>
-      <FormFieldRow label="Betrag" html-for="fixed-amount">
-        <MoneyInput id="fixed-amount" v-model="fixedCostForm.amount" :currency="currencyCode" />
-      </FormFieldRow>
-      <FormFieldRow label="Frequenz" html-for="fixed-frequency">
-        <Select id="fixed-frequency" v-model="fixedCostForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
-      </FormFieldRow>
-      <FormFieldRow label="Start" html-for="fixed-start">
-        <DatePicker id="fixed-start" v-model="fixedCostForm.startDate" showIcon dateFormat="dd.mm.yy" />
-      </FormFieldRow>
-      <FormFieldRow label="Ende" html-for="fixed-end">
-        <DatePicker id="fixed-end" v-model="fixedCostForm.endDate" showIcon dateFormat="dd.mm.yy" />
-      </FormFieldRow>
+      <RecurringPlanForm
+        v-model="fixedCostForm"
+        id-prefix="fixed"
+        :currency="currencyCode"
+        name-placeholder="z. B. Miete"
+      />
     </FormDialog>
   </ListPageShell>
 </template>
