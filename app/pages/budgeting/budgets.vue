@@ -340,13 +340,13 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveBudget"
       @cancel="closeBudgetDialog"
     >
-      <FormField label="Name" html-for="budget-name" wide>
+      <FormFieldRow label="Name" html-for="budget-name" wide>
         <InputText id="budget-name" v-model="budgetForm.name" placeholder="z. B. Lebensmittel" />
-      </FormField>
-      <FormField label="Betrag" html-for="budget-amount">
+      </FormFieldRow>
+      <FormFieldRow label="Betrag" html-for="budget-amount">
         <InputText id="budget-amount" v-model="budgetForm.amount" placeholder="0,00" inputmode="decimal" />
-      </FormField>
-      <FormField label="Frequenz" html-for="budget-frequency">
+      </FormFieldRow>
+      <FormFieldRow label="Frequenz" html-for="budget-frequency">
         <Select
           id="budget-frequency"
           v-model="budgetForm.frequency"
@@ -354,10 +354,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           optionLabel="label"
           optionValue="value"
         />
-      </FormField>
-      <FormField label="Gültig ab" html-for="budget-valid-from">
+      </FormFieldRow>
+      <FormFieldRow label="Gültig ab" html-for="budget-valid-from">
         <DatePicker id="budget-valid-from" v-model="budgetForm.validFrom" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>

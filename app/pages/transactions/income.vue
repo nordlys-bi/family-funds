@@ -232,7 +232,7 @@ watch(activeHouseholdId, async () => { await loadData() })
       @save="saveTransaction"
       @cancel="closeTransactionDialog"
     >
-      <FormField label="Betrag" html-for="transaction-amount">
+      <FormFieldRow label="Betrag" html-for="transaction-amount">
         <InputNumber
           id="transaction-amount"
           v-model="transactionForm.amount"
@@ -244,13 +244,13 @@ watch(activeHouseholdId, async () => { await loadData() })
           :maxFractionDigits="2"
           placeholder="0,00"
         />
-      </FormField>
-      <FormField label="Datum" html-for="transaction-date">
+      </FormFieldRow>
+      <FormFieldRow label="Datum" html-for="transaction-date">
         <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
-      </FormField>
-      <FormField label="Beschreibung" html-for="transaction-description" wide>
+      </FormFieldRow>
+      <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
         <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>

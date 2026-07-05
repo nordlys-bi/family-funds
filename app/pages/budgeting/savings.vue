@@ -248,21 +248,21 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @cancel="closeSavingsDialog"
       width="min(50rem, 94vw)"
     >
-      <FormField label="Name" html-for="goal-name" wide>
+      <FormFieldRow label="Name" html-for="goal-name" wide>
         <InputText id="goal-name" v-model="savingsForm.name" placeholder="z. B. Urlaub" />
-      </FormField>
-      <FormField label="Zielbetrag" html-for="goal-target">
+      </FormFieldRow>
+      <FormFieldRow label="Zielbetrag" html-for="goal-target">
         <InputText id="goal-target" v-model="savingsForm.targetAmount" placeholder="0,00" inputmode="decimal" />
-      </FormField>
-      <FormField label="Monatliche Rate" html-for="goal-rate">
+      </FormFieldRow>
+      <FormFieldRow label="Monatliche Rate" html-for="goal-rate">
         <InputText id="goal-rate" v-model="savingsForm.monthlyRate" placeholder="0,00" inputmode="decimal" />
-      </FormField>
-      <FormField label="Start" html-for="goal-start">
+      </FormFieldRow>
+      <FormFieldRow label="Start" html-for="goal-start">
         <DatePicker id="goal-start" v-model="savingsForm.startDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
-      <FormField label="Ende" html-for="goal-end">
+      </FormFieldRow>
+      <FormFieldRow label="Ende" html-for="goal-end">
         <DatePicker id="goal-end" v-model="savingsForm.endDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>

@@ -380,21 +380,21 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveIncomePlan"
       @cancel="closeIncomeDialog"
     >
-      <FormField label="Name" html-for="income-name" wide>
+      <FormFieldRow label="Name" html-for="income-name" wide>
         <InputText id="income-name" v-model="incomeForm.name" placeholder="z. B. Gehalt" />
-      </FormField>
-      <FormField label="Betrag" html-for="income-amount">
+      </FormFieldRow>
+      <FormFieldRow label="Betrag" html-for="income-amount">
         <InputText id="income-amount" v-model="incomeForm.amount" placeholder="0,00" inputmode="decimal" />
-      </FormField>
-      <FormField label="Frequenz" html-for="income-frequency">
+      </FormFieldRow>
+      <FormFieldRow label="Frequenz" html-for="income-frequency">
         <Select id="income-frequency" v-model="incomeForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
-      </FormField>
-      <FormField label="Start" html-for="income-start">
+      </FormFieldRow>
+      <FormFieldRow label="Start" html-for="income-start">
         <DatePicker id="income-start" v-model="incomeForm.startDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
-      <FormField label="Ende" html-for="income-end">
+      </FormFieldRow>
+      <FormFieldRow label="Ende" html-for="income-end">
         <DatePicker id="income-end" v-model="incomeForm.endDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
 
     <FormDialog
@@ -405,21 +405,21 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveFixedCostPlan"
       @cancel="closeFixedCostDialog"
     >
-      <FormField label="Name" html-for="fixed-name" wide>
+      <FormFieldRow label="Name" html-for="fixed-name" wide>
         <InputText id="fixed-name" v-model="fixedCostForm.name" placeholder="z. B. Miete" />
-      </FormField>
-      <FormField label="Betrag" html-for="fixed-amount">
+      </FormFieldRow>
+      <FormFieldRow label="Betrag" html-for="fixed-amount">
         <InputText id="fixed-amount" v-model="fixedCostForm.amount" placeholder="0,00" inputmode="decimal" />
-      </FormField>
-      <FormField label="Frequenz" html-for="fixed-frequency">
+      </FormFieldRow>
+      <FormFieldRow label="Frequenz" html-for="fixed-frequency">
         <Select id="fixed-frequency" v-model="fixedCostForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
-      </FormField>
-      <FormField label="Start" html-for="fixed-start">
+      </FormFieldRow>
+      <FormFieldRow label="Start" html-for="fixed-start">
         <DatePicker id="fixed-start" v-model="fixedCostForm.startDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
-      <FormField label="Ende" html-for="fixed-end">
+      </FormFieldRow>
+      <FormFieldRow label="Ende" html-for="fixed-end">
         <DatePicker id="fixed-end" v-model="fixedCostForm.endDate" showIcon dateFormat="dd.mm.yy" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>
