@@ -226,7 +226,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
             </td>
             <td class="muted">{{ member.user.email }}</td>
             <td>
-              <Tag :value="member.role" :severity="member.role === 'OWNER' ? 'success' : 'info'" />
+              <RoleTag :role="member.role" />
             </td>
             <td class="muted">{{ formatMemberSince(member.createdAt) }}</td>
             <td class="actions">
@@ -261,7 +261,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
           <tr v-for="invitation in currentHousehold.invitations" :key="invitation.id">
             <td class="name">{{ invitation.email }}</td>
             <td>
-              <Tag :value="invitation.role" :severity="invitation.role === 'OWNER' ? 'success' : 'info'" />
+              <RoleTag :role="invitation.role" />
             </td>
             <td class="muted">{{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</td>
             <td class="actions">

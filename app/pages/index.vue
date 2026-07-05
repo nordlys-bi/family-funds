@@ -22,11 +22,7 @@ const { activeHousehold } = useHousehold()
             <p class="text-sm m-0 text-slate-400">
               Währung: <strong>{{ activeHousehold.currency }}</strong> &middot; 
               Deine Rolle: 
-              <Tag
-                :value="activeHousehold.role"
-                :severity="activeHousehold.role === 'OWNER' ? 'success' : 'info'"
-                rounded
-              />
+              <RoleTag :role="activeHousehold.role" />
             </p>
           </div>
         </div>

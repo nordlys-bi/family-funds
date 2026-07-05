@@ -64,7 +64,7 @@ const budgetDialogOpen = ref(false)
 
 const budgetForm = ref({
   name: '',
-  amount: '',
+  amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
   validFrom: getPeriodStartDate(new Date(), 'MONTHLY') as DateFormValue,
 })
@@ -151,7 +151,7 @@ const loadPlanning = async () => {
 const resetBudgetForm = () => {
   budgetForm.value = {
     name: '',
-    amount: '',
+    amount: null,
     frequency: 'MONTHLY',
     validFrom: getPeriodStartDate(new Date(), 'MONTHLY'),
   }
@@ -163,7 +163,7 @@ const editBudget = (budget: BudgetItem) => {
   const latestVersion = budget.versions[0]
   budgetForm.value = {
     name: budget.name,
-    amount: latestVersion ? (latestVersion.amount / 100).toFixed(2).replace('.', ',') : '',
+    amount: latestVersion ? latestVersion.amount / 100 : null,
     frequency: latestVersion?.frequency ?? 'MONTHLY',
     validFrom: latestVersion ? new Date(latestVersion.validFrom) : new Date(),
   }
@@ -344,7 +344,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText id="budget-name" v-model="budgetForm.name" placeholder="z. B. Lebensmittel" />
       </FormFieldRow>
       <FormFieldRow label="Betrag" html-for="budget-amount">
-        <InputText id="budget-amount" v-model="budgetForm.amount" placeholder="0,00" inputmode="decimal" />
+        <MoneyInput id="budget-amount" v-model="budgetForm.amount" :currency="currencyCode" />
       </FormFieldRow>
       <FormFieldRow label="Frequenz" html-for="budget-frequency">
         <Select

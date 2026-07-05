@@ -49,7 +49,7 @@ const fixedCostDialogOpen = ref(false)
 
 const incomeForm = ref({
   name: '',
-  amount: '',
+  amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
   startDate: new Date() as DateFormValue,
   endDate: null as DateFormValue,
@@ -58,7 +58,7 @@ const incomeEditId = ref<string | null>(null)
 
 const fixedCostForm = ref({
   name: '',
-  amount: '',
+  amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
   startDate: new Date() as DateFormValue,
   endDate: null as DateFormValue,
@@ -139,11 +139,11 @@ const monthlyFixedCostTotal = computed(
 const planableBalance = computed(() => monthlyIncomeTotal.value - monthlyFixedCostTotal.value)
 
 const resetIncomeForm = () => {
-  incomeForm.value = { name: '', amount: '', frequency: 'MONTHLY', startDate: new Date(), endDate: null }
+  incomeForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null }
   incomeEditId.value = null
 }
 const resetFixedCostForm = () => {
-  fixedCostForm.value = { name: '', amount: '', frequency: 'MONTHLY', startDate: new Date(), endDate: null }
+  fixedCostForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null }
   fixedCostEditId.value = null
 }
 
@@ -151,7 +151,7 @@ const editIncomePlan = (plan: IncomePlanItem) => {
   incomeEditId.value = plan.id
   incomeForm.value = {
     name: plan.name,
-    amount: (plan.amount / 100).toFixed(2).replace('.', ','),
+    amount: plan.amount / 100,
     frequency: plan.frequency,
     startDate: new Date(plan.startDate),
     endDate: parseDateInput(plan.endDate),
@@ -163,7 +163,7 @@ const editFixedCostPlan = (plan: FixedCostPlanItem) => {
   fixedCostEditId.value = plan.id
   fixedCostForm.value = {
     name: plan.name,
-    amount: (plan.amount / 100).toFixed(2).replace('.', ','),
+    amount: plan.amount / 100,
     frequency: plan.frequency,
     startDate: new Date(plan.startDate),
     endDate: parseDateInput(plan.endDate),
@@ -384,7 +384,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText id="income-name" v-model="incomeForm.name" placeholder="z. B. Gehalt" />
       </FormFieldRow>
       <FormFieldRow label="Betrag" html-for="income-amount">
-        <InputText id="income-amount" v-model="incomeForm.amount" placeholder="0,00" inputmode="decimal" />
+        <MoneyInput id="income-amount" v-model="incomeForm.amount" :currency="currencyCode" />
       </FormFieldRow>
       <FormFieldRow label="Frequenz" html-for="income-frequency">
         <Select id="income-frequency" v-model="incomeForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
@@ -409,7 +409,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText id="fixed-name" v-model="fixedCostForm.name" placeholder="z. B. Miete" />
       </FormFieldRow>
       <FormFieldRow label="Betrag" html-for="fixed-amount">
-        <InputText id="fixed-amount" v-model="fixedCostForm.amount" placeholder="0,00" inputmode="decimal" />
+        <MoneyInput id="fixed-amount" v-model="fixedCostForm.amount" :currency="currencyCode" />
       </FormFieldRow>
       <FormFieldRow label="Frequenz" html-for="fixed-frequency">
         <Select id="fixed-frequency" v-model="fixedCostForm.frequency" :options="frequencyOptions" optionLabel="label" optionValue="value" />
