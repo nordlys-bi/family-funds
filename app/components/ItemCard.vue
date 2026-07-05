@@ -182,14 +182,15 @@ withDefaults(
   opacity: 0;
 }
 
-.item-card--hover-actions:hover .item-card__actions {
+.item-card--hover-actions:hover .item-card__actions,
+.item-card--hover-actions:focus-within .item-card__actions {
   opacity: 1;
 }
 
 .item-card__actions :deep(button) {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -199,6 +200,14 @@ withDefaults(
   justify-content: center;
   font-size: 12px;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+
+@media (max-width: 639px) {
+  /* Touch-Target: 44pt auf Mobile, Desktop bleibt 36px fürs visuelle Layout */
+  .item-card__actions :deep(button) {
+    width: var(--touch-target-min);
+    height: var(--touch-target-min);
+  }
 }
 
 .item-card__actions :deep(button:hover) {

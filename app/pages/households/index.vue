@@ -282,7 +282,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   color: #94a3b8;
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 639px) {
   .overview-card__strip {
     grid-template-columns: 1fr;
   }

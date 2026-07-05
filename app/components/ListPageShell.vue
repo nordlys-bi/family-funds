@@ -96,7 +96,7 @@ defineProps<{
   min-height: 0;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 639px) {
   .list-page-shell__header {
     flex-direction: column;
   }

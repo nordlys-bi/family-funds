@@ -112,23 +112,20 @@ const { activeHousehold } = useHousehold()
           </p>
           <ul class="milestones-list">
             <li>
-              <Tag value="M3" severity="info" rounded />
               <div>
-                <strong>Haushalts- & Mitgliederverwaltung:</strong> 
+                <strong>Haushalts- & Mitgliederverwaltung:</strong>
                 Haushalte erstellen und andere Nutzer per E-Mail in deinen Haushalt einladen.
               </div>
             </li>
             <li>
-              <Tag value="M4" severity="info" rounded />
               <div>
-                <strong>Finanzplanung (Budgets & Pläne):</strong> 
+                <strong>Finanzplanung (Budgets & Pläne):</strong>
                 Erstellen von Budgets, Sparplänen, Fixkosten und Einnahmenplänen.
               </div>
             </li>
             <li>
-              <Tag value="M5" severity="info" rounded />
               <div>
-                <strong>Transaktionen & Anrechnung:</strong> 
+                <strong>Transaktionen & Anrechnung:</strong>
                 Buchung von Einnahmen/Ausgaben und automatische Abrechnung gegenüber Budgets und Sparzielen.
               </div>
             </li>
