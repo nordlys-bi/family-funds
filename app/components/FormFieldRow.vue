@@ -1,12 +1,18 @@
 <!--
-  FormField — kapselt ein PrimeVue-Form-Element mit Label.
+  FormFieldRow — kapselt ein PrimeVue-Form-Element mit Label.
 
   Verwendung:
-  <FormField label="Name" html-for="budget-name">
+  <FormFieldRow label="Name" htmlFor="budget-name">
     <InputText id="budget-name" v-model="form.name" />
-  </FormField>
+  </FormFieldRow>
 
   Optional mit `wide` fuer Felder, die die volle Grid-Spannweite einnehmen.
+
+  Hinweis: hieß vorher `FormField`. Der Namenswechsel war nötig, weil
+  PrimeVue 4 eine gleichnamige globale Komponente `<FormField>` registriert
+  (siehe App-Memory). Eigene Komponente wurde sonst von PrimeVue's
+  Klassen-basiertem `<div class="p-formfield">` ersetzt — Inputs erschienen,
+  Labels und Layout gingen verloren.
 -->
 <script setup lang="ts">
 defineProps<{

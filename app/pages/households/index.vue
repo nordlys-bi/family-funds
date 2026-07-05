@@ -170,12 +170,12 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       @cancel="closeCreateHouseholdDialog"
       width="min(34rem, 94vw)"
     >
-      <FormField label="Name" html-for="household-create-name" wide>
+      <FormFieldRow label="Name" html-for="household-create-name" wide>
         <InputText id="household-create-name" v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" />
-      </FormField>
-      <FormField label="Währung" html-for="household-create-currency" wide>
+      </FormFieldRow>
+      <FormFieldRow label="Währung" html-for="household-create-currency" wide>
         <InputText id="household-create-currency" v-model="createForm.currency" placeholder="EUR" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>

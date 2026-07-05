@@ -294,10 +294,10 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       @cancel="closeInviteDialog"
       width="min(34rem, 94vw)"
     >
-      <FormField label="E-Mail" html-for="household-invite-email" wide>
+      <FormFieldRow label="E-Mail" html-for="household-invite-email" wide>
         <InputText id="household-invite-email" v-model="inviteForm.email" type="email" placeholder="person@beispiel.de" />
-      </FormField>
-      <FormField label="Rolle" html-for="household-invite-role" wide>
+      </FormFieldRow>
+      <FormFieldRow label="Rolle" html-for="household-invite-role" wide>
         <Select
           id="household-invite-role"
           v-model="inviteForm.role"
@@ -308,7 +308,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
           optionLabel="label"
           optionValue="value"
         />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
 
     <ConfirmDialog

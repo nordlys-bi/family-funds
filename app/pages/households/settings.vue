@@ -152,12 +152,12 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       @cancel="closeEditHouseholdDialog"
       width="min(34rem, 94vw)"
     >
-      <FormField label="Name" html-for="household-edit-name" wide>
+      <FormFieldRow label="Name" html-for="household-edit-name" wide>
         <InputText id="household-edit-name" v-model="editForm.name" :disabled="!canManageHousehold" />
-      </FormField>
-      <FormField label="Währung" html-for="household-edit-currency" wide>
+      </FormFieldRow>
+      <FormFieldRow label="Währung" html-for="household-edit-currency" wide>
         <InputText id="household-edit-currency" v-model="editForm.currency" :disabled="!canManageHousehold" />
-      </FormField>
+      </FormFieldRow>
     </FormDialog>
   </ListPageShell>
 </template>

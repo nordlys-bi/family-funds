@@ -8,12 +8,12 @@
     @save="save"
     :saving="saving"
   >
-    <FormField label="Name" html-for="my-name">
+    <FormFieldRow label="Name" htmlFor="my-name">
       <InputText id="my-name" v-model="form.name" />
-    </FormField>
-    <FormField label="Betrag" html-for="my-amount">
+    </FormFieldRow>
+    <FormFieldRow label="Betrag" htmlFor="my-amount">
       <InputNumber id="my-amount" v-model="form.amount" />
-    </FormField>
+    </FormFieldRow>
   </FormDialog>
 -->
 <script setup lang="ts">

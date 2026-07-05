@@ -8,9 +8,9 @@
 
   Verwendung:
   <BottomSheet v-model:visible="dialogOpen" title="Ausgabe erfassen">
-    <FormField label="Betrag" htmlFor="amount">
+    <FormFieldRow label="Betrag" htmlFor="amount">
       <InputNumber v-model="form.amount" />
-    </FormField>
+    </FormFieldRow>
     <template #footer>
       <Button label="Abbrechen" severity="secondary" outlined @click="close" />
       <Button label="Speichern" icon="pi pi-check" @click="save" />
