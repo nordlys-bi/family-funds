@@ -224,7 +224,7 @@ withDefaults(
   transition: opacity 0.12s ease;
 }
 
-/* Hover-Actions-Variante: Actions per Default versteckt, auf Row-Hover sichtbar */
+/* Hover-Actions-Variante: Actions per Default versteckt, auf Row-Hhover sichtbar */
 .item-card--hover-actions .item-card__actions {
   opacity: 0;
 }
@@ -232,6 +232,14 @@ withDefaults(
 .item-card--hover-actions:hover .item-card__actions,
 .item-card--hover-actions:focus-within .item-card__actions {
   opacity: 1;
+}
+
+/* Touch-Devices haben keinen Hover. Actions sind dort immer sichtbar,
+   sonst kann der User die Edit/Delete-Buttons gar nicht erreichen. */
+@media (hover: none) {
+  .item-card--hover-actions .item-card__actions {
+    opacity: 1;
+  }
 }
 
 .item-card__actions :deep(button) {
