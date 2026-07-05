@@ -140,7 +140,7 @@ defineProps<{
   gap: 6px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .list-panel {
     padding: 1rem;
   }

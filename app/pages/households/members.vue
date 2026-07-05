@@ -50,9 +50,42 @@ const closeInviteDialog = () => {
   inviteForm.value = { email: '', role: 'MEMBER' }
 }
 
-const confirmDestructiveAction = (title: string, message: string) => {
-  if (typeof window === 'undefined') return true
-  return window.confirm(`${title}\n\n${message}`)
+/**
+ * Pending state für den ConfirmDialog. Statt window.confirm() wird ein eigener
+ * Dialog gezeigt (ConfirmDialog.vue). Eine laufende Aktion hängt als Promise
+ * an `pendingConfirm.resolve` — Bestätigen löst true aus, Abbrechen false.
+ */
+const pendingConfirm = ref<{
+  title: string
+  message: string
+  tone: 'primary' | 'danger'
+  resolve: (ok: boolean) => void
+} | null>(null)
+const confirmOpen = computed(() => pendingConfirm.value !== null)
+
+function askConfirm(opts: {
+  title: string
+  message: string
+  tone?: 'primary' | 'danger'
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    pendingConfirm.value = {
+      title: opts.title,
+      message: opts.message,
+      tone: opts.tone ?? 'danger',
+      resolve,
+    }
+  })
+}
+
+function handleConfirmOk() {
+  pendingConfirm.value?.resolve(true)
+  pendingConfirm.value = null
+}
+
+function handleConfirmCancel() {
+  pendingConfirm.value?.resolve(false)
+  pendingConfirm.value = null
 }
 
 const loadCurrentHousehold = async () => {
@@ -88,7 +121,12 @@ const handleInviteMember = async () => {
 
 const removeMember = async (membershipId: string) => {
   if (!activeHouseholdId.value) return
-  if (!confirmDestructiveAction('Mitglied entfernen?', 'Diese Person verliert sofort den Zugriff auf den Haushalt.')) return
+  const ok = await askConfirm({
+    title: 'Mitglied entfernen?',
+    message: 'Diese Person verliert sofort den Zugriff auf den Haushalt.',
+    tone: 'danger',
+  })
+  if (!ok) return
   removeLoadingId.value = membershipId
   message.value = null
   try {
@@ -104,7 +142,12 @@ const removeMember = async (membershipId: string) => {
 
 const cancelInvitation = async (invitationId: string) => {
   if (!activeHouseholdId.value) return
-  if (!confirmDestructiveAction('Einladung löschen?', 'Die eingeladene Person kann diese Einladung danach nicht mehr annehmen.')) return
+  const ok = await askConfirm({
+    title: 'Einladung löschen?',
+    message: 'Die eingeladene Person kann diese Einladung danach nicht mehr annehmen.',
+    tone: 'danger',
+  })
+  if (!ok) return
   cancelInvitationLoadingId.value = invitationId
   message.value = null
   try {
@@ -267,6 +310,17 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
         />
       </FormField>
     </FormDialog>
+
+    <ConfirmDialog
+      v-if="pendingConfirm"
+      :visible="confirmOpen"
+      :title="pendingConfirm.title"
+      :message="pendingConfirm.message"
+      :tone="pendingConfirm.tone"
+      @confirm="handleConfirmOk"
+      @cancel="handleConfirmCancel"
+      @update:visible="(v) => { if (!v) handleConfirmCancel() }"
+    />
   </ListPageShell>
 </template>
 

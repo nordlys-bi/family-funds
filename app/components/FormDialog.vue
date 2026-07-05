@@ -94,7 +94,7 @@ function handleHide() {
   margin-top: 0.25rem;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 639px) {
   .form-dialog__actions {
     grid-template-columns: 1fr;
   }

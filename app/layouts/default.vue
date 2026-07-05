@@ -1,22 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const { user, logout } = useAppAuth()
 const { households, activeHousehold, setActiveHousehold } = useHousehold()
 const config = useRuntimeConfig()
 const isClerkMode = config.public.authMode === 'clerk'
 
-const isSidebarOpen = ref(true)
 const householdOptions = computed(() =>
   households.value.map((household) => ({
     label: `${household.name} (${household.currency})`,
     value: household.id,
   })),
 )
-
-const toggleSidebar = () => {
-  isSidebarOpen.value = !isSidebarOpen.value
-}
 
 const handleHouseholdChange = (value: string | null) => {
   if (value) {
@@ -27,12 +22,90 @@ const handleHouseholdChange = (value: string | null) => {
 const handleLogout = async () => {
   await logout()
 }
+
+// === Layout-Modus (Mobile vs. Desktop) ===========================
+// Mobile (< 640px): Sidebar ist Off-Canvas-Drawer mit Backdrop.
+// Desktop (≥ 640px): Sidebar ist persistente Spalte mit Collapse-Toggle.
+const isMobile = ref(false)
+let mobileQuery: MediaQueryList | null = null
+const isMobileDrawerOpen = ref(false)
+const isDesktopCollapsed = ref(false)
+
+function syncMobileMode(event: MediaQueryListEvent | MediaQueryList) {
+  isMobile.value = event.matches
+  if (!event.matches) {
+    // Wenn ins Desktop-Modus gewechselt, Drawer-State resetten.
+    isMobileDrawerOpen.value = false
+  }
+}
+
+const openMobileDrawer = () => { isMobileDrawerOpen.value = true }
+const closeMobileDrawer = () => { isMobileDrawerOpen.value = false }
+const toggleDesktopSidebar = () => {
+  isDesktopCollapsed.value = !isDesktopCollapsed.value
+}
+
+function onEscapeKey(event: KeyboardEvent) {
+  if (event.key === 'Escape' && isMobileDrawerOpen.value) {
+    event.preventDefault()
+    closeMobileDrawer()
+  }
+}
+
+// === FAB-Aktionen ================================================
+// Mobile-only. Auf Desktop übernimmt der Split-Button im Page-Toolbar.
+// v1: navigieren auf die jeweilige Sub-Seite (Quick-Add-Dialoge müssen
+// in der jeweiligen Page via ?new=1 geöffnet werden — als Follow-up Issue).
+const fabActions = [
+  {
+    key: 'expense',
+    label: 'Ausgabe',
+    icon: 'pi pi-arrow-up-right',
+    tone: 'danger',
+    onSelect: () => navigateTo('/transactions/expenses'),
+  },
+  {
+    key: 'income',
+    label: 'Einnahme',
+    icon: 'pi pi-arrow-down-left',
+    tone: 'success',
+    onSelect: () => navigateTo('/transactions/income'),
+  },
+  {
+    key: 'savings',
+    label: 'Sparziel',
+    icon: 'pi pi-star',
+    tone: 'accent',
+    onSelect: () => navigateTo('/budgeting/savings'),
+  },
+] as const
+
+onMounted(() => {
+  if (import.meta.client) {
+    mobileQuery = window.matchMedia('(max-width: 639px)')
+    syncMobileMode(mobileQuery)
+    mobileQuery.addEventListener('change', syncMobileMode)
+    document.addEventListener('keydown', onEscapeKey)
+  }
+})
+
+onBeforeUnmount(() => {
+  mobileQuery?.removeEventListener('change', syncMobileMode)
+  document.removeEventListener('keydown', onEscapeKey)
+})
 </script>
 
 <template>
-  <div class="layout-wrapper">
-    <!-- Sidebar -->
-    <aside class="sidebar" :class="{ 'sidebar-collapsed': !isSidebarOpen }">
+  <div
+    class="layout-wrapper"
+    :class="{
+      'layout-wrapper--mobile': isMobile,
+      'layout-wrapper--drawer-open': isMobile && isMobileDrawerOpen,
+      'layout-wrapper--collapsed': !isMobile && isDesktopCollapsed,
+    }"
+  >
+    <!-- Sidebar (Off-Canvas-Drawer auf Mobile, persistente Spalte auf Desktop) -->
+    <aside class="sidebar" aria-label="Hauptnavigation">
       <div class="sidebar-header">
         <div class="brand-logo">
           <i class="pi pi-wallet text-primary"></i>
@@ -61,10 +134,9 @@ const handleLogout = async () => {
         <NuxtLink to="/households" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-users nav-icon"></i>
           <span>Haushalte</span>
-          <Badge>M3</Badge>
         </NuxtLink>
 
-        <NavSection prefix="/budgeting" icon="pi pi-calendar-plus" label="Budgetierung" badge="M4">
+        <NavSection prefix="/budgeting" icon="pi pi-calendar-plus" label="Budgetierung">
           <NuxtLink to="/budgeting/budgets" class="sub-nav-item" active-class="sub-nav-item-active">
             <i class="pi pi-wallet"></i>
             <span>Budgets</span>
@@ -79,7 +151,7 @@ const handleLogout = async () => {
           </NuxtLink>
         </NavSection>
 
-        <NavSection prefix="/transactions" icon="pi pi-list" label="Transaktionen" badge="M5">
+        <NavSection prefix="/transactions" icon="pi pi-list" label="Transaktionen">
           <NuxtLink to="/transactions/expenses" class="sub-nav-item" active-class="sub-nav-item-active">
             <i class="pi pi-arrow-down"></i>
             <span>Ausgaben</span>
@@ -107,21 +179,42 @@ const handleLogout = async () => {
       </div>
     </aside>
 
+    <!-- Backdrop (nur auf Mobile wenn Drawer offen) -->
+    <div
+      v-if="isMobile"
+      class="sidebar-backdrop"
+      aria-hidden="true"
+      @click="closeMobileDrawer"
+    />
+
     <!-- Main Content Area -->
     <div class="main-container">
       <!-- Top Header -->
       <header class="header">
         <div class="header-left">
+          <!-- Mobile: Hamburger öffnet Drawer -->
           <Button
-            class="toggle-btn"
-            :icon="isSidebarOpen ? 'pi pi-align-left' : 'pi pi-bars'"
+            v-if="isMobile"
+            class="hamburger-btn"
+            icon="pi pi-bars"
             severity="secondary"
             text
             rounded
-            aria-label="Sidebar umschalten"
-            @click="toggleSidebar"
+            aria-label="Navigation öffnen"
+            @click="openMobileDrawer"
           />
-          
+          <!-- Desktop: Sidebar ein-/ausklappen -->
+          <Button
+            v-else
+            class="toggle-btn"
+            :icon="isDesktopCollapsed ? 'pi pi-bars' : 'pi pi-align-left'"
+            severity="secondary"
+            text
+            rounded
+            :aria-label="isDesktopCollapsed ? 'Sidebar einblenden' : 'Sidebar ausblenden'"
+            @click="toggleDesktopSidebar"
+          />
+
           <!-- Household Switcher in Header -->
           <div v-if="households.length > 0" class="household-switcher">
             <i class="pi pi-home switcher-icon"></i>
@@ -149,6 +242,9 @@ const handleLogout = async () => {
         <slot />
       </main>
     </div>
+
+    <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop) -->
+    <FabSpeedDial :actions="fabActions" />
   </div>
 </template>
 
@@ -161,7 +257,7 @@ const handleLogout = async () => {
   font-family: var(--font-family, 'Inter', sans-serif);
 }
 
-/* Sidebar Styles */
+/* === Sidebar Desktop-Layout === */
 .sidebar {
   width: 260px;
   background: #111827;
@@ -170,15 +266,51 @@ const handleLogout = async () => {
   flex-direction: column;
   flex-shrink: 0;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  z-index: 100;
+  z-index: 200;
 }
 
-.sidebar-collapsed {
+.layout-wrapper--collapsed .sidebar {
   width: 0;
   overflow: hidden;
   border-right: none;
 }
 
+/* === Sidebar Mobile (Off-Canvas Drawer) === */
+.layout-wrapper--mobile .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  height: 100dvh;
+  width: 84vw;
+  max-width: 320px;
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+
+.layout-wrapper--mobile.layout-wrapper--drawer-open .sidebar {
+  transform: translateX(0);
+}
+
+/* === Backdrop === */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 150;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.layout-wrapper--drawer-open .sidebar-backdrop {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* === Sidebar intern === */
 .sidebar-header {
   padding: 1.5rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -257,6 +389,7 @@ const handleLogout = async () => {
   flex-direction: column;
   gap: 0.5rem;
   flex-grow: 1;
+  overflow-y: auto;
 }
 
 .nav-section-title {
@@ -270,7 +403,8 @@ const handleLogout = async () => {
   letter-spacing: 0.05em;
 }
 
-.nav-item {
+.nav-item,
+.sub-nav-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -282,9 +416,12 @@ const handleLogout = async () => {
   font-size: 0.95rem;
   transition: all 0.2s;
   cursor: pointer;
+  /* Touch-Target: mindestens 44pt hoch */
+  min-height: var(--touch-target-min);
 }
 
-.nav-item:hover:not(.nav-item-disabled) {
+.nav-item:hover:not(.nav-item-disabled),
+.sub-nav-item:hover {
   background: rgba(255, 255, 255, 0.03);
   color: #f1f5f9;
 }
@@ -297,6 +434,7 @@ const handleLogout = async () => {
 
 .nav-icon {
   font-size: 1.1rem;
+  flex-shrink: 0;
 }
 
 .nav-item-disabled {
@@ -319,7 +457,7 @@ const handleLogout = async () => {
   width: 100%;
 }
 
-/* Main Container Styles */
+/* === Main Container === */
 .main-container {
   display: flex;
   flex-direction: column;
@@ -327,7 +465,7 @@ const handleLogout = async () => {
   min-width: 0;
 }
 
-/* Header Styles */
+/* === Header === */
 .header {
   height: 64px;
   background: #111827;
@@ -336,6 +474,7 @@ const handleLogout = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 1.5rem;
+  z-index: 100;
 }
 
 .header-left {
@@ -344,9 +483,10 @@ const handleLogout = async () => {
   gap: 1rem;
 }
 
-.toggle-btn {
-  width: 2.5rem;
-  height: 2.5rem;
+.toggle-btn,
+.hamburger-btn {
+  width: 2.75rem;
+  height: 2.75rem;
 }
 
 .household-switcher {
@@ -404,7 +544,7 @@ const handleLogout = async () => {
   border: 1px solid rgba(168, 85, 247, 0.2);
 }
 
-/* Content Area */
+/* === Content === */
 .content {
   flex-grow: 1;
   padding: 2rem;
@@ -412,14 +552,18 @@ const handleLogout = async () => {
   background-color: #0b0f19;
 }
 
-/* Responsive styles */
-@media (max-width: 768px) {
-  .sidebar {
-    position: absolute;
-    height: 100vh;
+/* === Mobile: Header- & Content-Anpassung === */
+@media (max-width: 639px) {
+  .header {
+    padding: 0 1rem;
   }
-  .sidebar-collapsed {
-    width: 0;
+  .content {
+    padding: 1rem;
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); /* Platz für FAB */
+  }
+  .switcher-select {
+    min-width: 0;
+    max-width: 180px;
   }
 }
 </style>

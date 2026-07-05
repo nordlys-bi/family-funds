@@ -113,12 +113,14 @@ const isActive = computed(() => route.path.startsWith(props.prefix))
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.75rem 0.75rem;
   border-radius: 8px;
   color: #94a3b8;
   text-decoration: none;
   font-weight: 500;
   font-size: 0.88rem;
+  /* Touch-Target: mind. 44pt */
+  min-height: var(--touch-target-min);
   transition: background 0.15s ease, color 0.15s ease;
 }
 

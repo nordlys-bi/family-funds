@@ -221,6 +221,10 @@ html.my-app-dark .p-dialog-header-label {
 
 html.my-app-dark .p-button {
   border-radius: 14px;
+  /* Touch-Target: alle PrimeVue-Buttons mind. 44pt hoch (überschreibt
+     PrimeVue-Aura-Default von ~2.25rem / 36px). Auf Mobile garantiert
+     einhändige Bedienbarkeit, auf Desktop minimal größere Buttons. */
+  min-height: var(--touch-target-min);
 }
 
 html.my-app-dark .p-inputtext,
