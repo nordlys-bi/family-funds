@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import type { Frequency, Notice } from '~/types/planning'
 
 definePageMeta({ layout: 'default' })
-
-type Frequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
 
 type BudgetVersion = {
   id: string
@@ -49,9 +48,6 @@ type PlanningHousehold = {
   budgets: BudgetItem[]
 }
 
-type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
-type DateFormValue = Date | null
-
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -66,72 +62,15 @@ const budgetForm = ref({
   name: '',
   amount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
-  validFrom: getPeriodStartDate(new Date(), 'MONTHLY') as DateFormValue,
+  validFrom: getPeriodStartDate(new Date(), 'MONTHLY'),
 })
 const budgetEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
 
-const moneyFormatter = computed(
-  () => new Intl.NumberFormat('de-DE', { style: 'currency', currency: currencyCode.value }),
-)
-
-const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
-
-const formatDate = (value: string | null) => {
-  if (!value) return '—'
-  return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
-}
-
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
-function getPeriodStartDate(value: Date, frequency: Frequency) {
-  const date = new Date(value)
-  date.setHours(12, 0, 0, 0)
-  switch (frequency) {
-    case 'WEEKLY': {
-      const day = date.getDay()
-      const offset = day === 0 ? -6 : 1 - day
-      date.setDate(date.getDate() + offset)
-      break
-    }
-    case 'MONTHLY':
-      date.setDate(1)
-      break
-    case 'QUARTERLY': {
-      const quarterStartMonth = Math.floor(date.getMonth() / 3) * 3
-      date.setMonth(quarterStartMonth, 1)
-      break
-    }
-    case 'YEARLY':
-      date.setMonth(0, 1)
-      break
-    case 'ONCE':
-      break
-  }
-  return date
-}
-
-const frequencyLabel = (frequency: Frequency) => {
-  switch (frequency) {
-    case 'WEEKLY': return 'Wöchentlich'
-    case 'MONTHLY': return 'Monatlich'
-    case 'QUARTERLY': return 'Quartalsweise'
-    case 'YEARLY': return 'Jährlich'
-    case 'ONCE': return 'Einmalig'
-  }
-}
-
-const frequencyOptions = [
-  { label: 'Wöchentlich', value: 'WEEKLY' as Frequency },
-  { label: 'Monatlich', value: 'MONTHLY' as Frequency },
-  { label: 'Quartalsweise', value: 'QUARTERLY' as Frequency },
-  { label: 'Jährlich', value: 'YEARLY' as Frequency },
-  { label: 'Einmalig', value: 'ONCE' as Frequency },
-]
+const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
+const formatDate = formatPlanningDate
 
 const loadPlanning = async () => {
   loading.value = true
@@ -194,7 +133,7 @@ const saveBudget = async () => {
       name: budgetForm.value.name,
       amount: budgetForm.value.amount,
       frequency: budgetForm.value.frequency,
-      validFrom: budgetForm.value.validFrom ? formatDateInput(budgetForm.value.validFrom) : undefined,
+      validFrom: formatDateToInputString(budgetForm.value.validFrom),
     }
     await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
       method: budgetEditId.value ? 'PATCH' : 'POST',
@@ -340,24 +279,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveBudget"
       @cancel="closeBudgetDialog"
     >
-      <FormFieldRow label="Name" html-for="budget-name" wide>
-        <InputText id="budget-name" v-model="budgetForm.name" placeholder="z. B. Lebensmittel" />
-      </FormFieldRow>
-      <FormFieldRow label="Betrag" html-for="budget-amount">
-        <MoneyInput id="budget-amount" v-model="budgetForm.amount" :currency="currencyCode" />
-      </FormFieldRow>
-      <FormFieldRow label="Frequenz" html-for="budget-frequency">
-        <Select
-          id="budget-frequency"
-          v-model="budgetForm.frequency"
-          :options="frequencyOptions"
-          optionLabel="label"
-          optionValue="value"
-        />
-      </FormFieldRow>
-      <FormFieldRow label="Gültig ab" html-for="budget-valid-from">
-        <DatePicker id="budget-valid-from" v-model="budgetForm.validFrom" showIcon dateFormat="dd.mm.yy" />
-      </FormFieldRow>
+      <BudgetForm v-model="budgetForm" :currency="currencyCode" />
     </FormDialog>
   </ListPageShell>
 </template>
