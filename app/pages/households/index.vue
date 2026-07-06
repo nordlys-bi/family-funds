@@ -97,8 +97,8 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   >
     <template #summary>
       <Tag severity="info" :value="`Haushalte ${households.length}`" />
-      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
-      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations.length ?? 0}`" />
+      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members?.length ?? 0}`" />
+      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations?.length ?? 0}`" />
       <Tag severity="secondary" :value="`Aktiv ${activeHousehold?.name ?? 'Keiner'}`" />
     </template>
 
@@ -131,7 +131,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       </div>
     </section>
 
-    <article v-else class="overview-card">
+    <article v-if="currentHousehold" class="overview-card">
       <div class="overview-card__head">
         <div>
           <Kicker>Aktiv</Kicker>
@@ -144,11 +144,11 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       <div class="overview-card__strip">
         <NuxtLink to="/households/members" class="overview-tile">
           <span>Mitglieder</span>
-          <strong>{{ currentHousehold.members.length }}</strong>
+          <strong>{{ currentHousehold.members?.length ?? 0 }}</strong>
         </NuxtLink>
         <NuxtLink to="/households/members" class="overview-tile">
           <span>Einladungen</span>
-          <strong>{{ currentHousehold.invitations.length }}</strong>
+          <strong>{{ currentHousehold.invitations?.length ?? 0 }}</strong>
         </NuxtLink>
         <div class="overview-tile overview-tile--accent">
           <span>Rolle</span>
