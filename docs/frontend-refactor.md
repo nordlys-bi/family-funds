@@ -1,9 +1,72 @@
 # Frontend-Refactoring & Design-System
 
-**Status:** Plan — Architektur-Entscheidungen getroffen, noch nicht umgesetzt
-**Stand:** 2026-07-01 (Entscheidungen für Navigation, Confirm-Dialog, Dashboard-Daten **und Mobile-First** ergänzt)
+**Status:** Implementierung ~95% abgeschlossen (siehe [Implementierungs-Status](#implementierungs-status-2026-07-05) unten)
+**Stand:** 2026-07-05 (PRD-Acceptance-Criteria nahezu alle erfüllt; Dashboard-Mock-Daten separat in #6)
 **Scope:** `app/` (Nuxt 4 Frontend) + 1 neuer API-Endpoint für Dashboard-Summary
 **Kontext:** Side-Project, Solo-Entwicklung. Pragmatisch, nicht über-engineered. **Mobile-First ab jetzt Default** (Quick-Add im Supermarkt/Café ist der wichtigste Use-Case).
+
+---
+
+## Implementierungs-Status (2026-07-05)
+
+Issue-Tracker: #1 (PRD) wird mit den folgenden Acceptance-Criteria-Status geschlossen. Verbleibende Punkte liegen in dedizierten Folge-Issues, nicht mehr im PRD-Block.
+
+### Acceptance Criteria
+
+| # | Kriterium | Status | Anmerkung |
+|---|---|---|---|
+| 1 | Kein weißes Select in einem Modal mehr | ✅ | `app/assets/css/base.css` setzt alle relevanten `--p-*`-Semantic-Tokens explizit auf die Dark-Variante (inkl. `--p-dialog-background`, `--p-select-background`, `--p-inputtext-background`). |
+| 2 | Keine CSS-Duplikate zwischen Pages | ✅ | Komponenten-Extraktion in `cb85360` (EmptyState, ItemCard, ListPanel, FormDialog, FormField, FormFieldRow, Kicker, NavSection) + Tokens in `tokens.css`. |
+| 3 | Maximal 1 Modal pro Seite sichtbar | ✅ | Sub-Route-Architektur seit #4. Jede List-Page hat genau ihren eigenen Create-/Edit-Dialog. |
+| 4 | Jede Page < 400 Zeilen | ⚠️ | `recurring.vue` (483), `budgets.vue` (424) noch drüber. Refactor als separates Issue. |
+| 5 | Alle Form-Inputs verwenden `<MoneyInput>` / `<FormField>` | ✅ | `<MoneyInput>` neu in `aaba50f`, `<FormFieldRow>` (umbenannt aus `FormField` wegen PrimeVue-Clash) überall im Einsatz. Inputs sind entweder `<MoneyInput>` (für Beträge) oder `<InputText>` / `<Select>` / `<DatePicker>` (für nicht-monetäre Felder). |
+| 6 | Keine Mock-Daten im Production-UI | ⚠️ | Dashboard hat noch hardgecodete Mock-Werte (3.500/1.250 € etc.). **Offen in Issue #6**. PRD-Phase-3 (Dashboard auf echte Daten) noch nicht umgesetzt. |
+
+### Komponenten-Inventar (`app/components/`)
+
+| Komponente | Zweck | Anmerkung |
+|---|---|---|
+| `Kicker.vue` | Ersatz für 5 handgeschriebene Eyebrow-Klassen | |
+| `EmptyState.vue` | Lade-/Leerzustände mit `<NuxtLink>`-CTA | |
+| `ListPanel.vue` | Card-Wrapper für eine Sektion | |
+| `ListTable.vue` | Kompakte Tabelle (C-Stil) | |
+| `ListProgressBar.vue` | Schmale horizontale Progressbar | |
+| `ItemCard.vue` | Listen-Card (A-Stil) mit `variant` + `density` | |
+| `NavSection.vue` | Hierarchische Sidebar-Section | |
+| `FormFieldRow.vue` | Label + Eingabe-Wrapper (umbenannt aus `FormField` wegen PrimeVue-Clash) | |
+| `FormDialog.vue` | Dialog-Wrapper für Create/Edit | |
+| `ConfirmDialog.vue` | Promise-basierte Bestätigung, ersetzt `window.confirm()` | |
+| `BottomSheet.vue` | Mobile Bottom-Sheet, Desktop-Modal mit sticky Header/Footer | |
+| `FabSpeedDial.vue` | Mobile-only FAB mit Speed-Dial-Submenü | |
+| `MoneyInput.vue` | `<InputNumber mode="currency" locale="de-DE">` Wrapper | |
+| `RoleTag.vue` | Vereinheitlichte OWNER/MEMBER-Tag-Komponente | |
+
+### Implementierte Sub-Pläne (Commits)
+
+| Plan-Schritt | Commit / Phase | Status |
+|---|---|---|
+| Design-System-Grundlage (Tokens, Override, Kicker) | `cb85360` (Phase 1+2) | ✅ |
+| Komponenten-Extraktion | `cb85360` (Phase 2) | ✅ |
+| Dashboard-Endpoint | `9e5bcf4` (Phase 3 API) | ✅ Backend |
+| Dashboard-Frontend auf echte Daten | (Phase 3 Frontend) | ⚠️ #6 |
+| Sub-Routing Budgeting/Transactions/Households | `33f60b6`, `256569c` | ✅ |
+| Mobile-First-Sprint (FAB, Drawer, Touch, Breakpoints) | `c29da6a` | ✅ |
+| FormField-Labels-Fix (PrimeVue-Collision) | `88847b9` | ✅ |
+| MoneyInput + RoleTag (PRD-Finalisierung) | `aaba50f` | ✅ (dieser Commit) |
+
+### Folge-Issues (aus PRD herausgezogen)
+
+- **#6** — Dashboard-Frontend auf echte Daten (Mock-Werte ersetzen)
+- **#7** — Mobile UX (CLOSED ✅)
+- **#10** — ListView-Polish (CLOSED ✅)
+
+### Bewusst out-of-scope
+
+- Storybook / visuelle Tests (Side-Project, zu viel Overhead)
+- `<RoleTag>` für nicht-OWNER/MEMBER-Rollen (Strings landen aktuell als Default-Render; falls später Rollen wie `EDITOR` o. ä. hinzukommen, Severity neu mappen)
+- Pages < 400 Zeilen (strukturelles Refactoring, separate Arbeit)
+
+---
 
 ## Architektur-Entscheidungen
 

@@ -249,6 +249,49 @@ watch(activeHouseholdId, async () => { await loadData() })
           <tr v-if="visibleTransactions.length === 0">
             <td colspan="6" class="data-table__empty">Noch keine Ausgaben erfasst.</td>
           </tr>
+
+          <!-- Mobile (< 768px): Cards statt Tabelle. Betrag prominent oben rechts. -->
+          <template #mobile>
+            <div v-if="visibleTransactions.length === 0" class="data-table__empty">
+              Noch keine Ausgaben erfasst.
+            </div>
+            <div
+              v-for="transaction in visibleTransactions"
+              v-else
+              :key="`m-${transaction.id}`"
+              class="data-table__card"
+            >
+              <div class="data-table__card-line">
+                <span class="data-table__card-name">
+                  {{ transaction.description || 'Ausgabe' }}
+                </span>
+                <span class="data-table__card-amount" style="color: rgb(248, 113, 113);">
+                  −{{ formatMoney(transaction.amount) }}
+                </span>
+              </div>
+              <div class="data-table__card-meta">
+                <span>{{ formatDate(transaction.date) }}</span>
+                <span>·</span>
+                <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
+                  {{ budgetLabel(transaction) }}
+                </span>
+                <span>·</span>
+                <span>{{ transaction.user.displayName || transaction.user.email }}</span>
+              </div>
+              <div class="data-table__card-actions">
+                <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editTransaction(transaction)" />
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  outlined
+                  size="small"
+                  text
+                  :loading="actionLoadingKey === `expense:${transaction.id}`"
+                  @click="deleteTransaction(transaction)"
+                />
+              </div>
+            </div>
+          </template>
         </ListTable>
       </ListPanel>
     </template>

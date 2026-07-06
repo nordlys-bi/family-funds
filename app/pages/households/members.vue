@@ -246,6 +246,43 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
           <tr v-if="currentHousehold.members.length === 0">
             <td colspan="5" class="data-table__empty">Noch keine Mitglieder vorhanden.</td>
           </tr>
+
+          <!-- Mobile (< 768px): Cards statt Tabelle. Rolle-Tag voll sichtbar. -->
+          <template #mobile>
+            <div v-if="currentHousehold.members.length === 0" class="data-table__empty">
+              Noch keine Mitglieder vorhanden.
+            </div>
+            <div
+              v-for="member in currentHousehold.members"
+              v-else
+              :key="`m-${member.id}`"
+              class="data-table__card"
+            >
+              <div class="data-table__card-line">
+                <span class="data-table__card-name" style="display: inline-flex; align-items: center; gap: 10px;">
+                  <Avatar :label="memberInitials(member)" shape="circle" class="member-avatar" />
+                  {{ member.user.displayName || member.user.email }}
+                </span>
+                <RoleTag :role="member.role" />
+              </div>
+              <div class="data-table__card-meta">
+                <span>{{ member.user.email }}</span>
+                <span>·</span>
+                <span>Dabei seit {{ formatMemberSince(member.createdAt) }}</span>
+              </div>
+              <div v-if="canManageHousehold && member.user.id !== user?.id" class="data-table__card-actions">
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  outlined
+                  size="small"
+                  text
+                  :loading="removeLoadingId === member.id"
+                  @click="removeMember(member.id)"
+                />
+              </div>
+            </div>
+          </template>
         </ListTable>
       </ListPanel>
 
@@ -281,6 +318,38 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
           <tr v-if="currentHousehold.invitations.length === 0">
             <td colspan="4" class="data-table__empty">Keine offenen Einladungen.</td>
           </tr>
+
+          <!-- Mobile: Cards für offene Einladungen. -->
+          <template #mobile>
+            <div v-if="currentHousehold.invitations.length === 0" class="data-table__empty">
+              Keine offenen Einladungen.
+            </div>
+            <div
+              v-for="invitation in currentHousehold.invitations"
+              v-else
+              :key="`m-inv-${invitation.id}`"
+              class="data-table__card"
+            >
+              <div class="data-table__card-line">
+                <span class="data-table__card-name">{{ invitation.email }}</span>
+                <RoleTag :role="invitation.role" />
+              </div>
+              <div class="data-table__card-meta">
+                <span>Eingeladen von {{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</span>
+              </div>
+              <div v-if="canManageHousehold" class="data-table__card-actions">
+                <Button
+                  icon="pi pi-times"
+                  severity="secondary"
+                  outlined
+                  size="small"
+                  text
+                  :loading="cancelInvitationLoadingId === invitation.id"
+                  @click="cancelInvitation(invitation.id)"
+                />
+              </div>
+            </div>
+          </template>
         </ListTable>
       </ListPanel>
     </template>

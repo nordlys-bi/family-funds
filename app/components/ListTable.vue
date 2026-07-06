@@ -23,6 +23,23 @@
       </td>
     </tr>
   </ListTable>
+
+  Auf Mobile (< 768px) bricht die Tabelle oft — Spalten werden abgeschnitten.
+  Dafür kann ein optionaler `#mobile`-Slot definiert werden, der Card-Markup
+  enthält. ListTable rendert dann unterhalb 768px die Cards statt der
+  Tabelle. Auf Desktop bleibt die Tabelle unverändert sichtbar.
+
+  <ListTable dense accent="primary">
+    <template #head>...</template>
+    <tr v-for="tx in transactions">...</tr>
+
+    <template #mobile>
+      <div v-for="tx in transactions" :key="tx.id" class="data-table__card">
+        <strong>{{ tx.description }}</strong>
+        <span>{{ formatMoney(tx.amount) }}</span>
+      </div>
+    </template>
+  </ListTable>
 -->
 <script setup lang="ts">
 /**
@@ -44,7 +61,11 @@ defineProps<{
 </script>
 
 <template>
-  <div class="data-table-wrapper" :class="[`data-table-wrapper--${dense ? 'dense' : 'default'}`, accent ? `accent-${accent}` : '']">
+  <!-- Desktop / Tablet: Tabelle. -->
+  <div
+    class="data-table-wrapper data-table-wrapper--desktop"
+    :class="[`data-table-wrapper--${dense ? 'dense' : 'default'}`, accent ? `accent-${accent}` : '']"
+  >
     <table class="data-table">
       <thead v-if="$slots.head" class="data-table__head">
         <tr>
@@ -60,6 +81,11 @@ defineProps<{
         </tr>
       </tfoot>
     </table>
+  </div>
+
+  <!-- Mobile (< 768px): Card-View, nur wenn #mobile-Slot definiert ist. -->
+  <div v-if="$slots.mobile" class="data-table-mobile">
+    <slot name="mobile" />
   </div>
 </template>
 
@@ -190,5 +216,81 @@ defineProps<{
 .data-table :deep(.data-table__empty a) {
   color: var(--accent);
   text-decoration: none;
+}
+
+/* === Mobile Card-View ====================================================
+   Wenn die Page einen #mobile-Slot definiert, rendert ListTable unterhalb
+   768px Cards statt der Tabelle. Auf Desktop ist nur die Tabelle sichtbar.
+*/
+.data-table-wrapper--desktop { display: block; }
+.data-table-mobile { display: none; }
+
+@media (max-width: 767px) {
+  .data-table-wrapper--desktop { display: none; }
+  .data-table-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* Styling-Hooks für Cards, die der Mobile-Slot rendert.
+   Pages legen ihre Card-Markup frei, hier ist nur Spacing + Border. */
+.data-table-mobile :deep(.data-table__card) {
+  background: var(--bg-card-row);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.data-table-mobile :deep(.data-table__card:hover) {
+  background: var(--bg-card-row-hover);
+  border-color: var(--border-row-hover);
+}
+.data-table-mobile :deep(.data-table__card-line) {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.data-table-mobile :deep(.data-table__card-amount) {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 1rem;
+  color: var(--text);
+}
+.data-table-mobile :deep(.data-table__card-meta) {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: center;
+}
+.data-table-mobile :deep(.data-table__card-name) {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.data-table-mobile :deep(.data-table__card-actions) {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+.data-table-mobile :deep(.data-table__empty) {
+  background: var(--bg-card-row);
+  border: 1px dashed var(--border-subtle);
+  border-radius: 12px;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
 }
 </style>
