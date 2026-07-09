@@ -96,7 +96,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   >
     <template #summary>
       <Tag severity="info" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
-      <Tag severity="secondary" :value="`Rolle ${canManageHousehold ? 'Owner' : 'Member'}`" />
+      <Tag severity="secondary" :value="`Rolle ${roleLabel(canManageHousehold ? 'OWNER' : 'MEMBER')}`" />
     </template>
 
     <template #toolbar>

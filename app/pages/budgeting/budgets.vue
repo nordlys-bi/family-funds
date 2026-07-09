@@ -239,13 +239,14 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           />
         </template>
         <template #actions>
-          <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editBudget(budget)" />
+          <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Budget bearbeiten" @click="editBudget(budget)" />
           <Button
             icon="pi pi-trash"
             severity="danger"
             outlined
             size="small"
             text
+            aria-label="Budget löschen"
             :loading="actionLoadingKey === `budget:${budget.id}`"
             @click="deletePlanningItem(budget.id)"
           />

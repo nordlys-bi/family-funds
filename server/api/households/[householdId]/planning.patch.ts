@@ -9,6 +9,7 @@ import {
   parseMoneyToCents,
   parseOptionalDateInput,
 } from '../../../utils/planning'
+import { parseUuidParam } from '../../../utils/validation'
 
 type PlanningUpdateBody = {
   kind: string
@@ -24,14 +25,7 @@ type PlanningUpdateBody = {
 }
 
 export default defineEventHandler(async (event) => {
-  const householdId = event.context.params?.householdId
-
-  if (!householdId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Household ID is required.',
-    })
-  }
+  const householdId = parseUuidParam(event, 'householdId')
 
   await requireHouseholdOwner(event, householdId)
 
@@ -97,12 +91,25 @@ export default defineEventHandler(async (event) => {
           })
         }
 
-        return tx.budgetVersion.create({
-          data: {
+        // upsert statt create: zwei parallele PATCHes mit demselben validFrom
+        // würden sonst P2002 werfen -> 500. Upsert nimmt das vorhandene Row
+        // und merged amount/frequency statt zu kollidieren.
+        return tx.budgetVersion.upsert({
+          where: {
+            budgetId_validFrom: {
+              budgetId: body.id,
+              validFrom,
+            },
+          },
+          create: {
             budgetId: body.id,
             amount,
             frequency,
             validFrom,
+          },
+          update: {
+            amount,
+            frequency,
           },
         })
       })

@@ -221,13 +221,14 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             </div>
           </template>
           <template #actions>
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editSavingsGoal(goal)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
               icon="pi pi-trash"
               severity="danger"
               outlined
               size="small"
               text
+              aria-label="Sparziel löschen"
               :loading="actionLoadingKey === `savingsGoal:${goal.id}`"
               @click="deletePlanningItem(goal.id)"
             />

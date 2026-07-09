@@ -233,13 +233,14 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             </div>
           </template>
           <template #actions>
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editIncomePlan(plan)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahmenplan bearbeiten" @click="editIncomePlan(plan)" />
             <Button
               icon="pi pi-trash"
               severity="danger"
               outlined
               size="small"
               text
+              aria-label="Einnahmenplan löschen"
               :loading="actionLoadingKey === `incomePlan:${plan.id}`"
               @click="deletePlanningItem('incomePlan', plan.id)"
             />
@@ -277,13 +278,14 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             </div>
           </template>
           <template #actions>
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editFixedCostPlan(plan)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Fixkostenplan bearbeiten" @click="editFixedCostPlan(plan)" />
             <Button
               icon="pi pi-trash"
               severity="danger"
               outlined
               size="small"
               text
+              aria-label="Fixkostenplan löschen"
               :loading="actionLoadingKey === `fixedCostPlan:${plan.id}`"
               @click="deletePlanningItem('fixedCostPlan', plan.id)"
             />

@@ -2,6 +2,7 @@ import { defineEventHandler, createError, readBody } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { assertTransactionKind } from '../../../utils/transactions'
+import { parseUuidParam } from '../../../utils/validation'
 
 type TransactionDeleteBody = {
   kind: string
@@ -9,14 +10,7 @@ type TransactionDeleteBody = {
 }
 
 export default defineEventHandler(async (event) => {
-  const householdId = event.context.params?.householdId
-
-  if (!householdId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Household ID is required.',
-    })
-  }
+  const householdId = parseUuidParam(event, 'householdId')
 
   await requireHouseholdMembership(event, householdId)
 

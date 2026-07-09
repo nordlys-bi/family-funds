@@ -232,13 +232,14 @@ watch(activeHouseholdId, async () => { await loadData() })
             <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
             <td class="num">−{{ formatMoney(transaction.amount) }}</td>
             <td class="actions">
-              <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editTransaction(transaction)" />
+              <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Ausgabe bearbeiten" @click="editTransaction(transaction)" />
               <Button
                 icon="pi pi-trash"
                 severity="danger"
                 outlined
                 size="small"
                 text
+                aria-label="Ausgabe löschen"
                 :loading="actionLoadingKey === `expense:${transaction.id}`"
                 @click="deleteTransaction(transaction)"
               />
@@ -278,13 +279,14 @@ watch(activeHouseholdId, async () => { await loadData() })
                 <span>{{ transaction.user.displayName || transaction.user.email }}</span>
               </div>
               <div class="data-table__card-actions">
-                <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text @click="editTransaction(transaction)" />
+                <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Ausgabe bearbeiten" @click="editTransaction(transaction)" />
                 <Button
                   icon="pi pi-trash"
                   severity="danger"
                   outlined
                   size="small"
                   text
+                  aria-label="Ausgabe löschen"
                   :loading="actionLoadingKey === `expense:${transaction.id}`"
                   @click="deleteTransaction(transaction)"
                 />
