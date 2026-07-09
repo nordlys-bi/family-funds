@@ -10,33 +10,16 @@ type PlanningHousehold = {
   budgets: unknown[]
 }
 
-type TransactionItem = {
-  id: string
-  kind: 'expense' | 'income'
-  amount: number
-  description: string | null
-  date: string
-  user: { displayName: string | null; email: string }
-}
-
-type TransactionSummary = {
-  incomeTotal: number
-  expenseTotal: number
-  netTotal: number
-  unassignedExpenseTotal: number
-}
-
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const route = useRoute()
+const router = useRouter()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
-const transactions = ref<TransactionItem[]>([])
-const summary = ref<TransactionSummary>({ incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 })
-const loading = ref(false)
-const transactionLoading = ref(false)
-const actionLoadingKey = ref<string | null>(null)
 const notice = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 const editingTransactionId = ref<string | null>(null)
 const transactionDialogOpen = ref(false)
+const transactionLoading = ref(false)
+const actionLoadingKey = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
@@ -53,39 +36,45 @@ function formatDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
 
+// --- Month-Filter via Composable (issue #9) ---
+// Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
+const txList = useTransactionList({
+  initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
+})
+
+const visibleTransactions = computed(() => txList.transactionsByKind('income'))
+
 const transactionForm = ref({
   amount: null as number | null,
   description: '',
   date: new Date(),
 })
 
-const visibleTransactions = computed(() => transactions.value.filter((transaction) => transaction.kind === 'income'))
+// Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
+async function onMonthChange(newMonth: string) {
+  await txList.setMonth(newMonth, activeHouseholdId.value)
+  // query.month == aktueller Monat → Query loeschen, damit die Default-URL
+  // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const query = newMonth === currentMonth ? {} : { month: newMonth }
+  await router.replace({ query })
+}
 
-const loadData = async () => {
-  loading.value = true
-  notice.value = null
+// --- Daten laden ---
+async function loadCurrentHousehold() {
   try {
-    const [current, tx] = await Promise.all([
-      $fetch<{ household: PlanningHousehold | null }>('/api/households/current'),
-      activeHouseholdId.value
-        ? $fetch<{ transactions: TransactionItem[]; summary: TransactionSummary }>(
-            `/api/households/${activeHouseholdId.value}/transactions`,
-          )
-        : Promise.resolve(null),
-    ])
+    const current = await $fetch<{ household: PlanningHousehold | null }>('/api/households/current')
     currentHousehold.value = current.household
-    if (tx) {
-      transactions.value = tx.transactions
-      summary.value = tx.summary
-    } else {
-      transactions.value = []
-      summary.value = { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 }
-    }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
-  } finally {
-    loading.value = false
+  } catch (error) {
+    currentHousehold.value = null
   }
+}
+
+async function loadAll() {
+  await Promise.all([
+    loadCurrentHousehold(),
+    txList.load(activeHouseholdId.value),
+  ])
 }
 
 const resetForm = () => {
@@ -95,7 +84,7 @@ const resetForm = () => {
 
 const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
 
-const editTransaction = (transaction: TransactionItem) => {
+const editTransaction = (transaction: { id: string; amount: number; description: string | null; date: string }) => {
   editingTransactionId.value = transaction.id
   transactionForm.value = {
     amount: transaction.amount / 100,
@@ -124,7 +113,7 @@ const saveTransaction = async () => {
       method: editingTransactionId.value ? 'PATCH' : 'POST',
       body: payload,
     })
-    await loadData()
+    await loadAll()
     closeTransactionDialog()
     notice.value = { severity: 'success', text: isEdit ? 'Einnahme wurde aktualisiert.' : 'Einnahme wurde angelegt.' }
   } catch (error: any) {
@@ -134,7 +123,7 @@ const saveTransaction = async () => {
   }
 }
 
-const deleteTransaction = async (transaction: TransactionItem) => {
+const deleteTransaction = async (transaction: { id: string }) => {
   if (!activeHouseholdId.value) return
   actionLoadingKey.value = `income:${transaction.id}`
   notice.value = null
@@ -143,7 +132,7 @@ const deleteTransaction = async (transaction: TransactionItem) => {
       method: 'DELETE',
       body: { kind: 'income', id: transaction.id },
     })
-    await loadData()
+    await loadAll()
     notice.value = { severity: 'success', text: 'Einnahme wurde gelöscht.' }
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Einnahme konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
@@ -152,41 +141,61 @@ const deleteTransaction = async (transaction: TransactionItem) => {
   }
 }
 
+// Composable-Fehler in Notice mappen, damit User was sehen.
+watch(() => txList.error.value, (error) => {
+  if (error) {
+    notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + error }
+  }
+})
+
 onMounted(async () => {
   await fetchHouseholds()
-  await loadData()
+  await loadAll()
 })
-watch(activeHouseholdId, async () => { await loadData() })
+watch(activeHouseholdId, async () => { await loadAll() })
 </script>
 
 <template>
   <ListPageShell
     title="Einnahmen"
-    description="Erfasse alle Einnahmen für den aktuellen Monat — Gehalt, Boni, Rückerstattungen, Geschenke."
+    :description="`Erfasse alle Einnahmen fuer ${txList.monthLabel} — Gehalt, Boni, Rueckerstattungen, Geschenke.`"
   >
     <template #summary>
-      <Tag severity="success" :value="`Einnahmen ${formatMoney(summary.incomeTotal)}`" />
+      <Tag severity="success" :value="`Einnahmen ${formatMoney(txList.summary.incomeTotal)}`" />
       <Tag severity="info" :value="`${visibleTransactions.length} Buchungen`" />
     </template>
 
     <template #toolbar>
+      <div class="toolbar-month">
+        <label for="income-month-select" class="toolbar-month__label">Monat</label>
+        <Select
+          id="income-month-select"
+          :model-value="txList.month"
+          :options="txList.monthOptions"
+          option-label="label"
+          option-value="value"
+          :loading="txList.loading"
+          aria-label="Monat auswaehlen"
+          @update:model-value="onMonthChange"
+        />
+      </div>
       <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
     <EmptyState
-      :loading="loading"
-      :no-household="!loading && !activeHousehold"
+      :loading="txList.loading"
+      :no-household="!txList.loading && !activeHousehold"
       loading-title="Einnahmen werden geladen"
     />
 
-    <template v-if="!loading && activeHousehold && currentHousehold">
+    <template v-if="!txList.loading && activeHousehold && currentHousehold">
       <ListPanel
         kicker="Monat"
-        title="Aktuelle Einnahmen"
+        :title="`Einnahmen ${txList.monthLabel}`"
         compact
-        :badge="formatMoney(summary.incomeTotal)"
+        :badge="formatMoney(txList.summary.incomeTotal)"
       >
         <ListTable dense accent="primary">
           <template #head>
@@ -218,13 +227,13 @@ watch(activeHouseholdId, async () => { await loadData() })
           </tr>
 
           <tr v-if="visibleTransactions.length === 0">
-            <td colspan="5" class="data-table__empty">Noch keine Einnahmen erfasst.</td>
+            <td colspan="5" class="data-table__empty">Keine Einnahmen in {{ txList.monthLabel }}.</td>
           </tr>
 
           <!-- Mobile (< 768px): Cards statt Tabelle. -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
-              Noch keine Einnahmen erfasst.
+              Keine Einnahmen in {{ txList.monthLabel }}.
             </div>
             <div
               v-for="transaction in visibleTransactions"
@@ -298,5 +307,23 @@ watch(activeHouseholdId, async () => { await loadData() })
 <style scoped>
 .income-amount {
   color: #34d399;
+}
+
+.toolbar-month {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.toolbar-month__label {
+  font-size: 0.85rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+@media (max-width: 480px) {
+  .toolbar-month {
+    width: 100%;
+  }
 }
 </style>

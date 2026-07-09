@@ -21,7 +21,7 @@ Beta-Version von Family Funds auf einem Stand, der sich ohne Scham mit echtem Te
 | [#1](https://github.com/nordlys-bi/family-funds/issues/1) | CLOSED | — | — | PRD Frontend-Refactoring — Parent aller aktuellen Issues |
 | [#6](https://github.com/nordlys-bi/family-funds/issues/6) | ready-for-agent | nach #22 + #13 | wartet auf finale Schließung | Dashboard-Frontend auf echte Daten |
 | [#8](https://github.com/nordlys-bi/family-funds/issues/8) | ready-for-agent | Sprint 3 | none | Emoji-Lookup (emojilib + Domain-Map) |
-| [#9](https://github.com/nordlys-bi/family-funds/issues/9) | ready-for-agent | Sprint 2 nach #24 | #24 | Transaktionslisten Monatsfilter |
+| [#9](https://github.com/nordlys-bi/family-funds/issues/9) | CLOSED 2026-07-09 | Sprint 2 nach #24 | #24 | Transaktionslisten Monatsfilter |
 | [#12](https://github.com/nordlys-bi/family-funds/issues/12) | ready-for-agent | Sprint 2 (optional) | #22 | Savings-Progress (Frontend) |
 | [#13](https://github.com/nordlys-bi/family-funds/issues/13) | ready-for-agent | Sprint 2 | none | Empty-States (First-Time + No-Data) |
 | [#14](https://github.com/nordlys-bi/family-funds/issues/14) | ready-for-agent | Sprint 2 | #21 (#21 lockt Layout aus) | Mobile Bottom-Nav statt Sidebar-Drawer |
@@ -153,3 +153,4 @@ Vollständige Listen in:
 ## Changelog
 
 - **2026-07-09:** Initial-Plan erstellt aus 3-Perspektiven-Synthese, 19 Issues angelegt + triagiert, Sprint-Sequenz festgelegt.
+- **2026-07-09:** Issue #9 (Transaktionslisten Monatsfilter) abgeschlossen — Backend `?month=YYYY-MM` mit Validation, Composable `useTransactionList` extrahiert (gemeinsamer State für expenses + income), Monats-Spinner mit URL-Sync in beiden Pages. 53 neue Tests (von 190 auf 243).
