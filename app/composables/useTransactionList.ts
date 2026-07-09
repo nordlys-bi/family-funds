@@ -131,6 +131,59 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     await load(householdId)
   }
 
+  /**
+   * Optimistischer Update einer einzelnen Transaktion im lokalen State.
+   * Liefert die Original-Transaktion zurueck, damit der Caller bei
+   * einem Server-Fehler rollbacken kann (issue #15 Inline-Edit).
+   *
+   * Aktualisiert KEIN Summary-Aggregat — das wird per Reload oder
+   * lokal im Caller nachgezogen, weil die Summary sich aus mehreren
+   * Feldern zusammensetzt (kind, budgetId, amount) und eine lokal
+   * gebaute Reduktion fehleranfaellig ist.
+   */
+  function updateTransactionLocal(
+    id: string,
+    patch: Partial<TransactionItem>,
+  ): TransactionItem | null {
+    const index = transactions.value.findIndex((transaction) => transaction.id === id)
+    if (index === -1) return null
+    const original = transactions.value[index]!
+    transactions.value[index] = { ...original, ...patch }
+    return original
+  }
+
+  /**
+   * Rollback eines optimistischen Updates. Stellt die urspruengliche
+   * Transaktion wieder her, wenn der Server-PATCH fehlschlaegt.
+   */
+  function restoreTransactionLocal(id: string, original: TransactionItem): void {
+    const index = transactions.value.findIndex((transaction) => transaction.id === id)
+    if (index === -1) return
+    transactions.value[index] = original
+  }
+
+  /**
+   * Recompute Summary aus den aktuellen Transactions (issue #15
+   * Optimistic-Update-Helper). Wird nach erfolgreichem Inline-Edit
+   * aufgerufen, damit die Tags oben den neuen Wert zeigen ohne
+   * full reload.
+   */
+  function recomputeSummaryFromLocal(): void {
+    const expenses = transactions.value.filter((t) => t.kind === 'expense')
+    const incomes = transactions.value.filter((t) => t.kind === 'income')
+    const expenseTotal = expenses.reduce((sum, t) => sum + t.amount, 0)
+    const incomeTotal = incomes.reduce((sum, t) => sum + t.amount, 0)
+    const unassignedExpenseTotal = expenses
+      .filter((t) => !t.budgetId)
+      .reduce((sum, t) => sum + t.amount, 0)
+    summary.value = {
+      incomeTotal,
+      expenseTotal,
+      netTotal: incomeTotal - expenseTotal,
+      unassignedExpenseTotal,
+    }
+  }
+
   return {
     month,
     monthOptions,
@@ -144,5 +197,8 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     load,
     setMonth,
     transactionsByKind,
+    updateTransactionLocal,
+    restoreTransactionLocal,
+    recomputeSummaryFromLocal,
   }
 }
