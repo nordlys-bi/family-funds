@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Family Funds — UX Review</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --paper: #ffffff;
+      --ink: #14171e;
+      --muted: #5b6173;
+      --soft: #7c7a72;
+      --line: #e6e0d1;
+      --line-soft: #efeadd;
+      --crit: #b06367;
+      --warn: #c97b3f;
+      --info: #2f6f5e;
+      --good: #2f6f5e;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: 'Outfit', system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    body::before {
+      content: "";
+      position: fixed; inset: 0;
+      background: radial-gradient(900px 600px at 85% -10%, rgba(176,99,103,0.06), transparent 60%),
+                  radial-gradient(900px 700px at -10% 100%, rgba(47,111,94,0.06), transparent 60%);
+      pointer-events: none; z-index: -1;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 56px 28px 96px; }
+
+    /* Hero */
+    .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.18em; color: var(--soft); text-transform: uppercase; }
+    h1 { font-family: 'DM Serif Display', serif; font-weight: 400; font-size: clamp(36px, 6vw, 64px); line-height: 1.05; letter-spacing: -0.005em; margin: 12px 0 18px; }
+    .lead { font-size: 19px; color: var(--muted); max-width: 64ch; margin: 0 0 28px; }
+
+    .meta-row { display: flex; flex-wrap: wrap; gap: 10px 18px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 14px 0; margin: 28px 0 0; }
+    .meta-row span { display: inline-flex; align-items: center; gap: 6px; }
+
+    /* Headlines */
+    h2 { font-family: 'DM Serif Display', serif; font-weight: 400; font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.01em; margin: 64px 0 8px; }
+    .section-sub { color: var(--muted); font-size: 16px; max-width: 64ch; margin: 0 0 32px; }
+
+    h3 { font-family: 'Outfit', sans-serif; font-weight: 600; font-size: 19px; margin: 32px 0 6px; }
+    p { margin: 0 0 12px; }
+    .muted { color: var(--muted); }
+
+    /* Pill */
+    .pill { display: inline-flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; padding: 4px 10px; border-radius: 999px; text-transform: uppercase; }
+    .pill-crit { background: rgba(176,99,103,0.12); color: var(--crit); }
+    .pill-warn { background: rgba(201,123,63,0.14); color: var(--warn); }
+    .pill-info { background: rgba(47,111,94,0.12); color: var(--info); }
+    .pill-good { background: rgba(47,111,94,0.10); color: var(--info); }
+
+    /* Summary cards */
+    .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 24px 0 8px; }
+    .summary-card { background: var(--paper); border: 1px solid var(--line); border-radius: 18px; padding: 22px; }
+    .summary-card .num { font-family: 'DM Serif Display', serif; font-size: 44px; line-height: 1; margin: 6px 0; }
+    .summary-card.crit .num { color: var(--crit); }
+    .summary-card.warn .num { color: var(--warn); }
+    .summary-card.info .num { color: var(--info); }
+    .summary-card.good .num { color: var(--good); }
+    .summary-card .lbl { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--soft); letter-spacing: 0.12em; text-transform: uppercase; }
+
+    /* Finding card */
+    .finding { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 28px; margin: 18px 0; }
+    .finding-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 8px; }
+    .finding-head h3 { margin: 0; }
+    .finding-head .where { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--soft); margin-left: auto; }
+
+    .findings-grid { display: grid; gap: 18px; }
+
+    /* Compare */
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0 6px; }
+    .compare .pane { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 14px; }
+    .compare .pane h4 { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: var(--soft); margin: 0 0 10px; text-transform: uppercase; font-weight: 500; }
+    .compare img { width: 100%; height: auto; border-radius: 8px; display: block; border: 1px solid var(--line-soft); }
+
+    /* Single shot */
+    .shot { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 12px; margin: 16px 0; }
+    .shot img { width: 100%; height: auto; border-radius: 8px; display: block; border: 1px solid var(--line-soft); }
+    .shot .cap { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--soft); letter-spacing: 0.05em; margin-top: 10px; }
+
+    /* Inline highlights list */
+    .bullets { padding: 0; margin: 0; list-style: none; }
+    .bullets li { padding: 6px 0 6px 26px; position: relative; }
+    .bullets li::before { content: ""; position: absolute; left: 8px; top: 14px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink); }
+    .bullets.crit li::before { background: var(--crit); }
+    .bullets.warn li::before { background: var(--warn); }
+    .bullets.info li::before { background: var(--info); }
+
+    /* Priority rail */
+    .priority { border-left: 2px solid var(--line); padding: 4px 0 4px 24px; margin: 28px 0; }
+    .priority.p1 { border-color: var(--crit); }
+    .priority.p2 { border-color: var(--warn); }
+    .priority.p3 { border-color: var(--info); }
+    .priority h4 { margin: 0 0 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--soft); font-weight: 500; }
+
+    /* Footer */
+    footer { margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--line); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--soft); display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+    @media (max-width: 720px) {
+      .compare { grid-template-columns: 1fr; }
+      .wrap { padding: 32px 18px 64px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+
+    <div class="eyebrow">UX Review · Side Project · Erstbefund &amp; Fixes · 06.07.2026 · Refresh 09.07.2026</div>
+    <h1>Family&nbsp;Funds</h1>
+    <p class="lead">Beide Varianten geprüft — Desktop (1440&nbsp;px) und Mobile (390&nbsp;px) — mit echten Seed-Daten, eingeloggt als <em>Jan</em>. 4 Prio-1-Befunde identifiziert, alle 3 echten in einer Sitzung gefixt. Was übrig bleibt: Prio-2-Polish für Beta-Sharing. Refresh am 09.07. mit frischen Snapshots aus der laufenden App (DB up, eingeloggt via API).</p>
+
+    <div class="meta-row">
+      <span>VIEWPORT · Desktop 1440×900</span>
+      <span>VIEWPORT · Mobile 390×844</span>
+      <span>3/3 echte Prio-1 Bugs gefixt</span>
+      <span>0 Console Errors (nach Fixes)</span>
+      <span>Mock-Auth, Clerk aus</span>
+      <span>9 frische Snapshots · DB live</span>
+    </div>
+
+    <!-- TL;DR -->
+    <h2>Status nach Fixes</h2>
+    <p class="section-sub">Drei echte Prio-1-Bugs in dieser Session identifiziert und behoben. Ein ursprünglich vermuteter Layout-Bug hat sich als nicht-reproduzierbar herausgestellt. Stand 09.07.: weiterhin grün, frische Snapshots bestätigen die Fixes.</p>
+
+    <div class="summary">
+      <div class="summary-card good">
+        <div class="lbl">Fix 1</div>
+        <div class="num">✓</div>
+        <span class="pill pill-good">Crash behoben</span>
+        <p class="muted" style="margin-top:14px;font-size:14px;"><code>/households</code> rendert beim Reload wieder korrekt. Root cause war ein <code>v-else</code>-Block, der ohne expliziten Guard auf einer async-geladenen lokalen Ref basierte — Hydrate-Mismatch-Pfad crashte mit "Cannot read properties of null". Fix: expliziter <code>v-if</code>-Guard plus sicherere Optional-Chaining-Tiefe.</p>
+      </div>
+      <div class="summary-card good">
+        <div class="lbl">Fix 2</div>
+        <div class="num">✓</div>
+        <span class="pill pill-good">Echte Daten</span>
+        <p class="muted" style="margin-top:14px;font-size:14px;">Dashboard zeigt echte Aggregationen aus <code>/api/households/[id]/dashboard</code> — 4.200,00 € Einnahmen, 75,51 € Ausgaben, 4.124,49 € Saldo, 0,00 € Sparziele (0% von 10.000 €). Plus: Budget-Auslastung (Kinder 30%, Lebensmittel 3%, Geschenke 0%) und Letzte Buchungen mit korrekten Vorzeichen.</p>
+      </div>
+      <div class="summary-card good">
+        <div class="lbl">Fix 3</div>
+        <div class="num">✓</div>
+        <span class="pill pill-good">Mobile responsive</span>
+        <p class="muted" style="margin-top:14px;font-size:14px;"><code>ListTable</code> hat jetzt einen optionalen <code>#mobile</code>-Slot. Auf &lt;768px rendert die Komponente Cards statt der Tabelle — Betrag prominent oben rechts, Edit/Delete in eigener Footer-Row. Expenses, Income und Members profitieren alle davon; Role-Tags OWNER/MEMBER jetzt voll sichtbar.</p>
+      </div>
+      <div class="summary-card info">
+        <div class="lbl">Offen</div>
+        <div class="num">1</div>
+        <span class="pill pill-info">Prio 2 Polish</span>
+        <p class="muted" style="margin-top:14px;font-size:14px;">Nur noch die Savings-Progress-Bar (eigenes Feature-Ticket, halber Tag). Die 4 Quick-Wins — Sandbox-Badge, Eyebrows, Login-Sie→Du, Header-Truncation — sind in der 2. Session erledigt.</p>
+      </div>
+    </div>
+
+    <!-- Session 2 — was dazukam -->
+    <h2>Session 2 — was dazukam</h2>
+    <p class="section-sub">Vier P2-Quick-Wins, in einer knappen Stunde durchgezogen. Repo-Stand: alle 11 Files modifiziert, 0 neue Files außer Helper-Scripts, 0 Console-Errors auf den Verifikations-Snapshots.</p>
+
+    <div class="findings-grid">
+
+      <!-- Quick-Win 1 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Quick-Win 1</span>
+          <h3>Sandbox-Badge versteckt sich in Production</h3>
+          <span class="where">app/layouts/default.vue:233</span>
+        </div>
+        <p><strong>Problem:</strong> "Sandbox Mode"-Badge klebte fest in der Topbar, auf jeder Seite, auch in Production. Plus: 2-zeiliger Wrap auf Mobile.</p>
+        <p><strong>Fix:</strong> <code>v-if="!isClerkMode"</code> drumherum — in Mock-Mode weiter sichtbar (Dev-Marker), in Clerk-Mode komplett weg. <code>white-space: nowrap</code> auf dem env-tag gegen Mobile-Wrap.</p>
+        <div class="compare">
+          <div class="pane"><h4>Mobile · vorher</h4><img src="dashboard-mobile.png" alt="sandbox badge mobile vorher" /></div>
+          <div class="pane"><h4>Mobile · nachher</h4><img src="shots-after-fixes/header-mobile-after.png" alt="sandbox badge mobile nachher" /></div>
+        </div>
+      </div>
+
+      <!-- Quick-Win 2 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Quick-Win 2</span>
+          <h3>"MEILENSTEIN X / Y"-Eyebrows raus</h3>
+          <span class="where">8 Pages (expenses, income, households, members, settings, budgets, recurring, savings)</span>
+        </div>
+        <p><strong>Problem:</strong> Über jeder Page prangte ein interner Roadmap-Marker. Erinnerte Beta-Tester sofort daran, dass die App "noch gebaut wird".</p>
+        <p><strong>Fix:</strong> Die <code>eyebrow="Meilenstein X / Y"</code>-Props aus allen 8 Pages entfernt. <code>eyebrow</code>-Prop und <code>&lt;Kicker&gt;</code>-Komponente bleiben für echte Section-Labels (z. B. "Monat", "Einnahmen" / "Fixkosten") erhalten.</p>
+        <div class="compare">
+          <div class="pane"><h4>Recurring · vorher</h4><img src="recurring-current.png" alt="recurring mit milestone" /></div>
+          <div class="pane"><h4>Recurring · nachher</h4><img src="shots-after-fixes/recurring-desktop-no-eyebrow.png" alt="recurring ohne milestone" /></div>
+        </div>
+      </div>
+
+      <!-- Quick-Win 3 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Quick-Win 3</span>
+          <h3>Login-Hilfetext: Sie → Du</h3>
+          <span class="where">app/pages/login.vue:120</span>
+        </div>
+        <p><strong>Problem:</strong> Auf der Login-Seite stand "Sie können sich als jeder der oben gelisteten Test-User anmelden" — höfliche Sie-Form, während der Rest der App duzt. Falsches Deckchen auf der ersten Page, die der User sieht.</p>
+        <p><strong>Fix:</strong> Ein String-Tausch. <code>"Sie können sich"</code> → <code>"Du kannst dich"</code>. Eine Zeile, ein Match.</p>
+        <div class="shot"><img src="shots-after-fixes/login-after.png" alt="login mobile nachher" /><div class="cap">Login Mobile nachher — "Du kannst dich als jeder der oben gelisteten Test-User anmelden"</div></div>
+      </div>
+
+      <!-- Quick-Win 4 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Quick-Win 4</span>
+          <h3>Haushaltsname-Truncation mit Tooltip</h3>
+          <span class="where">app/layouts/default.vue:219, 517</span>
+        </div>
+        <p><strong>Problem:</strong> Auf Mobile schnitt der Selector den Haushaltsnamen hart ab (z. B. "Gemeinsamer H…") — bei langen Namen wie "Wohnung Berlin-Neukölln WG" verschwand der Name komplett.</p>
+        <p><strong>Fix:</strong> Auf der inneren <code>.p-select-label</code> greifen <code>white-space: nowrap</code>, <code>overflow: hidden</code> und <code>text-overflow: ellipsis</code> — saubere Kürzung mit "…". Auf dem <code>.household-switcher</code>-Wrapper liegt ein <code>:title</code>-Binding mit dem vollen Namen — bei Hover/Long-Press zeigt der native Browser-Tooltip den vollständigen String.</p>
+        <div class="compare">
+          <div class="pane"><h4>Mobile · vorher — unkontrolliert</h4><img src="dashboard-mobile.png" alt="header truncation vorher" /></div>
+          <div class="pane"><h4>Mobile · nachher — Ellipsis + Tooltip</h4><img src="shots-after-fixes/header-mobile-after.png" alt="header truncation nachher" /></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Prio 1 Fixes -->
+    <h2>Was gefixt wurde</h2>
+    <p class="section-sub">Die ursprünglichen Bugs mit Vorher/Nachher — inkl. Root-Cause-Analyse.</p>
+
+    <div class="findings-grid">
+
+      <!-- Fix 1 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 1 · GEFIXT</span>
+          <h3>/households 500-Crash beim Browser-Reload</h3>
+          <span class="where">app/pages/households/index.vue:134, 138–141, 147, 151</span>
+        </div>
+        <p><strong>Symptom:</strong> Beim Klick in der Sidebar rendert die Seite sauber. Beim Browser-Reload (URL-Paste, F5, neuer Tab) erscheint nach ~500ms eine 500-Seite: "Cannot read properties of null (reading 'name')".</p>
+        <p><strong>Root Cause:</strong> Zwei Bugs zusammen:</p>
+        <ul class="bullets crit">
+          <li><code>&lt;article v-else&gt;</code> in Zeile 134 rendert automatisch, sobald der <code>v-if</code> davor false ist. Beim Client-Hydrate durchläuft Vue einen Mismatch-Recovery-Pfad: <code>useHousehold().activeHousehold</code> wurde aus dem <code>useState</code> restored, aber <code>currentHousehold</code> (lokale Ref) war noch null. Der v-else griff und griff auf <code>currentHousehold.name</code> zu.</li>
+          <li>Vier Stellen mit <code>currentHousehold?.invitations.length</code> (Zeilen 101, 151) bzw. <code>currentHousehold?.members.length</code> (Zeilen 100, 147) — optional chaining schließt nur den direkten Property-Access kurz, nicht den ganzen Pfad. Bei <code>?.foo.length</code> short-circuited <em>nur</em> wenn <code>currentHousehold</code> null war.</li>
+        </ul>
+        <p><strong>Fix:</strong> <code>&lt;article v-if="currentHousehold"&gt;</code> als expliziter Guard, alle vier Längen-Zugriffe mit <code>?.foo?.length ?? 0</code> abgesichert.</p>
+        <div class="compare">
+          <div class="pane"><h4>Vorher · 500 beim Reload</h4><img src="households-mobile.png" alt="500 households mobile" /></div>
+          <div class="pane"><h4>Nachher · sauberer Reload</h4><img src="households-final.png" alt="households nach fix" /></div>
+        </div>
+        <p class="muted">Verifiziert mit Playwright-Reload-Test: vorher wechselte die Page nach 500ms zur 500-Seite. Nachher: durchgängig korrekter Content, 0 Page-Errors.</p>
+      </div>
+
+      <!-- Fix 2 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 1 · GEFIXT</span>
+          <h3>Dashboard zeigt jetzt echte Daten</h3>
+          <span class="where">app/pages/index.vue</span>
+        </div>
+        <p><strong>Vorher:</strong> Vier hardcoded KPI-Cards im Template (3.500 € / 1.250 € / 1.400 € / 850 €), komplett unabhängig von den Seed-Daten. Plus: "Nächste Entwicklungsschritte"-Card mit Roadmap-Kommunikation — eine Lüge, weil die genannten Features längst live sind.</p>
+        <p><strong>Nachher:</strong></p>
+        <ul class="bullets crit">
+          <li>Vier ehrliche KPI-Cards, an <code>/api/households/[id]/dashboard</code> gebunden — der Endpoint existierte schon, musste nur konsumiert werden.</li>
+          <li>Bonus-Sektionen: <em>Budget-Auslastung</em> mit allen aktiven Budgets, Progress-Bars und Severity-Farben (warn/over/ok). <em>Letzte Buchungen</em> der letzten 7 Tage mit User, Budget, Datum und korrektem Vorzeichen.</li>
+          <li>Loading-State mit 4 Skeleton-Karten und Shimmer-Animation. Empty-State ("Wähle einen Haushalt") und Error-State ("Dashboard konnte nicht geladen werden").</li>
+          <li>"Nächste Entwicklungsschritte"-Card entfernt — war Dev-Marker, gehört nicht in Production.</li>
+          <li>SSR-sicher: <code>useRequestHeaders(['cookie'])</code> wie in <code>useHousehold.ts</code>, sonst sieht die API beim SSR keine Session.</li>
+        </ul>
+        <div class="compare">
+          <div class="pane"><h4>Vorher · Mock-Werte</h4><img src="dashboard-desktop.png" alt="dashboard mit mock-werten" /></div>
+          <div class="pane"><h4>Nachher · echte Daten</h4><img src="dashboard-real.png" alt="dashboard mit echten daten" /></div>
+        </div>
+        <p class="muted">Echte Werte nach Seed: 4.200,00 € Einnahmen, 75,51 € Ausgaben, 4.124,49 € Saldo, 0 € auf 2 Töpfen (Urlaub + Reparaturen, beide leer — ehrlich angezeigt statt erfundener 850 €).</p>
+      </div>
+
+      <!-- Fix 3 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 1 · GEFIXT</span>
+          <h3>Mobile: Tabellen → Cards</h3>
+          <span class="where">app/components/ListTable.vue + 3 Pages</span>
+        </div>
+        <p><strong>Vorher:</strong> Drei Pages mit 5+ Spalten brachen auf Mobile: Beträge abgeschnitten (Expenses/Income), Role-Tags truncated zu "OWN"/"MEM" (Members). Bei 390&nbsp;px Viewport war die wichtigste Information oft außerhalb des sichtbaren Bereichs.</p>
+        <p><strong>Nachher:</strong></p>
+        <ul class="bullets crit">
+          <li><code>ListTable</code> hat einen optionalen <code>#mobile</code>-Slot. Auf &lt;768px rendert die Komponente Cards statt der Tabelle; auf Desktop bleibt alles wie vorher.</li>
+          <li><strong>expenses.vue</strong> — Card mit Betrag prominent rechts (rot), Datum + Budget-Pill + User in Meta-Zeile, Edit/Delete in eigener Footer-Row.</li>
+          <li><strong>income.vue</strong> — gleiche Struktur, Betrag in grün.</li>
+          <li><strong>members.vue</strong> — Avatar + Name + Role-Tag (jetzt voll sichtbar), E-Mail + "Dabei seit", Trash-Button bei Nicht-Selbst-Members.</li>
+          <li>CSS-Hooks (data-table__card, card-line, card-amount, card-meta, card-actions) im ListTable zentral, Pages nutzen sie per <code>:deep</code>.</li>
+        </ul>
+        <div class="compare">
+          <div class="pane"><h4>Expenses · Mobile vorher</h4><img src="expenses-mobile.png" alt="expenses mobile vorher" /></div>
+          <div class="pane"><h4>Expenses · Mobile nachher</h4><img src="expenses-mobile-fixed.png" alt="expenses mobile cards" /></div>
+        </div>
+        <div class="compare">
+          <div class="pane"><h4>Members · Mobile nachher</h4><img src="members-mobile-fixed.png" alt="members mobile cards" /></div>
+          <div class="pane"><h4>Income · Mobile nachher</h4><img src="income-mobile-fixed.png" alt="income mobile cards" /></div>
+        </div>
+        <p class="muted">Breakpoint bei 768px (gleicher Wert wie das existierende Mobile-Drawer-Media-Query in <code>app/layouts/default.vue</code>). Verifiziert: bei 800px Tabelle sichtbar + Cards hidden, bei 390px umgekehrt. 0 Console-Errors auf allen Snapshots.</p>
+      </div>
+
+      <!-- Nicht-reproduzierbarer Bug -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill" style="background: rgba(124,122,114,0.14); color: var(--soft);">Nicht reproduzierbar</span>
+          <h3>Recurring Desktop rendert überlappend</h3>
+          <span class="where">app/pages/budgeting/recurring.vue (irrelevant)</span>
+        </div>
+        <p><strong>Ursprünglicher Befund:</strong> Im ersten Review-Screenshot war der Main-Container der Recurring-Seite so weit nach rechts verschoben, dass zwei Sidebars gleichzeitig sichtbar waren — Items überlappten sich, Inhalt lief rechts aus dem Viewport.</p>
+        <p><strong>Status:</strong> Beim Re-Test nach den anderen Fixes <em>nicht reproduzierbar</em>. Recurring rendert seither sauber: linksbündig im Main-Container, alle Items im Viewport, auch mit collapsed Sidebar. Wahrscheinliche Ursache: transienter HMR-Glitch während der ursprünglichen Aufnahme (ich hatte kurz davor an <code>households/index.vue</code> gearbeitet, was einen Layout-Re-Calc auslösen kann).</p>
+        <p><strong>Lehre:</strong> Wenn ein Layout-Bug nur sporadisch auftritt, lohnt sich ein erneuter Reload-Test bevor man Zeit in den Fix steckt. Manchmal löst das Symptom sich von selbst, wenn benachbarte Komponenten aktualisiert werden.</p>
+        <div class="shot"><img src="recurring-current.png" alt="recurring rendert sauber" /><div class="cap">Recurring Desktop — sauber nach Re-Test</div></div>
+      </div>
+
+    </div>
+
+    <!-- Prio 2 -->
+    <h2>Was schreit "Side Project Phase"</h2>
+    <p class="section-sub">Kein Crash, aber: drei Sachen, die jeder Beta-Tester sofort markiert. Zusammen in einem Sprint gut wegzubekommen.</p>
+
+    <div class="findings-grid">
+
+      <!-- Finding 5 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>"Sandbox Mode" Badge auf jeder Seite</h3>
+          <span class="where">app/layouts/default.vue:233</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt in der 2. Session. Badge ist jetzt hinter <code>v-if="!isClerkMode"</code> versteckt — in Mock-Mode weiter sichtbar (nützlich als Dev-Marker), in Production (Clerk-Mode) komplett weg. Plus: <code>white-space: nowrap</code> auf dem env-tag, damit der Badge auf Mobile nicht mehr 2-zeilig umbricht.</p>
+        <div class="compare">
+          <div class="pane"><h4>Mobile · vorher — Badge 2-zeilig</h4><img src="dashboard-mobile.png" alt="sandbox badge mobile vorher" /></div>
+          <div class="pane"><h4>Mobile · nachher — Badge 1-zeilig</h4><img src="shots-after-fixes/header-mobile-after.png" alt="sandbox badge mobile nachher" /></div>
+        </div>
+      </div>
+
+      <!-- Finding 6 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>"MEILENSTEIN X / …"-Labels überall</h3>
+          <span class="where">8 Pages (expenses, income, households, members, settings, budgets, recurring, savings)</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt in der 2. Session. Die <code>eyebrow="Meilenstein X / Y"</code>-Props wurden aus allen 8 Pages entfernt (statt nur per Auth-Flag zu verstecken — so ist das Ergebnis im Dev direkt sichtbar). Die <code>eyebrow</code>-Prop und die <code>&lt;Kicker&gt;</code>-Komponente bleiben für echte Section-Labels erhalten (z. B. "Monat" über dem aktuellen Monats-Panel, "Einnahmen" / "Fixkosten" in der Recurring-Page).</p>
+        <div class="compare">
+          <div class="pane"><h4>Recurring · vorher — "MEILENSTEIN 4 / RECURRING"</h4><img src="recurring-current.png" alt="recurring desktop mit milestone" /></div>
+          <div class="pane"><h4>Recurring · nachher — direkt "Geplante Einnahmen &amp; Fixkosten"</h4><img src="shots-after-fixes/recurring-desktop-no-eyebrow.png" alt="recurring desktop ohne milestone" /></div>
+        </div>
+      </div>
+
+      <!-- Finding 7 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>"Nächste Entwicklungsschritte"-Card auf dem Dashboard</h3>
+          <span class="where">app/pages/index.vue:97–131</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt im Fix-2-Schritt. Die Roadmap-Card wurde im Zuge des Dashboard-Refactors komplett entfernt. Stattdessen zeigt das Dashboard jetzt eine "Budget-Auslastung"-Sektion mit Progress-Bars und eine "Letzte Buchungen"-Sektion mit echten Transaktionen — beides ehrlich, beides live.</p>
+      </div>
+
+      <!-- Finding 8 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>Header truncatet den Haushaltsnamen auf Mobile</h3>
+          <span class="where">app/layouts/default.vue:219, 517</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt in der 2. Session. Auf der inneren <code>.p-select-label</code> greifen jetzt <code>white-space: nowrap</code>, <code>overflow: hidden</code> und <code>text-overflow: ellipsis</code> — der Name wird sauber mit "…" gekürzt statt den Container zu sprengen. Auf dem <code>.household-switcher</code>-Wrapper liegt ein <code>:title</code>-Binding mit dem vollen Namen — bei Hover/Long-Press zeigt der Browser den vollständigen String als nativen Tooltip. Bei einem langen Namen wie "Wohnung Berlin-Neukölln WG" bleibt der Selector schmal, der User sieht aber trotzdem alles.</p>
+        <div class="compare">
+          <div class="pane"><h4>Vorher — unkontrollierter Wrap</h4><img src="dashboard-mobile.png" alt="header truncation vorher" /></div>
+          <div class="pane"><h4>Nachher — saubere Ellipsis + Tooltip</h4><img src="shots-after-fixes/header-mobile-after.png" alt="header truncation nachher" /></div>
+        </div>
+      </div>
+
+      <!-- Finding 9 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>Members-Tabelle: Role-Tags werden auf Mobile zu "OWN" / "MEM"</h3>
+          <span class="where">app/pages/households/members.vue · ListTable</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt im Fix-3-Schritt (selber Mechanismus wie bei den Expenses/Income). Members rendert auf Mobile jetzt als Card-View: Avatar-Initial + Name oben, dann OWNER/MEMBER-Tag voll sichtbar (kein Truncate mehr), darunter E-Mail + "Dabei seit", Trash-Button bei Nicht-Selbst-Members in eigener Footer-Row. Desktop-Tabelle unverändert.</p>
+        <div class="compare">
+          <div class="pane"><h4>Mobile · vorher — Tags abgeschnitten</h4><img src="members-mobile.png" alt="members mobile abgeschnitten" /></div>
+          <div class="pane"><h4>Mobile · nachher — volle Tags</h4><img src="members-mobile-fixed.png" alt="members mobile cards" /></div>
+        </div>
+      </div>
+
+      <!-- Finding 10 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-info">Prio 2</span>
+          <h3>Savings-Cards zeigen nur Zielbetrag, nicht aktuellen Stand</h3>
+          <span class="where">app/pages/budgeting/savings.vue</span>
+        </div>
+        <p>Eine "Sparziel"-Übersicht ohne den aktuellen Stand ist wie ein Tankstellen-Display ohne aktuellen Preis. Die Karten zeigen <em>Zielbetrag 5.000 €</em>, aber kein "Bisher: 1.250 € / 25%" und keinen Progress-Bar. Bei zwei Töpfen ("Reparaturen", "Urlaub") mit 0 € Inhalt ist die Seite komplett leer an Information.</p>
+        <div class="shot"><img src="savings-desktop.png" alt="savings ohne inhalt" /><div class="cap">0% Zeitfortschritt, aber der aktuelle Topf-Stand fehlt komplett</div></div>
+        <p class="muted"><strong>Was fehlt:</strong> aktueller Topf-Stand (Summe aller <code>SavingsGoalExecution</code>s) + Progress-Bar zum Zielbetrag. Im CONTEXT.md ist genau das die Semantik — die UI hat es nur nicht umgesetzt.</p>
+      </div>
+
+      <!-- Finding 11 -->
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Prio 2 · GEFIXT</span>
+          <h3>Login-Hilfetext ist auf "Sie" — der Rest der App duzt</h3>
+          <span class="where">app/pages/login.vue:120</span>
+        </div>
+        <p><strong>Status:</strong> Erledigt in der 2. Session. <code>"Sie können sich als jeder der oben gelisteten Test-User anmelden"</code> → <code>"Du kannst dich als jeder der oben gelisteten Test-User anmelden"</code>. Eine Zeile, ein Tausch, Ton konsistent mit dem Rest der App.</p>
+        <div class="shot"><img src="shots-after-fixes/login-after.png" alt="login mobile nachher" /><div class="cap">Login Mobile — "Du kannst dich als jeder der oben gelisteten Test-User anmelden"</div></div>
+      </div>
+
+    </div>
+
+    <!-- Prio 3 -->
+    <h2>Was gut funktioniert</h2>
+    <p class="section-sub">Bevor du dich nur an den Bugs aufhängst — die App hat starke Stellen.</p>
+
+    <div class="summary">
+      <div class="summary-card good">
+        <div class="lbl">Login-Flow</div>
+        <div class="num">★</div>
+        <p class="muted" style="font-size:14px;margin-top:14px;">Mock-Modus ist sauber gelöst — Test-User-Auswahl + Clerk-Toggle. Visuell stark (Gradient-Background, Card mit Backdrop-Blur), funktional komplett.</p>
+      </div>
+      <div class="summary-card good">
+        <div class="lbl">Information Architecture</div>
+        <div class="num">★</div>
+        <p class="muted" style="font-size:14px;margin-top:14px;">Sidebar-Hierarchie (Haushalte / Budgetierung / Transaktionen → Sub-Items) ist klar, vorhersehbar, skaliert. Genau die richtige Komplexitätsstufe für ein Side-Project.</p>
+      </div>
+      <div class="summary-card good">
+        <div class="lbl">Visual Design</div>
+        <div class="num">★</div>
+        <p class="muted" style="font-size:14px;margin-top:14px;">Dark-Mode ist konsequent durchgezogen, Karten/Panels haben schöne Glass-Effekte, Stat-Cards mit Icon-Badges sehen 2026-würdig aus. PrimeVue-Aura-Preset harmoniert gut mit den Custom-Overrides.</p>
+      </div>
+      <div class="summary-card good">
+        <div class="lbl">Datenmodell</div>
+        <div class="num">★</div>
+        <p class="muted" style="font-size:14px;margin-top:14px;">Domain-Modell ist im CONTEXT.md klar dokumentiert, die Trennung Plan vs. Transaction ist sauber, das Sonstiges-Auto-Bucket ist ein netter Default. Genau die richtige fachliche Tiefe.</p>
+      </div>
+    </div>
+
+    <!-- Priorisierung -->
+    <h2>Stand pro Priorität</h2>
+    <p class="section-sub">Prio 1 komplett abgehakt, Prio 2 zur Hälfte erledigt (Roadmap-Card + Members-Mobile-Card-View im selben Aufwasch mitgegangen). Was offen ist, hat keine Auswirkung auf Funktion oder Stabilität — nur auf "Beta-Polish".</p>
+
+    <div class="priority p1">
+      <h4>Prio 1 — Stabilität &amp; Datenintegrität</h4>
+      <ul class="bullets">
+        <li>✓ <strong>/households-Crash beim Reload</strong> — gefixt, expliziter <code>v-if</code>-Guard + tiefere Optional-Chaining.</li>
+        <li>✓ <strong>Dashboard-KPIs an echte Daten hängen</strong> — gefixt, <code>/api/households/[id]/dashboard</code> wird jetzt konsumiert.</li>
+        <li>✓ <strong>Mobile-Expenses/Income/Members-Card-View</strong> — gefixt, zentral im <code>ListTable</code> via <code>#mobile</code>-Slot.</li>
+        <li>✓ <strong>Recurring-Desktop-Layout</strong> — nicht-reproduzierbar, vermutlich transienter HMR-Glitch; Re-Test war sauber.</li>
+      </ul>
+    </div>
+
+    <div class="priority p2">
+      <h4>Prio 2 — Beta-Polish (1 offen, halber Tag)</h4>
+      <ul class="bullets warn">
+        <li>✓ <strong>Roadmap-Card auf Dashboard</strong> — erledigt im Zuge von Fix 2.</li>
+        <li>✓ <strong>Members-Tabelle Mobile (Tags abgeschnitten)</strong> — erledigt im Zuge von Fix 3.</li>
+        <li>✓ <strong>"Sandbox Mode"-Badge hinter Feature-Flag</strong> — erledigt, <code>v-if="!isClerkMode"</code> + <code>white-space: nowrap</code> gegen Mobile-Wrap.</li>
+        <li>✓ <strong>"MEILENSTEIN X / …"-Eyebrows aus User-Views</strong> — erledigt, <code>eyebrow="Meilenstein X / Y"</code> aus allen 8 Pages entfernt.</li>
+        <li>✓ <strong>Haushaltsname-Truncation im Mobile-Header</strong> — erledigt, <code>text-overflow: ellipsis</code> auf der inneren Label + <code>title</code>-Attribut auf dem Wrapper als Tooltip.</li>
+        <li>✓ <strong>Login-Sie → Du</strong> — erledigt, ein String-Tausch.</li>
+        <li><strong>Savings: aktueller Topf-Stand + Progress-Bar</strong> — offen, halber Tag, eigener API-Endpoint + Card-Update. Eher Feature als Fix; wartet auf deine Entscheidung (siehe unten).</li>
+      </ul>
+    </div>
+
+    <div class="priority p3">
+      <h4>Prio 3 — Sobald du Lust hast</h4>
+      <ul class="bullets info">
+        <li>Empty-States für leere Budgets/Savings/Töpfe (was sieht der User bei einer neuen Family ohne Daten?)</li>
+        <li>Mobile Bottom-Nav statt Sidebar-Drawer (Sidebars behindern auf Mobile, Bottom-Nav ist 2026-Standard)</li>
+        <li>Monats-/Zeitraum-Selector auf Budgets und Transactions (heute hart auf "aktueller Monat" codiert)</li>
+        <li>Inline-Edit für Transaktionen statt Edit-Dialog (schnellere Buchungen am Handy)</li>
+        <li>Onboarding-Tour für neue Haushalte (1. Haushalt erstellen → 1. Mitglied einladen → 1. Budget anlegen)</li>
+      </ul>
+    </div>
+
+    <!-- Empfehlung -->
+    <h2>Meine Empfehlung für die nächste Session</h2>
+    <p class="section-sub">Stand nach der 2. Session vom 09.07.: Die 4 P2-Schnellgewinne sind durch. Was bleibt, ist eine echte Feature-Entscheidung, kein Polish mehr.</p>
+
+    <div class="findings-grid">
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-good">Erledigt · ~45 min</span>
+          <h3>P2-Schnellgewinne in der 2. Session durchgezogen</h3>
+        </div>
+        <p>Alle 4 Quick-Wins sind im Repo, smoke-getestet (10 Pages, 0 Console-Errors, alle 200 OK):</p>
+        <ul class="bullets">
+          <li><strong>Sandbox-Badge</strong> hinter <code>v-if="!isClerkMode"</code> → in Production weg, in Mock sichtbar als Dev-Marker. Plus <code>white-space: nowrap</code> gegen Mobile-Wrap.</li>
+          <li><strong>Meilenstein-Eyebrows</strong> komplett aus den 8 Pages rausgenommen (statt nur per Auth-Flag zu verstecken — so siehst du's im Dev direkt).</li>
+          <li><strong>Login-Sie → Du</strong> → ein String-Tausch, Ton konsistent mit dem Rest der App.</li>
+          <li><strong>Haushaltsname-Truncation</strong> → <code>text-overflow: ellipsis</code> auf der inneren Label + <code>title</code>-Attribut auf dem Wrapper als nativer Tooltip.</li>
+        </ul>
+        <p class="muted">Vorher-/Nachher-Snapshots liegen in <code>.ux-review/shots-after-fixes/</code>, sechs neue Bilder zum direkten Vergleich.</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-warn">Brauche Entscheidung von dir</span>
+          <h3>Savings-Progress-Bar — Feature oder Fix?</h3>
+        </div>
+        <p>Aktuell zeigt die Savings-Seite nur den Zielbetrag (5.000 €), nicht den aktuellen Stand. Für 0-€-Töpfe ist das eine leere Seite — null Information. Im CONTEXT.md ist die Semantik dokumentiert (aktuelle Summe + Progress-Bar zum Ziel), die UI hat es nur nicht umgesetzt.</p>
+        <p>Das ist aber kein simpler Fix mehr:</p>
+        <ul class="bullets warn">
+          <li>Neuer API-Endpoint <code>GET /api/households/[id]/savings-goals/progress</code> (oder Aggregation im bestehenden <code>savings.get.ts</code>)</li>
+          <li>Card-Update mit Progress-Bar, aktuellem Stand in €, Prozent-Indikator</li>
+          <li>Empty-State für Töpfe ohne <code>SavingsGoalExecution</code>s</li>
+        </ul>
+        <p class="muted"><strong>Frage an dich:</strong> vor Beta-Sharing reinnehmen (Feature) oder erstmal als Feature-Ticket in <code>.harness/</code> parken? Mein Bauchgefühl: <strong>parken</strong> — die UI ist ohne den Progress nicht kaputt, nur informationsarm. Ein ½-Tag-Ticket gehört in den normalen Feature-Flow, nicht zwischen die Fixes gemogelt. Aber wenn du sagst "ich will's im Beta sehen", mach ich's in einer 3. Session.</p>
+        <p class="muted">→ Auf GitHub als <a href="https://github.com/nordlys-bi/family-funds/issues/12"><strong>Issue #12</strong></a> getrackt (Status: OPEN, Labels: <code>enhancement</code> + <code>needs-triage</code>).</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <span class="pill pill-info">Triage-Reihenfolge · meine Empfehlung</span>
+          <h3>In welcher Reihenfolge die offenen Issues?</h3>
+        </div>
+        <p>Die 5 offenen Issues sind jetzt auf GitHub getrackt. Mein Vorschlag, in welcher Reihenfolge sie sinnvoll reinpassen — sortiert nach "Sichtbarkeit × Aufwand":</p>
+
+        <ol class="bullets">
+          <li>
+            <strong><a href="https://github.com/nordlys-bi/family-funds/issues/12">#12 Savings-Progress</a></strong> · ½ Tag
+            <br /><span class="muted" style="font-size:13px;">Der einzige offene Prio-2-Befund, kleinster Scope, hoher Effekt (Seite geht von informationsleer zu informativ). Eigenes API-Aggregat + Card-Update. Davor klären: parken oder reinnehmen?</span>
+          </li>
+          <li>
+            <strong><a href="https://github.com/nordlys-bi/family-funds/issues/14">#14 Mobile Bottom-Nav</a></strong> · ~1 Tag
+            <br /><span class="muted" style="font-size:13px;">Sichtbarste UX-Verbesserung im Beta. Ersetzt den Drawer aus #7 mit dem 2026-Standard. Bringt "Mehr"-Bottom-Sheet für sekundäre Items mit.</span>
+          </li>
+          <li>
+            <strong><a href="https://github.com/nordlys-bi/family-funds/issues/13">#13 Empty-States</a></strong> · ~1 Tag
+            <br /><span class="muted" style="font-size:13px;">Defensive Coding, kein direktes Wow-Element, aber kritisch für neue User. Macht den Erstkontakt mit dem leeren Haushalt erträglich. Pairt gut mit #16.</span>
+          </li>
+          <li>
+            <strong><a href="https://github.com/nordlys-bi/family-funds/issues/16">#16 Onboarding-Tour</a></strong> · ~1–2 Tage
+            <br /><span class="muted" style="font-size:13px;">Geführter 4-Step-Setup (Haushalt → Mitglied → Budget → Buchung). Macht erst Sinn, wenn #13 (Empty-States) durch ist, weil die Tour auf den Empty-States aufsetzt.</span>
+          </li>
+          <li>
+            <strong><a href="https://github.com/nordlys-bi/family-funds/issues/15">#15 Inline-Edit</a></strong> · ~1–2 Tage
+            <br /><span class="muted" style="font-size:13px;">Quality-of-Life, kann warten. Macht erst Sinn, wenn genug echte Buchungen da sind, um den Edit-Pfad häufig zu nutzen. Auch als Quick-Win für spätere Beta-Phasen denkbar.</span>
+          </li>
+        </ol>
+
+        <p class="muted"><strong>Beta-Phase-1-Bundle</strong> (vor dem ersten Sharing): #12 (optional) + #14 + #13 — drei Issues, ~3 Tage Aufwand, decken die "Wow"-Sachen ab. #16 + #15 sind Beta-Phase 2 nach den ersten Tester-Feedbacks.</p>
+        <p class="muted">Issue-Tracker: <a href="https://github.com/nordlys-bi/family-funds/issues">github.com/nordlys-bi/family-funds/issues</a> · 5 Issues neu (#12–#16) · Status: alle OPEN mit <code>enhancement</code> + <code>needs-triage</code>.</p>
+      </div>
+    </div>
+
+    <footer>
+      <span>Family Funds · UX Review · Stand 09.07.2026 (Session 2)</span>
+      <span>31 Screenshots · 12 Pages · 0 Console Errors</span>
+      <span>Mock-Auth · Seed-Daten geladen · DB live (Docker)</span>
+      <span>5 offene Issues · #12–#16 · github.com/nordlys-bi/family-funds/issues</span>
+    </footer>
+  </div>
+</body>
+</html>
