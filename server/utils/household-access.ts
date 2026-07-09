@@ -22,9 +22,11 @@ export async function requireHouseholdMembership(event: H3Event, householdId: st
       userId: user.id,
       householdId,
     },
-    include: {
-      household: true,
-    },
+    // Bewusst KEIN `include: { household: ... }` — kein Endpoint konsumiert
+    // aktuell `membership.household` (householdId steht bereits auf der
+    // Membership-Row). Wer Household-Felder braucht, soll sie per eigenem
+    // prisma.household.findUnique nachladen — nicht alle 17 Auth-Calls
+    // bezahlen die volle Household-Row mit. (Backend-Review Finding #8.)
   })
 
   if (!membership) {

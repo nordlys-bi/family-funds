@@ -79,7 +79,6 @@ describe('requireHouseholdMembership', () => {
     expect(result.membership).toEqual(membership)
     expect(findFirst).toHaveBeenCalledWith({
       where: { userId: 'user-1', householdId: 'household-1' },
-      include: { household: true },
     })
   })
 
@@ -102,7 +101,6 @@ describe('requireHouseholdMembership', () => {
     })
     expect(findFirst).toHaveBeenCalledWith({
       where: { userId: 'user-1', householdId: 'household-other' },
-      include: { household: true },
     })
   })
 })
