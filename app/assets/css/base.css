@@ -232,3 +232,90 @@ html.my-app-dark .p-inputnumber-input,
 html.my-app-dark .p-datepicker-input {
   caret-color: var(--color-accent-primary);
 }
+
+/* ============================================================================
+ * 3. Focus-Visible (A11y / WCAG 2.4.7)
+ *    Tastatur-Navigation sichtbar machen. PrimeVue-Aura hat auf
+ *    .p-button einen sehr dezenten Default-Outline, der auf dunklem
+ *    Hintergrund kaum erkennbar ist. Wir ueberschreiben ihn global
+ *    fuer alle interaktiven Nicht-Form-Field-Elemente. Form-Fields
+ *    haben oben schon einen expliziten Focus-Ring.
+ * ============================================================================ */
+
+/* Generischer Default: alles interaktive zeigt einen klaren Ring bei
+   Fokus per Tastatur (nicht bei Maus-Klick — das ist :focus-visible). */
+:where(a, button, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--color-border-focus, #60a5fa);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* Layout-spezifische Klassen, die keinen Default-Button haben
+   (.nav-item, .sub-nav-item, .hamburger-btn, .toggle-btn,
+   .icon-btn, .logout-btn). */
+.nav-item:focus-visible,
+.sub-nav-item:focus-visible,
+.nav-item-active:focus-visible {
+  outline: 2px solid var(--color-border-focus, #60a5fa);
+  outline-offset: -2px;
+}
+
+.hamburger-btn:focus-visible,
+.toggle-btn:focus-visible,
+.icon-btn:focus-visible,
+.logout-btn:focus-visible {
+  outline: 2px solid var(--color-border-focus, #60a5fa);
+  outline-offset: 2px;
+}
+
+/* PrimeVue-Button-Fokus verstärken (Aura-Default-Outline zu dezent). */
+.p-button:focus-visible {
+  outline: 2px solid var(--color-border-focus, #60a5fa) !important;
+  outline-offset: 2px !important;
+}
+
+/* ============================================================================
+ * 4. Skip-Link (A11y / WCAG 2.4.1)
+ *    Tastatur-/Screenreader-User springen mit Tab direkt zum
+ *    Hauptinhalt. Visuell versteckt bis Fokus.
+ * ============================================================================ */
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 0.5rem;
+  z-index: 9999;
+  padding: 0.75rem 1.25rem;
+  background: var(--color-accent-primary, #60a5fa);
+  color: var(--color-bg-page, #0b0f19);
+  font-weight: 600;
+  border-radius: var(--radius-md, 8px);
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  top: 0.5rem;
+  outline: 2px solid var(--color-border-focus, #60a5fa);
+  outline-offset: 2px;
+}
+
+/* ============================================================================
+ * 5. prefers-reduced-motion (A11y / WCAG 2.3.3)
+ *    User mit vestibulaeren Beschwerden (~ 5-10 % der Nutzer) brauchen
+ *    reduzierte Animationen. Globale Regel killt alle CSS-Transitions
+ *    und Animations; die Vue-Composable useReducedMotion reduziert
+ *    parallel die <Transition>-Dauer wo sie explizit verwendet wird.
+ * ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
