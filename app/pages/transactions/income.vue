@@ -38,11 +38,25 @@ function formatDateInput(value: Date) {
 
 // --- Month-Filter via Composable (issue #9) ---
 // Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
-const txList = useTransactionList({
+// WICHTIG: die Refs MÜSSEN top-level destructuriert werden, damit
+// Vue's Template-Compiler sie auto-unwrapped. Ein `txList.monthOptions`
+// wäre ein nested Ref auf einem zurückgegebenen Object und würde NICHT
+// auto-unwrap — PrimeVue's Select würde dann den Ref-Proxy statt
+// des Arrays bekommen und mit "findIndex is not a function" sterben.
+const tx = useTransactionList({
   initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
 })
+const month = tx.month
+const monthOptions = tx.monthOptions
+const monthLabel = tx.monthLabel
+const summary = tx.summary
+const txLoading = tx.loading
+const txError = tx.error
+const setMonth = tx.setMonth
+const loadTransactions = tx.load
+const transactionsByKind = tx.transactionsByKind
 
-const visibleTransactions = computed(() => txList.transactionsByKind('income'))
+const visibleTransactions = computed(() => transactionsByKind('income'))
 
 const transactionForm = ref({
   amount: null as number | null,
@@ -52,7 +66,7 @@ const transactionForm = ref({
 
 // Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
 async function onMonthChange(newMonth: string) {
-  await txList.setMonth(newMonth, activeHouseholdId.value)
+  await setMonth(newMonth, activeHouseholdId.value)
   // query.month == aktueller Monat → Query loeschen, damit die Default-URL
   // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
   const currentMonth = new Date().toISOString().slice(0, 7)
@@ -73,7 +87,7 @@ async function loadCurrentHousehold() {
 async function loadAll() {
   await Promise.all([
     loadCurrentHousehold(),
-    txList.load(activeHouseholdId.value),
+    loadTransactions(activeHouseholdId.value),
   ])
 }
 
@@ -142,7 +156,7 @@ const deleteTransaction = async (transaction: { id: string }) => {
 }
 
 // Composable-Fehler in Notice mappen, damit User was sehen.
-watch(() => txList.error.value, (error) => {
+watch(txError, (error) => {
   if (error) {
     notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + error }
   }
@@ -158,10 +172,10 @@ watch(activeHouseholdId, async () => { await loadAll() })
 <template>
   <ListPageShell
     title="Einnahmen"
-    :description="`Erfasse alle Einnahmen fuer ${txList.monthLabel} — Gehalt, Boni, Rueckerstattungen, Geschenke.`"
+    :description="`Erfasse alle Einnahmen fuer ${monthLabel} — Gehalt, Boni, Rueckerstattungen, Geschenke.`"
   >
     <template #summary>
-      <Tag severity="success" :value="`Einnahmen ${formatMoney(txList.summary.incomeTotal)}`" />
+      <Tag severity="success" :value="`Einnahmen ${formatMoney(summary.incomeTotal)}`" />
       <Tag severity="info" :value="`${visibleTransactions.length} Buchungen`" />
     </template>
 
@@ -170,11 +184,11 @@ watch(activeHouseholdId, async () => { await loadAll() })
         <label for="income-month-select" class="toolbar-month__label">Monat</label>
         <Select
           id="income-month-select"
-          :model-value="txList.month"
-          :options="txList.monthOptions"
+          :model-value="month"
+          :options="monthOptions"
           option-label="label"
           option-value="value"
-          :loading="txList.loading"
+          :loading="txLoading"
           aria-label="Monat auswaehlen"
           @update:model-value="onMonthChange"
         />
@@ -185,17 +199,17 @@ watch(activeHouseholdId, async () => { await loadAll() })
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
     <EmptyState
-      :loading="txList.loading"
-      :no-household="!txList.loading && !activeHousehold"
+      :loading="txLoading"
+      :no-household="!txLoading && !activeHousehold"
       loading-title="Einnahmen werden geladen"
     />
 
-    <template v-if="!txList.loading && activeHousehold && currentHousehold">
+    <template v-if="!txLoading && activeHousehold && currentHousehold">
       <ListPanel
         kicker="Monat"
-        :title="`Einnahmen ${txList.monthLabel}`"
+        :title="`Einnahmen ${monthLabel}`"
         compact
-        :badge="formatMoney(txList.summary.incomeTotal)"
+        :badge="formatMoney(summary.incomeTotal)"
       >
         <ListTable dense accent="primary">
           <template #head>
@@ -227,13 +241,13 @@ watch(activeHouseholdId, async () => { await loadAll() })
           </tr>
 
           <tr v-if="visibleTransactions.length === 0">
-            <td colspan="5" class="data-table__empty">Keine Einnahmen in {{ txList.monthLabel }}.</td>
+            <td colspan="5" class="data-table__empty">Keine Einnahmen in {{ monthLabel }}.</td>
           </tr>
 
           <!-- Mobile (< 768px): Cards statt Tabelle. -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
-              Keine Einnahmen in {{ txList.monthLabel }}.
+              Keine Einnahmen in {{ monthLabel }}.
             </div>
             <div
               v-for="transaction in visibleTransactions"
