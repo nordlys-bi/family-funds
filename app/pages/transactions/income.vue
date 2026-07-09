@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { isFirstRun } from '~/utils/household-age'
 
 definePageMeta({ layout: 'default' })
 
@@ -57,6 +58,13 @@ const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 
 const visibleTransactions = computed(() => transactionsByKind('income'))
+
+// Empty-State-Variante (issue #13): First-Time für neue Haushalte, No-Data
+// sonst. CTA "Einnahme anlegen" nur bei first-time, sonst nur Hinweis.
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const showFirstTimeEmpty = computed(
+  () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
+)
 
 const transactionForm = ref({
   amount: null as number | null,
@@ -204,7 +212,27 @@ watch(activeHouseholdId, async () => { await loadAll() })
       loading-title="Einnahmen werden geladen"
     />
 
-    <template v-if="!txLoading && activeHousehold && currentHousehold">
+    <!-- First-Time / No-State: ersetzt leere Tabelle, wenn keine Einnahmen
+         in der Liste sind. Variante haengt vom Haushalt-Alter ab. -->
+    <EmptyState
+      v-if="!txLoading && activeHousehold && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-arrow-up-right"
+      icon-tone="success"
+      headline="Noch keine Einnahmen"
+      :description="`Erfasse deine erste Einnahme fuer ${monthLabel} — Gehalt, Bonus, Rueckerstattung.`"
+      :cta="{ label: 'Einnahme anlegen', onClick: openCreateTransactionDialog, severity: 'success' }"
+    />
+    <EmptyState
+      v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0"
+      variant="no-data"
+      icon="pi pi-receipt"
+      icon-tone="muted"
+      :headline="`Keine Einnahmen in ${monthLabel}`"
+      description="Wechsle den Monat im Spinner oben, oder erfasse eine neue Einnahme."
+    />
+
+    <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
       <ListPanel
         kicker="Monat"
         :title="`Einnahmen ${monthLabel}`"

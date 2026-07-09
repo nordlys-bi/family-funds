@@ -25,6 +25,8 @@ type PlanningHousehold = {
 type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
+import { isFirstRun } from '~/utils/household-age'
+
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -45,6 +47,12 @@ const savingsEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
+
+// Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const showFirstTimeEmpty = computed(
+  () => (currentHousehold.value?.savingsGoals.length ?? 0) === 0 && isFirstRunHousehold.value,
+)
 
 const moneyFormatter = computed(
   () => new Intl.NumberFormat('de-DE', { style: 'currency', currency: currencyCode.value }),
@@ -191,7 +199,25 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       loading-title="Sparziele werden geladen"
     />
 
-    <template v-if="!loading && activeHousehold && currentHousehold">
+    <EmptyState
+      v-if="!loading && activeHousehold && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-star"
+      icon-tone="warning"
+      headline="Noch keine Sparziele"
+      description="Definiere dein erstes Sparziel, um zu sehen, wie viel du monatlich zurücklegen musst."
+      :cta="{ label: 'Sparziel anlegen', onClick: openSavingsDialog, severity: 'warning' }"
+    />
+    <EmptyState
+      v-else-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length === 0"
+      variant="no-data"
+      icon="pi pi-star"
+      icon-tone="muted"
+      headline="Keine Sparziele"
+      description="Plane eins, sobald du ein konkretes Ziel hast — z. B. Urlaub, Notgroschen, neues Gerät."
+    />
+
+    <template v-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length > 0">
       <ListPanel
         kicker="Sparziele"
         title="Auf dem Weg zum Zielbetrag"

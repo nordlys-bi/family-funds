@@ -23,7 +23,7 @@ Beta-Version von Family Funds auf einem Stand, der sich ohne Scham mit echtem Te
 | [#8](https://github.com/nordlys-bi/family-funds/issues/8) | ready-for-agent | Sprint 3 | none | Emoji-Lookup (emojilib + Domain-Map) |
 | [#9](https://github.com/nordlys-bi/family-funds/issues/9) | CLOSED 2026-07-09 | Sprint 2 nach #24 | #24 | Transaktionslisten Monatsfilter |
 | [#12](https://github.com/nordlys-bi/family-funds/issues/12) | ready-for-agent | Sprint 2 (optional) | #22 | Savings-Progress (Frontend) |
-| [#13](https://github.com/nordlys-bi/family-funds/issues/13) | ready-for-agent | Sprint 2 | none | Empty-States (First-Time + No-Data) |
+| [#13](https://github.com/nordlys-bi/family-funds/issues/13) | CLOSED 2026-07-09 | Sprint 2 | none | Empty-States (First-Time + No-Data) |
 | [#14](https://github.com/nordlys-bi/family-funds/issues/14) | ready-for-agent | Sprint 2 | #21 (#21 lockt Layout aus) | Mobile Bottom-Nav statt Sidebar-Drawer |
 | [#15](https://github.com/nordlys-bi/family-funds/issues/15) | ready-for-agent | Sprint 2 | none | Inline-Edit Transaktionen (Mobile-First) |
 | [#16](https://github.com/nordlys-bi/family-funds/issues/16) | ready-for-agent | Sprint 3 | #13 + #14 | Onboarding-Tour (4-Step) |
@@ -154,3 +154,4 @@ Vollständige Listen in:
 
 - **2026-07-09:** Initial-Plan erstellt aus 3-Perspektiven-Synthese, 19 Issues angelegt + triagiert, Sprint-Sequenz festgelegt.
 - **2026-07-09:** Issue #9 (Transaktionslisten Monatsfilter) abgeschlossen — Backend `?month=YYYY-MM` mit Validation, Composable `useTransactionList` extrahiert (gemeinsamer State für expenses + income), Monats-Spinner mit URL-Sync in beiden Pages. 53 neue Tests (von 190 auf 243).
+- **2026-07-09:** Issue #13 (Empty-States) abgeschlossen — `EmptyState` um `variant`/`icon`/`headline`/`description`/`cta`/`icon-tone`-Props erweitert; First-Time + No-Data-States in 5 Pages (expenses, income, budgets, savings, recurring, members). First-Time-Logik via `isFirstRun(activeHousehold)` (Schwelle 7 Tage). 12 neue Tests (von 243 auf 255). Out-of-Scope: Skeleton-Loading-States — Pattern ist vorbereitet (`loadingVariant="skeleton"` + `#loading-skeleton` Slot), aber Pages rendern weiter Spinner.

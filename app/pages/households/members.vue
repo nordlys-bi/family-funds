@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { isFirstRun } from '~/utils/household-age'
 
 definePageMeta({ layout: 'default' })
 
@@ -27,7 +28,7 @@ type HouseholdDetail = {
 }
 
 const { user } = useAppAuth()
-const { activeHouseholdId, fetchHouseholds } = useHousehold()
+const { activeHousehold, activeHouseholdId, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -43,6 +44,16 @@ const canManageHousehold = computed(() => {
   const role = currentHousehold.value?.members.find((member) => member.user.id === user.value?.id)?.role
   return role === 'OWNER'
 })
+
+// First-Time-Logik (issue #13): nur ein Mitglied = der User selbst = first-time.
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const onlySelfMember = computed(() => {
+  const members = currentHousehold.value?.members ?? []
+  return members.length <= 1 && members.every((m) => m.user.id === user.value?.id)
+})
+const showFirstTimeEmpty = computed(
+  () => onlySelfMember.value && isFirstRunHousehold.value,
+)
 
 const openInviteDialog = () => { inviteDialogOpen.value = true }
 const closeInviteDialog = () => {
@@ -205,7 +216,30 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       loading-title="Mitglieder werden geladen"
     />
 
-    <template v-if="!currentLoading && currentHousehold">
+    <!-- First-Time: User ist allein im neuen Haushalt. -->
+    <EmptyState
+      v-if="!currentLoading && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-user-plus"
+      icon-tone="accent"
+      headline="Du bist der einzige im Haushalt"
+      description="Lade deine Partnerin, deinen Partner oder Mitbewohner per E-Mail ein, um Buchungen gemeinsam zu verwalten."
+      :cta="canManageHousehold
+        ? { label: 'Einladen', onClick: openInviteDialog, severity: 'primary' }
+        : undefined"
+    />
+    <!-- No-Data: Haushalt ist etabliert, aber Mitglieder-Liste leer (sollte
+         nicht passieren, ist aber ein defensiver Fallback). -->
+    <EmptyState
+      v-else-if="!currentLoading && currentHousehold && currentHousehold.members.length === 0"
+      variant="no-data"
+      icon="pi pi-users"
+      icon-tone="muted"
+      headline="Keine Mitglieder"
+      description="Lade jemanden ein, um den Haushalt zu teilen."
+    />
+
+    <template v-if="!currentLoading && currentHousehold && currentHousehold.members.length > 0">
       <ListPanel kicker="Mitglieder" title="Aktive Mitglieder" compact :badge="`${currentHousehold.members.length}`">
         <ListTable dense accent="primary">
           <template #head>

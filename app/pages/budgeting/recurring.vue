@@ -32,6 +32,8 @@ type PlanningHousehold = {
   fixedCosts: FixedCostPlanItem[]
 }
 
+import { isFirstRun } from '~/utils/household-age'
+
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -63,6 +65,18 @@ const fixedCostEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
+
+// Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
+// Beide Listen (incomePlans + fixedCosts) muessen leer sein, damit der
+// First-Time-Empty greift — sonst waere es verwirrend, einen der beiden
+// Bloecke zu zeigen mit "noch nichts da".
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const noRecurringPlans = computed(() => {
+  const hh = currentHousehold.value
+  if (!hh) return false
+  return (hh.incomePlans?.length ?? 0) === 0 && (hh.fixedCosts?.length ?? 0) === 0
+})
+const showFirstTimeEmpty = computed(() => noRecurringPlans.value && isFirstRunHousehold.value)
 
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
 const formatDate = formatPlanningDate
@@ -204,7 +218,28 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       loading-title="Pläne werden geladen"
     />
 
-    <template v-if="!loading && activeHousehold && currentHousehold">
+    <EmptyState
+      v-if="!loading && activeHousehold && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-sync"
+      icon-tone="accent"
+      headline="Noch keine wiederkehrenden Posten"
+      description="Plane z. B. dein Gehalt, deine Miete oder Versicherungen — so siehst du, was am Monatsende wirklich übrig bleibt."
+      :cta="{ label: 'Plan anlegen', onClick: openIncomeDialog, severity: 'primary' }"
+    />
+    <EmptyState
+      v-else-if="!loading && activeHousehold && currentHousehold && noRecurringPlans"
+      variant="no-data"
+      icon="pi pi-sync"
+      icon-tone="muted"
+      headline="Keine Pläne"
+      description="Lege einen Einnahmen- oder Fixkostenplan an, um Monats-Vorschauen zu sehen."
+    />
+
+    <!-- Beide ListPanels rendern unabhaengig — wenn nur eine der beiden
+         Listen leer ist, zeigt der jeweilige Panel-Block den passenden
+         Inline-Empty-Hinweis (v-if="length === 0" innerhalb des Panels). -->
+    <template v-if="!loading && activeHousehold && currentHousehold && !noRecurringPlans">
       <ListPanel
         kicker="Einnahmen"
         title="Geplante Einnahmen"

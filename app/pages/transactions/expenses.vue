@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { isFirstRun } from '~/utils/household-age'
 
 definePageMeta({ layout: 'default' })
 
@@ -63,6 +64,15 @@ const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 
 const visibleTransactions = computed(() => transactionsByKind('expense'))
+
+// Empty-State-Variante (issue #13): wenn der Haushalt < 7 Tage alt ist
+// UND noch keine Buchungen existieren, zeigen wir den First-Time-State
+// mit Willkommens-Copy + CTA "Ausgabe anlegen". Bei etabliertem Haushalt
+// reicht der knappe No-Data-Hinweis ohne CTA.
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const showFirstTimeEmpty = computed(
+  () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
+)
 
 const budgetOptions = computed(() => currentHousehold.value?.budgets ?? [])
 const budgetSelectOptions = computed(() => [
@@ -224,7 +234,27 @@ watch(activeHouseholdId, async () => { await loadAll() })
       loading-title="Ausgaben werden geladen"
     />
 
-    <template v-if="!txLoading && activeHousehold && currentHousehold">
+    <!-- First-Time / No-Data: ersetzt die leere Tabelle, wenn keine Buchungen
+         in der Liste sind. Variante haengt vom Haushalt-Alter ab. -->
+    <EmptyState
+      v-if="!txLoading && activeHousehold && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-wallet"
+      icon-tone="accent"
+      headline="Noch keine Ausgaben"
+      :description="`Lege deine erste Ausgabe fuer ${monthLabel} an, um Auswertungen zu sehen.`"
+      :cta="{ label: 'Ausgabe anlegen', onClick: openCreateTransactionDialog, severity: 'primary' }"
+    />
+    <EmptyState
+      v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0"
+      variant="no-data"
+      icon="pi pi-receipt"
+      icon-tone="muted"
+      :headline="`Keine Ausgaben in ${monthLabel}`"
+      description="Wechsle den Monat im Spinner oben, oder erfasse eine neue Buchung."
+    />
+
+    <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
       <ListPanel
         kicker="Monat"
         :title="`Ausgaben ${monthLabel}`"
