@@ -178,7 +178,6 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 3 / Mitglieder"
     title="Mitglieder & Einladungen"
     description="Lade andere Personen per E-Mail in deinen Haushalt ein, entferne Mitglieder oder ziehe offene Einladungen zurück."
   >

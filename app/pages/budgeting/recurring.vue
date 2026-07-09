@@ -182,7 +182,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 4 / Recurring"
     title="Geplante Einnahmen & Fixkosten"
     description="Wiederkehrende Einnahmen und Fixkosten als monatlich umgerechnete Pläne."
   >

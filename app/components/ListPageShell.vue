@@ -1,4 +1,9 @@
 <script setup lang="ts">
+// Milestone-Eyebrows ("Meilenstein 4 / Budgets") waren reine interne
+// Roadmap-Marker und gehören nicht in die User-Facing-UI. Das `eyebrow`-Prop
+// bleibt für Inhalte erhalten, die echte Section-Beschriftungen sind
+// (z. B. "Budget", "Einnahmen" auf ListPanels — die werden weiter genutzt),
+// aber Seiten-Header mit "MEILENSTEIN X / Y" sind per Page rausgenommen.
 defineProps<{
   eyebrow?: string
   title: string

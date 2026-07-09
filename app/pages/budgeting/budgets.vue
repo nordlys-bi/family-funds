@@ -181,7 +181,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 4 / Budgets"
     title="Budget pro Zeitraum"
     description="Plane, wie viel du pro Periode für einzelne Kategorien ausgeben willst. Die Progress-Bar zeigt, wie viel vom monatlichen Budget bereits verbraucht ist."
   >

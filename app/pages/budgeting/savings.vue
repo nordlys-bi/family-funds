@@ -171,7 +171,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 4 / Savings"
     title="Sparziele"
     description="Definiere konkrete Sparziele mit Zielbetrag und monatlicher Rate."
   >
