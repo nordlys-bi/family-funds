@@ -23,33 +23,24 @@ const handleLogout = async () => {
   await logout()
 }
 
-// === Layout-Modus (Mobile vs. Desktop) ===========================
-// Mobile (< 640px): Sidebar ist Off-Canvas-Drawer mit Backdrop.
-// Desktop (≥ 640px): Sidebar ist persistente Spalte mit Collapse-Toggle.
-const isMobile = ref(false)
-let mobileQuery: MediaQueryList | null = null
-const isMobileDrawerOpen = ref(false)
+// === Layout-Modus (Mobile+Tablet vs. Desktop) ====================
+// Mobile+Tablet (< 1024px): MobileBottomNav statt Sidebar.
+// Desktop (>= 1024px): Sidebar als persistente Spalte mit Collapse-Toggle.
+// Issue #14: Tablet-Bereich (640-1024px) bekommt Bottom-Nav statt
+// Sidebar, weil das Sidebar-Layout auf Tablet-Mid-Size unbenutzt wirkt.
+const isCompactLayout = ref(false)
+let compactQuery: MediaQueryList | null = null
 const isDesktopCollapsed = ref(false)
 
-function syncMobileMode(event: MediaQueryListEvent | MediaQueryList) {
-  isMobile.value = event.matches
+function syncCompactMode(event: MediaQueryListEvent | MediaQueryList) {
+  isCompactLayout.value = event.matches
   if (!event.matches) {
-    // Wenn ins Desktop-Modus gewechselt, Drawer-State resetten.
-    isMobileDrawerOpen.value = false
+    isDesktopCollapsed.value = false
   }
 }
 
-const openMobileDrawer = () => { isMobileDrawerOpen.value = true }
-const closeMobileDrawer = () => { isMobileDrawerOpen.value = false }
 const toggleDesktopSidebar = () => {
   isDesktopCollapsed.value = !isDesktopCollapsed.value
-}
-
-function onEscapeKey(event: KeyboardEvent) {
-  if (event.key === 'Escape' && isMobileDrawerOpen.value) {
-    event.preventDefault()
-    closeMobileDrawer()
-  }
 }
 
 // === FAB-Aktionen ================================================
@@ -82,16 +73,14 @@ const fabActions = [
 
 onMounted(() => {
   if (import.meta.client) {
-    mobileQuery = window.matchMedia('(max-width: 639px)')
-    syncMobileMode(mobileQuery)
-    mobileQuery.addEventListener('change', syncMobileMode)
-    document.addEventListener('keydown', onEscapeKey)
+    compactQuery = window.matchMedia('(max-width: 1023px)')
+    syncCompactMode(compactQuery)
+    compactQuery.addEventListener('change', syncCompactMode)
   }
 })
 
 onBeforeUnmount(() => {
-  mobileQuery?.removeEventListener('change', syncMobileMode)
-  document.removeEventListener('keydown', onEscapeKey)
+  compactQuery?.removeEventListener('change', syncCompactMode)
 })
 </script>
 
@@ -99,16 +88,17 @@ onBeforeUnmount(() => {
   <div
     class="layout-wrapper"
     :class="{
-      'layout-wrapper--mobile': isMobile,
-      'layout-wrapper--drawer-open': isMobile && isMobileDrawerOpen,
-      'layout-wrapper--collapsed': !isMobile && isDesktopCollapsed,
+      'layout-wrapper--compact': isCompactLayout,
+      'layout-wrapper--collapsed': !isCompactLayout && isDesktopCollapsed,
     }"
   >
     <!-- Skip-Link (A11y / WCAG 2.4.1): sichtbar nur bei Tastatur-Fokus,
          springt direkt zum Hauptinhalt. -->
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
-    <!-- Sidebar (Off-Canvas-Drawer auf Mobile, persistente Spalte auf Desktop) -->
-    <aside class="sidebar" aria-label="Hauptnavigation">
+
+    <!-- Sidebar (nur Desktop, >= 1024px). Auf Mobile+Tablet ersetzt durch
+         <MobileBottomNav /> am Layout-Boden. -->
+    <aside v-if="!isCompactLayout" class="sidebar" aria-label="Hauptnavigation">
       <div class="sidebar-header">
         <div class="brand-logo">
           <i class="pi pi-wallet text-primary"></i>
@@ -182,33 +172,14 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
-    <!-- Backdrop (nur auf Mobile wenn Drawer offen) -->
-    <div
-      v-if="isMobile"
-      class="sidebar-backdrop"
-      aria-hidden="true"
-      @click="closeMobileDrawer"
-    />
-
     <!-- Main Content Area -->
     <div class="main-container">
       <!-- Top Header -->
       <header class="header">
         <div class="header-left">
-          <!-- Mobile: Hamburger öffnet Drawer -->
+          <!-- Desktop: Sidebar ein-/ausklappen (Mobile/Tablet: versteckt via @media) -->
           <Button
-            v-if="isMobile"
-            class="hamburger-btn"
-            icon="pi pi-bars"
-            severity="secondary"
-            text
-            rounded
-            aria-label="Navigation öffnen"
-            @click="openMobileDrawer"
-          />
-          <!-- Desktop: Sidebar ein-/ausklappen -->
-          <Button
-            v-else
+            v-show="!isCompactLayout"
             class="toggle-btn"
             :icon="isDesktopCollapsed ? 'pi pi-bars' : 'pi pi-align-left'"
             severity="secondary"
@@ -253,6 +224,10 @@ onBeforeUnmount(() => {
       </main>
     </div>
 
+    <!-- Mobile Bottom-Nav (Mobile+Tablet, < 1024px). Versteckt sich selbst
+         via @media auf Desktop. Logout lebt jetzt hier, im Mehr-Bottom-Sheet. -->
+    <MobileBottomNav />
+
     <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop) -->
     <FabSpeedDial :actions="fabActions" />
   </div>
@@ -285,39 +260,18 @@ onBeforeUnmount(() => {
   border-right: none;
 }
 
-/* === Sidebar Mobile (Off-Canvas Drawer) === */
-.layout-wrapper--mobile .sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  height: 100vh;
-  height: 100dvh;
-  width: 84vw;
-  max-width: 320px;
-  transform: translateX(-100%);
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+/* === Mobile+Tablet Layout (< 1024px): Sidebar ausgeblendet, Bottom-Nav
+   übernimmt die Hauptnavigation. Volle Breite für main-container. === */
+.layout-wrapper--compact {
+  /* Sidebar-Spalte existiert nicht — main-container dehnt sich aus. */
 }
 
-.layout-wrapper--mobile.layout-wrapper--drawer-open .sidebar {
-  transform: translateX(0);
+.layout-wrapper--compact .sidebar {
+  display: none;
 }
 
-/* === Backdrop === */
-.sidebar-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 150;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease;
-}
-
-.layout-wrapper--drawer-open .sidebar-backdrop {
-  opacity: 1;
-  pointer-events: auto;
+.layout-wrapper--compact .toggle-btn {
+  display: none;
 }
 
 /* === Sidebar intern === */
@@ -571,14 +525,15 @@ onBeforeUnmount(() => {
   background-color: #0b0f19;
 }
 
-/* === Mobile: Header- & Content-Anpassung === */
-@media (max-width: 639px) {
+/* === Mobile+Tablet: Header- & Content-Anpassung === */
+@media (max-width: 1023px) {
   .header {
     padding: 0 1rem;
   }
   .content {
     padding: 1rem;
-    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px)); /* Platz für FAB */
+    /* Platz für FAB (60px) + Bottom-Nav (~64px) + Safe-Area-Inset */
+    padding-bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));
   }
   .switcher-select {
     min-width: 0;
