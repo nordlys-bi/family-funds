@@ -10,7 +10,11 @@ export default defineEventHandler(async (event) => {
   const { user } = await requireHouseholdMembership(event, householdId)
   const { monthStart, monthEnd } = getMonthWindow()
 
-  const [expenses, incomes] = await Promise.all([
+  // Rows werden fuer die Listen-Darstellung gebraucht. Summen kommen
+  // separat via `_sum`-Aggregates aus der DB (Backend-Review Finding #6).
+  // `unassignedExpenseTotal` braucht zwei Aggregates (mit + ohne
+  // budgetId-Null-Filter), beide billiger als JS-Reduce ueber N Rows.
+  const [expenses, incomes, incomeTotalAggregate, expenseTotalAggregate, unassignedExpenseTotalAggregate] = await Promise.all([
     prisma.expenseTransaction.findMany({
       where: {
         householdId,
@@ -73,6 +77,22 @@ export default defineEventHandler(async (event) => {
         },
       },
     }),
+    prisma.incomeTransaction.aggregate({
+      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      _sum: { amount: true },
+    }),
+    prisma.expenseTransaction.aggregate({
+      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      _sum: { amount: true },
+    }),
+    prisma.expenseTransaction.aggregate({
+      where: {
+        householdId,
+        date: { gte: monthStart, lt: monthEnd },
+        budgetId: null,
+      },
+      _sum: { amount: true },
+    }),
   ])
 
   const transactions = [
@@ -101,9 +121,9 @@ export default defineEventHandler(async (event) => {
     })),
   ].sort((left, right) => right.date.getTime() - left.date.getTime())
 
-  const incomeTotal = incomes.reduce((sum, transaction) => sum + transaction.amount, 0)
-  const expenseTotal = expenses.reduce((sum, transaction) => sum + transaction.amount, 0)
-  const unassignedExpenseTotal = expenses.filter((transaction) => !transaction.budgetId).reduce((sum, transaction) => sum + transaction.amount, 0)
+  const incomeTotal = incomeTotalAggregate._sum.amount ?? 0
+  const expenseTotal = expenseTotalAggregate._sum.amount ?? 0
+  const unassignedExpenseTotal = unassignedExpenseTotalAggregate._sum.amount ?? 0
 
   return {
     householdId,

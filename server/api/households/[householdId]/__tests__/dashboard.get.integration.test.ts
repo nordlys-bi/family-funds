@@ -19,7 +19,7 @@ import { Frequency, Role } from '@prisma/client'
 const prismaMocks = vi.hoisted(() => ({
   budget: { findMany: vi.fn() },
   expenseTransaction: { findMany: vi.fn() },
-  incomeTransaction: { findMany: vi.fn() },
+  incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
 }))
 
@@ -71,6 +71,10 @@ function resetDbMocks() {
   prismaMocks.budget.findMany.mockReset()
   prismaMocks.expenseTransaction.findMany.mockReset()
   prismaMocks.incomeTransaction.findMany.mockReset()
+  prismaMocks.incomeTransaction.aggregate.mockReset()
+  // Default fuer aggregate: leeres Result, damit endpoint nicht crasht,
+  // wenn ein Test das aggregate-Mock nicht explizit setzt.
+  prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockReset()
 }
 
@@ -78,7 +82,11 @@ function mockEmptyHousehold() {
   prismaMocks.budget.findMany.mockResolvedValue([])
   // 4 calls to expenseTransaction.findMany — month + recent — both empty.
   prismaMocks.expenseTransaction.findMany.mockResolvedValue([])
+  // income.findMany ist neuerdings NUR fuer die Recent-Query noetig
+  // (Monats-Summe kommt jetzt als `_sum`-Aggregate). Default: leer.
   prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
+  // income-aggregate liefert fuer leere Haushalte { _sum: { amount: null } }.
+  prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockResolvedValue([])
 }
 
@@ -156,6 +164,11 @@ function setupTypicalHousehold() {
       { id: 'i-2', amount: 50000, description: 'Bonus', date: new Date(now.getTime() - 6 * 86400000), user: { displayName: 'Jan' } },
     ]
   })
+
+  // Income-Aggregate fuer Monats-Summe: deckungsgleich mit den Monats-Rows.
+  prismaMocks.incomeTransaction.aggregate.mockImplementation(async () => ({
+    _sum: { amount: 250000 + 50000 },
+  }))
 
   prismaMocks.savingsGoal.findMany.mockResolvedValue([
     {

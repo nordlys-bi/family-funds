@@ -38,10 +38,13 @@ export default defineEventHandler(async (event) => {
   sevenDaysAgo.setDate(now.getDate() - 7)
 
   // Alle Queries parallel, damit das Endpoint sub-100ms bleibt.
+  // monthIncomes wurde durch eine DB-seitige `_sum`-Aggregation ersetzt —
+  // statt N Rows durch Node zu streamen, kommt ein einzelner Skalar
+  // zurueck (Backend-Review Finding #6).
   const [
     budgets,
     monthExpenses,
-    monthIncomes,
+    monthIncomeTotal,
     recentExpenses,
     recentIncomes,
     savingsGoals,
@@ -65,13 +68,16 @@ export default defineEventHandler(async (event) => {
         },
       },
     }),
+    // monthExpenses bleibt findMany — die Rows werden pro Budget
+    // gebucketed fuer `buildBudgetOverview`. Nur der incomeTotal-
+    // Reduce konnte wegoptimiert werden.
     prisma.expenseTransaction.findMany({
       where: { householdId, date: { gte: monthStart, lt: monthEnd } },
       select: { amount: true, date: true, budgetId: true },
     }),
-    prisma.incomeTransaction.findMany({
+    prisma.incomeTransaction.aggregate({
       where: { householdId, date: { gte: monthStart, lt: monthEnd } },
-      select: { amount: true },
+      _sum: { amount: true },
     }),
     prisma.expenseTransaction.findMany({
       where: { householdId, date: { gte: sevenDaysAgo, lte: now } },
@@ -111,7 +117,7 @@ export default defineEventHandler(async (event) => {
 
   const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart)
 
-  const incomeTotal = monthIncomes.reduce((sum, transaction) => sum + transaction.amount, 0)
+  const incomeTotal = monthIncomeTotal._sum.amount ?? 0
   const expensesTotal = monthExpenses.reduce((sum, transaction) => sum + transaction.amount, 0)
 
   return {
