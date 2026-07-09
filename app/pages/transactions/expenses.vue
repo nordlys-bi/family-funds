@@ -16,35 +16,16 @@ type PlanningHousehold = {
   budgets: BudgetItem[]
 }
 
-type TransactionItem = {
-  id: string
-  kind: 'expense' | 'income'
-  amount: number
-  description: string | null
-  date: string
-  budgetId?: string | null
-  budgetName?: string | null
-  user: { displayName: string | null; email: string }
-}
-
-type TransactionSummary = {
-  incomeTotal: number
-  expenseTotal: number
-  netTotal: number
-  unassignedExpenseTotal: number
-}
-
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const route = useRoute()
+const router = useRouter()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
-const transactions = ref<TransactionItem[]>([])
-const summary = ref<TransactionSummary>({ incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 })
-const loading = ref(false)
-const transactionLoading = ref(false)
-const actionLoadingKey = ref<string | null>(null)
 const notice = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 const editingTransactionId = ref<string | null>(null)
 const transactionDialogOpen = ref(false)
+const transactionLoading = ref(false)
+const actionLoadingKey = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
@@ -61,12 +42,13 @@ function formatDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
 }
 
-const transactionForm = ref({
-  amount: null as number | null,
-  description: '',
-  date: new Date(),
-  budgetId: '',
+// --- Month-Filter via Composable (issue #9) ---
+// Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
+const txList = useTransactionList({
+  initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
 })
+
+const visibleTransactions = computed(() => txList.transactionsByKind('expense'))
 
 const budgetOptions = computed(() => currentHousehold.value?.budgets ?? [])
 const budgetSelectOptions = computed(() => [
@@ -74,35 +56,42 @@ const budgetSelectOptions = computed(() => [
   ...budgetOptions.value.map((budget) => ({ label: budget.name, value: budget.id })),
 ])
 
-const visibleTransactions = computed(() => transactions.value.filter((transaction) => transaction.kind === 'expense'))
-const budgetLabel = (transaction: TransactionItem) => transaction.budgetName ?? 'Sonstiges'
-const isUnassigned = (transaction: TransactionItem) => !transaction.budgetId
+const budgetLabel = (transaction: { budgetName?: string | null }) => transaction.budgetName ?? 'Sonstiges'
+const isUnassigned = (transaction: { budgetId?: string | null }) => !transaction.budgetId
 
-const loadData = async () => {
-  loading.value = true
-  notice.value = null
+const transactionForm = ref({
+  amount: null as number | null,
+  description: '',
+  date: new Date(),
+  budgetId: '',
+})
+
+// Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
+async function onMonthChange(newMonth: string) {
+  await txList.setMonth(newMonth, activeHouseholdId.value)
+  // URL updaten (replace, kein History-Eintrag pro Monats-Klick).
+  // query.month == aktueller Monat → Query loeschen, damit die Default-URL
+  // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const query = newMonth === currentMonth ? {} : { month: newMonth }
+  await router.replace({ query })
+}
+
+// --- Daten laden ---
+async function loadCurrentHousehold() {
   try {
-    const [current, tx] = await Promise.all([
-      $fetch<{ household: PlanningHousehold | null }>('/api/households/current'),
-      activeHouseholdId.value
-        ? $fetch<{ transactions: TransactionItem[]; summary: TransactionSummary }>(
-            `/api/households/${activeHouseholdId.value}/transactions`,
-          )
-        : Promise.resolve(null),
-    ])
+    const current = await $fetch<{ household: PlanningHousehold | null }>('/api/households/current')
     currentHousehold.value = current.household
-    if (tx) {
-      transactions.value = tx.transactions
-      summary.value = tx.summary
-    } else {
-      transactions.value = []
-      summary.value = { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 }
-    }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
-  } finally {
-    loading.value = false
+  } catch (error) {
+    currentHousehold.value = null
   }
+}
+
+async function loadAll() {
+  await Promise.all([
+    loadCurrentHousehold(),
+    txList.load(activeHouseholdId.value),
+  ])
 }
 
 const resetForm = () => {
@@ -112,7 +101,7 @@ const resetForm = () => {
 
 const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
 
-const editTransaction = (transaction: TransactionItem) => {
+const editTransaction = (transaction: { id: string; amount: number; description: string | null; date: string; budgetId?: string | null }) => {
   editingTransactionId.value = transaction.id
   transactionForm.value = {
     amount: transaction.amount / 100,
@@ -143,7 +132,7 @@ const saveTransaction = async () => {
       method: editingTransactionId.value ? 'PATCH' : 'POST',
       body: payload,
     })
-    await loadData()
+    await loadAll()
     closeTransactionDialog()
     notice.value = { severity: 'success', text: isEdit ? 'Ausgabe wurde aktualisiert.' : 'Ausgabe wurde angelegt.' }
   } catch (error: any) {
@@ -153,7 +142,7 @@ const saveTransaction = async () => {
   }
 }
 
-const deleteTransaction = async (transaction: TransactionItem) => {
+const deleteTransaction = async (transaction: { id: string }) => {
   if (!activeHouseholdId.value) return
   actionLoadingKey.value = `expense:${transaction.id}`
   notice.value = null
@@ -162,7 +151,7 @@ const deleteTransaction = async (transaction: TransactionItem) => {
       method: 'DELETE',
       body: { kind: 'expense', id: transaction.id },
     })
-    await loadData()
+    await loadAll()
     notice.value = { severity: 'success', text: 'Ausgabe wurde gelöscht.' }
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Ausgabe konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
@@ -171,42 +160,62 @@ const deleteTransaction = async (transaction: TransactionItem) => {
   }
 }
 
+// Composable-Fehler in Notice mappen, damit User was sehen.
+watch(() => txList.error.value, (error) => {
+  if (error) {
+    notice.value = { severity: 'error', text: 'Transaktionen konnten nicht geladen werden: ' + error }
+  }
+})
+
 onMounted(async () => {
   await fetchHouseholds()
-  await loadData()
+  await loadAll()
 })
-watch(activeHouseholdId, async () => { await loadData() })
+watch(activeHouseholdId, async () => { await loadAll() })
 </script>
 
 <template>
   <ListPageShell
     title="Ausgaben"
-    description="Erfasse alle Ausgaben für den aktuellen Monat. Weise sie optional einem Budget zu oder lass sie unter Sonstiges laufen."
+    :description="`Erfasse alle Ausgaben fuer ${txList.monthLabel.value}. Filtere nach Monat oder lege neue Buchungen an.`"
   >
     <template #summary>
-      <Tag severity="warning" :value="`Ausgaben ${formatMoney(summary.expenseTotal)}`" />
-      <Tag severity="secondary" :value="`Ohne Budget ${formatMoney(summary.unassignedExpenseTotal)}`" />
+      <Tag severity="warning" :value="`Ausgaben ${formatMoney(txList.summary.expenseTotal)}`" />
+      <Tag severity="secondary" :value="`Ohne Budget ${formatMoney(txList.summary.unassignedExpenseTotal)}`" />
       <Tag severity="info" :value="`${visibleTransactions.length} Buchungen`" />
     </template>
 
     <template #toolbar>
+      <div class="toolbar-month">
+        <label for="expenses-month-select" class="toolbar-month__label">Monat</label>
+        <Select
+          id="expenses-month-select"
+          :model-value="txList.month"
+          :options="txList.monthOptions"
+          option-label="label"
+          option-value="value"
+          :loading="txList.loading"
+          aria-label="Monat auswaehlen"
+          @update:model-value="onMonthChange"
+        />
+      </div>
       <Button label="Ausgabe anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
     <EmptyState
-      :loading="loading"
-      :no-household="!loading && !activeHousehold"
+      :loading="txList.loading"
+      :no-household="!txList.loading && !activeHousehold"
       loading-title="Ausgaben werden geladen"
     />
 
-    <template v-if="!loading && activeHousehold && currentHousehold">
+    <template v-if="!txList.loading && activeHousehold && currentHousehold">
       <ListPanel
         kicker="Monat"
-        title="Aktuelle Ausgaben"
+        :title="`Ausgaben ${txList.monthLabel}`"
         compact
-        :badge="formatMoney(summary.expenseTotal)"
+        :badge="formatMoney(txList.summary.expenseTotal)"
       >
         <ListTable dense accent="primary">
           <template #head>
@@ -247,13 +256,13 @@ watch(activeHouseholdId, async () => { await loadData() })
           </tr>
 
           <tr v-if="visibleTransactions.length === 0">
-            <td colspan="6" class="data-table__empty">Noch keine Ausgaben erfasst.</td>
+            <td colspan="6" class="data-table__empty">Keine Ausgaben in {{ txList.monthLabel }}.</td>
           </tr>
 
           <!-- Mobile (< 768px): Cards statt Tabelle. Betrag prominent oben rechts. -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
-              Noch keine Ausgaben erfasst.
+              Keine Ausgaben in {{ txList.monthLabel }}.
             </div>
             <div
               v-for="transaction in visibleTransactions"
@@ -346,5 +355,23 @@ watch(activeHouseholdId, async () => { await loadData() })
 .budget-pill--muted {
   background: rgba(148, 163, 184, 0.16);
   color: #94a3b8;
+}
+
+.toolbar-month {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.toolbar-month__label {
+  font-size: 0.85rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+@media (max-width: 480px) {
+  .toolbar-month {
+    width: 100%;
+  }
 }
 </style>
