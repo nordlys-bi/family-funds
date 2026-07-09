@@ -43,6 +43,7 @@ export default defineNuxtConfig({
     'primeicons/primeicons.css',
     '~/assets/css/tokens.css',
     '~/assets/css/base.css',
+    '~/assets/css/login.css',
   ],
 
   runtimeConfig: {
