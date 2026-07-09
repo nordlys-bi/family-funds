@@ -83,6 +83,71 @@ export function parseMoneyToCents(value: unknown, fieldName: string) {
   return Math.round(parsedAmount * 100)
 }
 
+/**
+ * Wie parseMoneyToCents, akzeptiert aber negative Betraege (Withdrawals
+ * aus SavingsGoals). Erlaubt sowohl String als auch Number-Input.
+ *
+ * Beispiel: 12.50 -> 1250, -5 -> -500, "-3,75" -> -375
+ */
+export function parseExecutionAmount(value: unknown, fieldName: string): number {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: `${fieldName} must be a finite amount.`,
+      })
+    }
+    return Math.round(value * 100)
+  }
+
+  if (typeof value !== 'string') {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${fieldName} is required.`,
+    })
+  }
+
+  const normalized = value.trim().replace(/\s+/g, '')
+  if (!normalized) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${fieldName} is required.`,
+    })
+  }
+
+  let parsedAmount: number
+
+  // Vorzeichen separat behandeln, damit "−" / "-" am String-Anfang sauber
+  // verarbeitet werden (Number() akzeptiert "+", "-", aber nicht
+  // "1.234,56" mit Punkt als Tausender UND Komma als Dezimal).
+  const sign = normalized.startsWith('-') ? -1 : 1
+  const absolute = sign === -1 ? normalized.slice(1) : normalized
+
+  if (absolute.includes(',') && absolute.includes('.')) {
+    const lastComma = absolute.lastIndexOf(',')
+    const lastDot = absolute.lastIndexOf('.')
+
+    if (lastComma > lastDot) {
+      parsedAmount = Number(absolute.replace(/\./g, '').replace(',', '.'))
+    } else {
+      parsedAmount = Number(absolute.replace(/,/g, ''))
+    }
+  } else if (absolute.includes(',')) {
+    parsedAmount = Number(absolute.replace(',', '.'))
+  } else {
+    parsedAmount = Number(absolute)
+  }
+
+  if (!Number.isFinite(parsedAmount)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `${fieldName} must be a finite amount.`,
+    })
+  }
+
+  return sign === -1 ? -Math.round(parsedAmount * 100) : Math.round(parsedAmount * 100)
+}
+
 export function parseDateInput(value: unknown, fieldName: string) {
   if (typeof value !== 'string' || !value.trim()) {
     throw createError({
