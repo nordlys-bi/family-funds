@@ -1,8 +1,7 @@
-import { defineEventHandler, deleteCookie } from 'h3'
+import { defineEventHandler } from 'h3'
+import { clearSessionCookie } from '../../utils/auth-session'
 
 export default defineEventHandler(async (event) => {
-  deleteCookie(event, 'session_user_id', {
-    path: '/',
-  })
+  clearSessionCookie(event)
   return { success: true }
 })
