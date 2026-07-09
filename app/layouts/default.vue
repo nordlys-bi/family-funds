@@ -216,7 +216,11 @@ onBeforeUnmount(() => {
           />
 
           <!-- Household Switcher in Header -->
-          <div v-if="households.length > 0" class="household-switcher">
+          <div
+            v-if="households.length > 0"
+            class="household-switcher"
+            :title="activeHousehold ? `${activeHousehold.name} (${activeHousehold.currency})` : undefined"
+          >
             <i class="pi pi-home switcher-icon"></i>
             <Select
               :modelValue="activeHousehold?.id ?? null"
@@ -230,7 +234,10 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="header-right">
-          <span class="env-tag">{{ isClerkMode ? 'Clerk Mode' : 'Sandbox Mode' }}</span>
+          <!-- Mock-Mode-Badge: nur sichtbar, solange Clerk-Keys nicht gesetzt sind.
+               In Production (Clerk-Mode) für End-User ausgeblendet — der Hinweis
+               ist ein Dev-Marker und gehört nicht in die User-Facing-UI. -->
+          <span v-if="!isClerkMode" class="env-tag">Sandbox Mode</span>
           <div v-if="isClerkMode" class="header-user-button">
             <UserButton />
           </div>
@@ -517,6 +524,14 @@ onBeforeUnmount(() => {
 :deep(.switcher-select .p-select-label) {
   color: #f8fafc;
   font-weight: 600;
+  /* Lange Haushaltsnamen auf Mobile sauber mit Ellipsis kürzen statt
+     umzubrechen oder den Layout-Container zu sprengen. title-Attribut
+     kommt via Tooltip auf der .household-switcher, sodass der volle
+     Name bei Long-Press / Hover sichtbar bleibt. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 :deep(.switcher-select .p-select-dropdown) {
@@ -542,6 +557,7 @@ onBeforeUnmount(() => {
   padding: 0.3rem 0.6rem;
   border-radius: 6px;
   border: 1px solid rgba(168, 85, 247, 0.2);
+  white-space: nowrap;
 }
 
 /* === Content === */

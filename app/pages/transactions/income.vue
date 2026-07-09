@@ -161,7 +161,6 @@ watch(activeHouseholdId, async () => { await loadData() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 5 / Einnahmen"
     title="Einnahmen"
     description="Erfasse alle Einnahmen für den aktuellen Monat — Gehalt, Boni, Rückerstattungen, Geschenke."
   >

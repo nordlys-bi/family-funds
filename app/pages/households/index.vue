@@ -91,7 +91,6 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 3"
     title="Haushalts- & Mitgliederverwaltung"
     description="Übersicht über deinen aktiven Haushalt. Mitglieder und Einladungen verwaltest du unter Mitglieder; Name und Währung unter Settings."
   >

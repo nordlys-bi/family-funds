@@ -91,7 +91,6 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 3 / Settings"
     title="Haushalt-Einstellungen"
     description="Bearbeite Name und Währung des aktiven Haushalts. Nur Owner können diese Werte ändern."
   >

@@ -180,7 +180,6 @@ watch(activeHouseholdId, async () => { await loadData() })
 
 <template>
   <ListPageShell
-    eyebrow="Meilenstein 5 / Ausgaben"
     title="Ausgaben"
     description="Erfasse alle Ausgaben für den aktuellen Monat. Weise sie optional einem Budget zu oder lass sie unter Sonstiges laufen."
   >
