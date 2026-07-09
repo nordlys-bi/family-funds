@@ -1,0 +1,54 @@
+/*
+ * login.css — globale (nicht-scoped) Styles fuer die Login-Page.
+ *
+ * Die Background-Decoration (zwei blur-Circles) lebt hier weil sie
+ * page-weit gilt (`.login-page__*`-Klassen) — login.vue's <style
+ * scoped> wuerde sie auf den Root-`<div>` rendern, aber die Page
+ * selbst nutzt ein simples Flex-Layout ohne Decoration. So bleibt
+ * login.vue klein und die visuelle Atmosphaere liegt zentral.
+ *
+ * Login-Card-Chrome (Card-Frame, Logo, Brand-Title) liegt in
+ * `app/components/LoginCard.vue`.
+ */
+
+.login-page {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  font-family: var(--font-family, 'Inter', sans-serif);
+  padding: 1.5rem;
+  overflow: hidden;
+}
+
+.login-page__decorations {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.login-page__circle {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  opacity: 0.15;
+}
+
+.login-page__circle--1 {
+  width: 400px;
+  height: 400px;
+  background: #3b82f6;
+  top: -100px;
+  right: -50px;
+}
+
+.login-page__circle--2 {
+  width: 500px;
+  height: 500px;
+  background: #a855f7;
+  bottom: -150px;
+  left: -100px;
+}
