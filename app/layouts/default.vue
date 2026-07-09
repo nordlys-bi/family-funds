@@ -104,6 +104,9 @@ onBeforeUnmount(() => {
       'layout-wrapper--collapsed': !isMobile && isDesktopCollapsed,
     }"
   >
+    <!-- Skip-Link (A11y / WCAG 2.4.1): sichtbar nur bei Tastatur-Fokus,
+         springt direkt zum Hauptinhalt. -->
+    <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
     <!-- Sidebar (Off-Canvas-Drawer auf Mobile, persistente Spalte auf Desktop) -->
     <aside class="sidebar" aria-label="Hauptnavigation">
       <div class="sidebar-header">
@@ -245,7 +248,7 @@ onBeforeUnmount(() => {
       </header>
 
       <!-- Page Content -->
-      <main class="content">
+      <main id="main-content" tabindex="-1" class="content">
         <slot />
       </main>
     </div>

@@ -6,6 +6,7 @@ export default defineConfig({
     environment: 'node',
     include: [
       'server/**/__tests__/**/*.test.ts',
+      'app/**/__tests__/**/*.test.ts',
     ],
     coverage: {
       provider: 'v8',
