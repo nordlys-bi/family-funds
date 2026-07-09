@@ -6,6 +6,13 @@ export interface HouseholdInfo {
   name: string
   currency: string
   role: 'OWNER' | 'MEMBER'
+  /**
+   * ISO-Timestamp der Household-Erstellung. Wird vom /api/households-Endpoint
+   * mitgeliefert; aelteres active-household-Cookie-State kann das Feld
+   * verlieren (undefined) — Composable-Code MUSS das optional behandeln.
+   * Verwendung: First-Time-Empty-States (issue #13) — `isFirstRun(household)`.
+   */
+  createdAt?: string
 }
 
 export const useHousehold = () => {

@@ -48,6 +48,8 @@ type PlanningHousehold = {
   budgets: BudgetItem[]
 }
 
+import { isFirstRun } from '~/utils/household-age'
+
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -68,6 +70,12 @@ const budgetEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
+
+// Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
+const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
+const showFirstTimeEmpty = computed(
+  () => (currentHousehold.value?.budgets.length ?? 0) === 0 && isFirstRunHousehold.value,
+)
 
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
 const formatDate = formatPlanningDate
@@ -203,8 +211,26 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       loading-text="Wir holen den aktuellen Haushalt und die vorhandenen Budgets."
     />
 
+    <EmptyState
+      v-if="!loading && activeHousehold && currentHousehold && showFirstTimeEmpty"
+      variant="first-time"
+      icon="pi pi-chart-line"
+      icon-tone="accent"
+      headline="Noch keine Budgets"
+      description="Lege dein erstes Budget an, um Ausgaben pro Kategorie zu planen — z. B. Lebensmittel, Miete, Freizeit."
+      :cta="{ label: 'Budget anlegen', onClick: openBudgetDialog, severity: 'primary' }"
+    />
+    <EmptyState
+      v-else-if="!loading && activeHousehold && currentHousehold && currentHousehold.budgets.length === 0"
+      variant="no-data"
+      icon="pi pi-chart-line"
+      icon-tone="muted"
+      headline="Keine Budgets"
+      description="Lege ein Budget an, um Auswertungen pro Kategorie zu sehen."
+    />
+
     <ListPanel
-      v-if="!loading && activeHousehold && currentHousehold"
+      v-if="!loading && activeHousehold && currentHousehold && currentHousehold.budgets.length > 0"
       variant="primary"
       compact
       :badge="`${currentHousehold.budgets.length} Einträge`"
