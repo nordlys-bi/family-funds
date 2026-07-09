@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isFirstRun } from '~/utils/household-age'
 
 definePageMeta({ layout: 'default' })
@@ -56,6 +56,9 @@ const txError = tx.error
 const setMonth = tx.setMonth
 const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
+const updateTransactionLocal = tx.updateTransactionLocal
+const restoreTransactionLocal = tx.restoreTransactionLocal
+const recomputeSummaryFromLocal = tx.recomputeSummaryFromLocal
 
 const visibleTransactions = computed(() => transactionsByKind('income'))
 
@@ -106,17 +109,69 @@ const resetForm = () => {
 
 const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
 
-const editTransaction = (transaction: { id: string; amount: number; description: string | null; date: string }) => {
-  editingTransactionId.value = transaction.id
-  transactionForm.value = {
-    amount: transaction.amount / 100,
-    description: transaction.description ?? '',
-    date: new Date(transaction.date),
+const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
+
+// === Inline-Edit (issue #15) ==========================================
+// Single-Edit-Pattern: editingTransactionId haelt die ID der Zeile im
+// Edit-Modus. Setzen einer neuen ID wechselt den Fokus automatisch.
+const startInlineEdit = (id: string) => { editingTransactionId.value = id }
+const cancelInlineEdit = () => { editingTransactionId.value = null }
+const inlineEditError = ref<string | null>(null)
+
+async function saveInlineEdit(
+  transactionId: string,
+  payload: { amount: number | null; description: string; date: string; budgetId: string | null },
+) {
+  if (!activeHouseholdId.value) return
+  if (payload.amount == null || payload.amount <= 0) {
+    inlineEditError.value = 'Betrag muss groesser als 0 sein.'
+    return
   }
-  transactionDialogOpen.value = true
+  inlineEditError.value = null
+  actionLoadingKey.value = `income:${transactionId}`
+
+  // Optimistic Update via Composable-Helper (issue #15).
+  const amountCents = Math.round((payload.amount ?? 0) * 100)
+  const original = updateTransactionLocal(transactionId, {
+    amount: amountCents,
+    description: payload.description,
+    date: payload.date,
+  })
+  if (!original) {
+    actionLoadingKey.value = null
+    return
+  }
+
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
+      method: 'PATCH',
+      body: {
+        kind: 'income',
+        id: transactionId,
+        amount: amountCents,
+        description: payload.description,
+        date: payload.date,
+      },
+    })
+    editingTransactionId.value = null
+    recomputeSummaryFromLocal()
+    notice.value = { severity: 'success', text: 'Einnahme wurde aktualisiert.' }
+  } catch (error: any) {
+    // Rollback auf den Original-Wert (issue #15 Acceptance Criteria).
+    restoreTransactionLocal(transactionId, original)
+    inlineEditError.value = error?.statusMessage || error?.message || 'Speichern fehlgeschlagen.'
+  } finally {
+    actionLoadingKey.value = null
+  }
 }
 
-const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
+// ESC bricht Inline-Edit ab (issue #15 Acceptance Criteria).
+function onEscapeKey(event: KeyboardEvent) {
+  if (event.key === 'Escape' && editingTransactionId.value) {
+    event.preventDefault()
+    cancelInlineEdit()
+  }
+}
 
 const saveTransaction = async () => {
   if (!activeHouseholdId.value) return
@@ -171,8 +226,16 @@ watch(txError, (error) => {
 })
 
 onMounted(async () => {
+  if (import.meta.client) {
+    document.addEventListener('keydown', onEscapeKey)
+  }
   await fetchHouseholds()
   await loadAll()
+})
+onBeforeUnmount(() => {
+  if (import.meta.client) {
+    document.removeEventListener('keydown', onEscapeKey)
+  }
 })
 watch(activeHouseholdId, async () => { await loadAll() })
 </script>
@@ -249,23 +312,47 @@ watch(activeHouseholdId, async () => { await loadAll() })
           </template>
 
           <tr v-for="transaction in visibleTransactions" :key="transaction.id">
-            <td class="muted">{{ formatDate(transaction.date) }}</td>
-            <td class="name">{{ transaction.description || 'Einnahme' }}</td>
-            <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
-            <td class="num income-amount">+{{ formatMoney(transaction.amount) }}</td>
-            <td class="actions">
-              <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahme bearbeiten" @click="editTransaction(transaction)" />
-              <Button
-                icon="pi pi-trash"
-                severity="danger"
-                outlined
-                size="small"
-                text
-                aria-label="Einnahme löschen"
-                :loading="actionLoadingKey === `income:${transaction.id}`"
-                @click="deleteTransaction(transaction)"
-              />
-            </td>
+            <template v-if="editingTransactionId === transaction.id">
+              <td colspan="5" class="data-table__edit-cell">
+                <TransactionRowEditor
+                  :transaction="transaction"
+                  :currency="currencyCode"
+                  :saving="actionLoadingKey === `income:${transaction.id}`"
+                  :error="inlineEditError"
+                  @save="(payload) => saveInlineEdit(transaction.id, payload)"
+                  @cancel="cancelInlineEdit"
+                />
+              </td>
+            </template>
+            <template v-else>
+              <td class="muted">{{ formatDate(transaction.date) }}</td>
+              <td class="name">{{ transaction.description || 'Einnahme' }}</td>
+              <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
+              <td class="num income-amount">+{{ formatMoney(transaction.amount) }}</td>
+              <td class="actions">
+                <Button
+                  icon="pi pi-pen-to-square"
+                  severity="secondary"
+                  outlined
+                  size="small"
+                  text
+                  aria-label="Einnahme inline bearbeiten"
+                  :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                  @click="startInlineEdit(transaction.id)"
+                />
+                <Button
+                  icon="pi pi-trash"
+                  severity="danger"
+                  outlined
+                  size="small"
+                  text
+                  aria-label="Einnahme löschen"
+                  :loading="actionLoadingKey === `income:${transaction.id}`"
+                  :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                  @click="deleteTransaction(transaction)"
+                />
+              </td>
+            </template>
           </tr>
 
           <tr v-if="visibleTransactions.length === 0">
@@ -281,34 +368,56 @@ watch(activeHouseholdId, async () => { await loadAll() })
               v-for="transaction in visibleTransactions"
               v-else
               :key="`m-${transaction.id}`"
-              class="data-table__card"
+              :class="['data-table__card', { 'data-table__card--editing': editingTransactionId === transaction.id }]"
             >
-              <div class="data-table__card-line">
-                <span class="data-table__card-name">
-                  {{ transaction.description || 'Einnahme' }}
-                </span>
-                <span class="data-table__card-amount income-amount">
-                  +{{ formatMoney(transaction.amount) }}
-                </span>
-              </div>
-              <div class="data-table__card-meta">
-                <span>{{ formatDate(transaction.date) }}</span>
-                <span>·</span>
-                <span>{{ transaction.user.displayName || transaction.user.email }}</span>
-              </div>
-              <div class="data-table__card-actions">
-                <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahme bearbeiten" @click="editTransaction(transaction)" />
-                <Button
-                  icon="pi pi-trash"
-                  severity="danger"
-                  outlined
-                  size="small"
-                  text
-                  aria-label="Einnahme löschen"
-                  :loading="actionLoadingKey === `income:${transaction.id}`"
-                  @click="deleteTransaction(transaction)"
+              <template v-if="editingTransactionId === transaction.id">
+                <TransactionRowEditor
+                  :transaction="transaction"
+                  :currency="currencyCode"
+                  :saving="actionLoadingKey === `income:${transaction.id}`"
+                  :error="inlineEditError"
+                  @save="(payload) => saveInlineEdit(transaction.id, payload)"
+                  @cancel="cancelInlineEdit"
                 />
-              </div>
+              </template>
+              <template v-else>
+                <div class="data-table__card-line">
+                  <span class="data-table__card-name">
+                    {{ transaction.description || 'Einnahme' }}
+                  </span>
+                  <span class="data-table__card-amount income-amount">
+                    +{{ formatMoney(transaction.amount) }}
+                  </span>
+                </div>
+                <div class="data-table__card-meta">
+                  <span>{{ formatDate(transaction.date) }}</span>
+                  <span>·</span>
+                  <span>{{ transaction.user.displayName || transaction.user.email }}</span>
+                </div>
+                <div class="data-table__card-actions">
+                  <Button
+                    icon="pi pi-pen-to-square"
+                    severity="secondary"
+                    outlined
+                    size="small"
+                    text
+                    aria-label="Einnahme inline bearbeiten"
+                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                    @click="startInlineEdit(transaction.id)"
+                  />
+                  <Button
+                    icon="pi pi-trash"
+                    severity="danger"
+                    outlined
+                    size="small"
+                    text
+                    aria-label="Einnahme löschen"
+                    :loading="actionLoadingKey === `income:${transaction.id}`"
+                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                    @click="deleteTransaction(transaction)"
+                  />
+                </div>
+              </template>
             </div>
           </template>
         </ListTable>
@@ -349,6 +458,18 @@ watch(activeHouseholdId, async () => { await loadAll() })
 <style scoped>
 .income-amount {
   color: #34d399;
+}
+
+/* Issue #15: Inline-Edit-Cell (Desktop-Tabellen-Zeile) */
+.data-table__edit-cell {
+  padding: 0 !important;
+  background: rgba(59, 130, 246, 0.04);
+}
+
+.data-table__card--editing {
+  background: rgba(59, 130, 246, 0.08);
+  border-left: 3px solid #60a5fa;
+  padding: 8px;
 }
 
 .toolbar-month {
