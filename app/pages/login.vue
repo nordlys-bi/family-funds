@@ -117,7 +117,7 @@ onMounted(async () => {
 
           <p class="info-text text-sm text-surface-500 mb-6">
             <i class="pi pi-info-circle mr-1"></i>
-            Da keine Clerk-Konfiguration aktiv ist, läuft die Anwendung im **Mock-Modus**. Du kannst dich als jeder der oben gelisteten Test-User anmelden, um Multi-User- und Multi-Household-Szenarien zu simulieren.
+            Da keine Clerk-Konfiguration aktiv ist, läuft die Anwendung im <strong>Mock-Modus</strong>. Du kannst dich als jeder der oben gelisteten Test-User anmelden, um Multi-User- und Multi-Household-Szenarien zu simulieren.
           </p>
 
           <Button 

@@ -1,17 +1,11 @@
-import { defineEventHandler, createError } from 'h3'
+import { defineEventHandler } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { getMonthWindow } from '../../../utils/budget-evaluation'
+import { parseUuidParam } from '../../../utils/validation'
 
 export default defineEventHandler(async (event) => {
-  const householdId = event.context.params?.householdId
-
-  if (!householdId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Household ID is required.',
-    })
-  }
+  const householdId = parseUuidParam(event, 'householdId')
 
   const { user } = await requireHouseholdMembership(event, householdId)
   const { monthStart, monthEnd } = getMonthWindow()

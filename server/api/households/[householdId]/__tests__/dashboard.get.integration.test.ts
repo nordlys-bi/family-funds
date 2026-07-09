@@ -49,10 +49,14 @@ function makeEvent(householdId: string | undefined): H3Event {
 
 const sampleUser = { id: 'user-1', email: 'jan@example.com', displayName: 'Jan' }
 
+// gültige UUID-Form, weil der Endpoint seit Backend-#12 parseUuidParam nutzt
+// und ungültige IDs schon im Test gegen 400 laufen.
+const HH_ID = '9bff8d9f-7d2e-4f1a-b3c8-1234567890ab'
+
 function mockAuthSuccess() {
   authMocks.requireHouseholdMembership.mockResolvedValue({
     user: sampleUser,
-    membership: { id: 'm-1', userId: sampleUser.id, householdId: 'h-1', role: Role.MEMBER },
+    membership: { id: 'm-1', userId: sampleUser.id, householdId: HH_ID, role: Role.MEMBER },
   })
 }
 
@@ -184,7 +188,7 @@ describe('GET /api/households/:id/dashboard — Auth', () => {
   it('returns 401 when the user is not authenticated', async () => {
     mockAuthFailure(401, 'Unauthorized')
 
-    await expect(handler(makeEvent('h-1'))).rejects.toMatchObject({
+    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({
       statusCode: 401,
     })
     // DB sollte nicht angefasst werden, wenn Auth schon scheitert.
@@ -194,7 +198,7 @@ describe('GET /api/households/:id/dashboard — Auth', () => {
   it('returns 403 when the user is authenticated but not a household member', async () => {
     mockAuthFailure(403, 'You do not have access to this household.')
 
-    await expect(handler(makeEvent('h-1'))).rejects.toMatchObject({
+    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({
       statusCode: 403,
     })
     expect(prismaMocks.budget.findMany).not.toHaveBeenCalled()
@@ -213,9 +217,9 @@ describe('GET /api/households/:id/dashboard — Empty State', () => {
     mockAuthSuccess()
     mockEmptyHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
-    expect(response.householdId).toBe('h-1')
+    expect(response.householdId).toBe(HH_ID)
     expect(response.monthSummary).toEqual({
       income: 0,
       expenses: 0,
@@ -233,7 +237,7 @@ describe('GET /api/households/:id/dashboard — Happy Path', () => {
     mockAuthSuccess()
     setupTypicalHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     // monthSummary: income 300000, expenses 163500, balance 136500, unassigned 5000
     expect(response.monthSummary).toEqual({
@@ -248,7 +252,7 @@ describe('GET /api/households/:id/dashboard — Happy Path', () => {
     mockAuthSuccess()
     setupTypicalHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     const severities = response.budgetAlerts.map((alert) => alert.severity)
     // Erwartete Reihenfolge: over (fix), warning (food), ok (leisure)
@@ -259,7 +263,7 @@ describe('GET /api/households/:id/dashboard — Happy Path', () => {
     mockAuthSuccess()
     setupTypicalHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     const keys = response.budgetAlerts.map((alert) => alert.key)
     expect(keys).not.toContain('sonstiges')
@@ -271,7 +275,7 @@ describe('GET /api/households/:id/dashboard — Happy Path', () => {
     mockAuthSuccess()
     setupTypicalHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.recentActivity).toHaveLength(5)
 
@@ -291,7 +295,7 @@ describe('GET /api/households/:id/dashboard — Happy Path', () => {
     mockAuthSuccess()
     setupTypicalHousehold()
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     // g-1 (Urlaub): 100000/200000 = 50%
     // g-2 (Notgroschen): 50000/500000 = 10%
@@ -334,7 +338,7 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
     mockAuthSuccess()
     mockSingleBudget(10000, 8000) // 80.0%
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.budgetAlerts[0]!.severity).toBe('warning')
     expect(response.budgetAlerts[0]!.percentUsed).toBe(80)
@@ -344,7 +348,7 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
     mockAuthSuccess()
     mockSingleBudget(10000, 10000) // 100.0%
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.budgetAlerts[0]!.severity).toBe('warning')
     expect(response.budgetAlerts[0]!.percentUsed).toBe(100)
@@ -354,7 +358,7 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
     mockAuthSuccess()
     mockSingleBudget(10000, 12500) // 125.0%
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.budgetAlerts[0]!.severity).toBe('over')
     expect(response.budgetAlerts[0]!.percentUsed).toBe(125)
@@ -364,7 +368,7 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
     mockAuthSuccess()
     mockSingleBudget(10000, 7990) // 79.9%
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.budgetAlerts[0]!.severity).toBe('ok')
     expect(response.budgetAlerts[0]!.percentUsed).toBe(79.9)
@@ -392,7 +396,7 @@ describe('GET /api/households/:id/dashboard — 7-Tage-Fenster fuer recentActivi
     prismaMocks.incomeTransaction.findMany.mockImplementation(async () => [])
     prismaMocks.savingsGoal.findMany.mockResolvedValue([])
 
-    const response = await handler(makeEvent('h-1'))
+    const response = await handler(makeEvent(HH_ID))
 
     expect(response.recentActivity.map((entry) => entry.id)).toEqual(['new'])
   })

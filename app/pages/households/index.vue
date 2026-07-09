@@ -137,7 +137,6 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
           <h2>{{ currentHousehold.name }}</h2>
           <p class="overview-card__description">Währung: {{ currentHousehold.currency }}</p>
         </div>
-        <Tag :value="currentHousehold.id.slice(0, 8)" severity="secondary" rounded />
       </div>
 
       <div class="overview-card__strip">
@@ -151,7 +150,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
         </NuxtLink>
         <div class="overview-tile overview-tile--accent">
           <span>Rolle</span>
-          <strong>{{ canManageHousehold ? 'Owner' : 'Member' }}</strong>
+          <strong>{{ roleLabel(canManageHousehold ? 'OWNER' : 'MEMBER') }}</strong>
         </div>
       </div>
 

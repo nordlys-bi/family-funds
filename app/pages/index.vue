@@ -140,13 +140,12 @@ watch(() => activeHousehold.value?.id, loadDashboard)
             </p>
           </div>
         </div>
-        <Tag value="Aktiv" severity="success" rounded />
       </div>
     </div>
 
     <!-- Empty: kein Haushalt aktiv -->
     <Message v-if="!activeHousehold" severity="info" :closable="false" class="mb-6">
-      Wähle oben einen Haushalt aus, um dein Dashboard zu sehen.
+      Wähle einen Haushalt aus dem Menü, um dein Dashboard zu sehen.
     </Message>
 
     <!-- Loading -->

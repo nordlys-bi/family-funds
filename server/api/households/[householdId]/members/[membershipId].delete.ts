@@ -2,17 +2,11 @@ import { createError, defineEventHandler } from 'h3'
 import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { assertCanRemoveOrDemoteOwner } from '../../../../utils/household-ownership'
+import { parseUuidParam } from '../../../../utils/validation'
 
 export default defineEventHandler(async (event) => {
-  const householdId = event.context.params?.householdId
-  const membershipId = event.context.params?.membershipId
-
-  if (!householdId || !membershipId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Household ID and membership ID are required.',
-    })
-  }
+  const householdId = parseUuidParam(event, 'householdId')
+  const membershipId = parseUuidParam(event, 'membershipId')
 
   await requireHouseholdOwner(event, householdId)
 

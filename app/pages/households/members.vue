@@ -236,6 +236,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                 outlined
                 size="small"
                 text
+                aria-label="Mitglied entfernen"
                 :loading="removeLoadingId === member.id"
                 @click="removeMember(member.id)"
               />
@@ -276,6 +277,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                   outlined
                   size="small"
                   text
+                  aria-label="Mitglied entfernen"
                   :loading="removeLoadingId === member.id"
                   @click="removeMember(member.id)"
                 />
@@ -308,6 +310,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                 outlined
                 size="small"
                 text
+                aria-label="Einladung zurückziehen"
                 :loading="cancelInvitationLoadingId === invitation.id"
                 @click="cancelInvitation(invitation.id)"
               />
@@ -343,6 +346,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                   outlined
                   size="small"
                   text
+                  aria-label="Einladung zurückziehen"
                   :loading="cancelInvitationLoadingId === invitation.id"
                   @click="cancelInvitation(invitation.id)"
                 />

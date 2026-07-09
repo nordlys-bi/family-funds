@@ -1,6 +1,7 @@
 import { defineEventHandler, createError, readBody } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireHouseholdOwner } from '../../utils/household-access'
+import { parseUuidParam } from '../../utils/validation'
 
 type UpdateHouseholdBody = {
   name?: string
@@ -8,14 +9,7 @@ type UpdateHouseholdBody = {
 }
 
 export default defineEventHandler(async (event) => {
-  const householdId = event.context.params?.householdId
-
-  if (!householdId) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Household ID is required.',
-    })
-  }
+  const householdId = parseUuidParam(event, 'householdId')
 
   await requireHouseholdOwner(event, householdId)
 
