@@ -1,6 +1,7 @@
-import { defineEventHandler, getCookie } from 'h3'
+import { defineEventHandler } from 'h3'
 import { prisma } from '../utils/prisma'
 import { syncClerkUser } from '../utils/clerk-sync'
+import { getSessionUserId } from '../utils/auth-session'
 
 /**
  * Auth middleware — runs after clerk.ts. Branches on runtime config:
@@ -68,8 +69,11 @@ export default defineEventHandler(async (event) => {
     }
   } else {
     // --- Mock Mode ---
-    // Use session cookie to identify the user (existing M1 behavior)
-    const userId = getCookie(event, 'session_user_id')
+    // HMAC-signierte Session-Cookie: Issuer hat den Token mit
+    // NUXT_SESSION_SECRET signiert; bei Mismatch oder expiry liefert
+    // getSessionUserId null und wir setzen keinen User (Endpoint liefert
+    // dann 401 ueber seinen Auth-Helper).
+    const userId = getSessionUserId(event)
 
     if (userId) {
       try {

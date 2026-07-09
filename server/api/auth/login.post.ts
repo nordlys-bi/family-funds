@@ -1,12 +1,16 @@
-import { defineEventHandler, readBody, setCookie, createError } from 'h3'
+import { defineEventHandler, readBody, createError } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { isClerkEnabled } from '../../utils/auth-mode'
+import { issueSessionCookie } from '../../utils/auth-session'
 
 export default defineEventHandler(async (event) => {
+  // Im Clerk-Mode ist der Mock-Login-Endpoint nicht erreichbar — wir geben
+  // 404 statt 409 zurueck (sicherheits-Standard: "nicht existierend", nicht
+  // "existiert, aber nicht erlaubt").
   if (isClerkEnabled()) {
     throw createError({
-      statusCode: 409,
-      statusMessage: 'Mock login is disabled in Clerk mode',
+      statusCode: 404,
+      statusMessage: 'Not Found',
     })
   }
 
@@ -32,14 +36,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    // Set cookie valid for 7 days
-    setCookie(event, 'session_user_id', user.id, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: 60 * 60 * 24 * 7,
-    })
+    issueSessionCookie(event, user.id)
 
     return {
       success: true,
