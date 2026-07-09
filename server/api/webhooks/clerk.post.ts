@@ -2,6 +2,7 @@ import { Webhook } from 'svix'
 import { defineEventHandler, createError, getHeader, readRawBody } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { syncClerkUser } from '../../utils/clerk-sync'
+import { deleteUserByOidcSubject } from '../../utils/gdpr-delete'
 
 type ClerkWebhookEvent = {
   type: string
@@ -60,6 +61,44 @@ export default defineEventHandler(async (event) => {
       success: true,
       event: evt.type,
       userId: user.id,
+    }
+  }
+
+  // DSGVO Art. 17 — User-Loeschung wird vom Webhook ausgeloest, sobald der
+  // User bei Clerk sein Konto loescht. Wir muessen den lokalen User mitsamt
+  // Cascade-Rows (Memberships, Incomes, Expenses, Invitations) loeschen.
+  // Falls er alleiniger OWNER einer Household war, loeschen wir die
+  // Household ebenfalls (DSGVO hat hoehere Prioritaet als die
+  // "Haushalt braucht OWNER"-Constraint).
+  if (evt.type === 'user.deleted') {
+    const oidcSubject = (evt.data as any)?.id
+    if (!oidcSubject || typeof oidcSubject !== 'string') {
+      return {
+        success: true,
+        ignored: true,
+        event: evt.type,
+        reason: 'missing-oidc-subject',
+      }
+    }
+
+    const result = await deleteUserByOidcSubject(prisma, oidcSubject)
+
+    if (!result.deleted) {
+      // Idempotent: User existiert nicht (mehr) — kein 500, sondern
+      // 200 ignored. Clerk re-delivers bei 5xx, wir quittieren mit 200.
+      return {
+        success: true,
+        ignored: true,
+        event: evt.type,
+        reason: result.reason,
+      }
+    }
+
+    return {
+      success: true,
+      event: evt.type,
+      userId: result.userId,
+      cascadeDeletedHouseholds: result.cascadeDeletedHouseholds,
     }
   }
 
