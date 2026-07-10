@@ -63,17 +63,6 @@ const savingsGoals = computed(() => snapshot.value?.savingsGoals ?? [])
 const budgetAlerts = computed(() => snapshot.value?.budgetAlerts ?? [])
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
 
-const savingsCurrentTotal = computed(() =>
-  savingsGoals.value.reduce((sum, g) => sum + (g.currentAmount ?? 0), 0),
-)
-const savingsTargetTotal = computed(() =>
-  savingsGoals.value.reduce((sum, g) => sum + (g.targetAmount ?? 0), 0),
-)
-const savingsPct = computed(() => {
-  if (savingsTargetTotal.value === 0) return 0
-  return Math.min(100, (savingsCurrentTotal.value / savingsTargetTotal.value) * 100)
-})
-
 const balanceTone = computed(() => ((summary.value?.balance ?? 0) >= 0 ? 'primary' : 'danger'))
 
 async function loadDashboard() {
@@ -129,6 +118,11 @@ watch(() => activeHousehold.value?.id, loadDashboard)
     </Message>
 
     <template v-else-if="snapshot">
+      <!-- Aktiver-Haushalt-Banner (issue #6 AC):
+           Name, Waehrung, Rolle sind hier prominent sichtbar —
+           nicht nur ueber den Header-Switcher. -->
+      <DashboardHouseholdBanner :household="activeHousehold" />
+
       <div class="dashboard-kpis">
         <KpiCard
           tone="success"
@@ -155,13 +149,6 @@ watch(() => activeHousehold.value?.id, loadDashboard)
           :value="formatMoney(summary?.balance)"
           meta="Einnahmen − Ausgaben"
         />
-        <KpiCard
-          tone="warning"
-          icon="pi pi-star"
-          label="Sparziele"
-          :value="formatMoney(savingsCurrentTotal)"
-          :meta="`${savingsPct.toFixed(0)}% von ${formatMoney(savingsTargetTotal)}`"
-        />
       </div>
 
       <ListPanel kicker="Budget" title="Budget-Auslastung" :compact="true">
@@ -180,6 +167,19 @@ watch(() => activeHousehold.value?.id, loadDashboard)
           </NuxtLink>
         </template>
         <DashboardActivityList :activity="recentActivity" :format-money="formatMoney" />
+      </ListPanel>
+
+      <!-- Sparziele mit Fortschrittsbalken (issue #6 AC):
+           pro Sparziel eigene Zeile mit Progressbar und
+           currentAmount / targetAmount + monthlyRate. Ersetzt die
+           aggregierte Savings-KpiCard (kein Doppel-Display). -->
+      <ListPanel kicker="Sparen" title="Sparziele" :compact="true">
+        <template #actions>
+          <NuxtLink to="/budgeting/savings">
+            <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
+          </NuxtLink>
+        </template>
+        <DashboardSavingsList :goals="savingsGoals" :format-money="formatMoney" />
       </ListPanel>
     </template>
   </ListPageShell>
