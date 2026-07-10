@@ -4,13 +4,14 @@
  *
  * Kapselt:
  *  - month-Filter-State (YYYY-MM, Default = aktueller Monat)
+ *  - unassignedOnly-Filter (issue #52) — boolean, Default false
  *  - Lade-Logik gegen `GET /api/households/:id/transactions`
  *  - Transactions-Liste + Summary
  *  - Ableitungen: monthOptions, monthLabel, monthStart, monthEnd
  *
  * Beide Pages binden den Monats-Spinner an `month` und rufen `load()` nach
- * `month`-Wechsel. URL-Sync (?month=YYYY-MM) macht jede Page selbst via
- * useRoute/useRouter — Composable bleibt routing-agnostisch.
+ * `month`-Wechsel. URL-Sync (?month=YYYY-MM, ?unassigned=1) macht jede
+ * Page selbst via useRoute/useRouter — Composable bleibt routing-agnostisch.
  */
 import { computed, ref } from 'vue'
 import { currentMonthYYYYMM, lastNMonths, formatMonthLabel, parseMonthRange, isValidMonthYYYYMM } from '../utils/month-filter'
@@ -50,6 +51,12 @@ export type UseTransactionListOptions = {
   initialMonth?: string
   /** Anzahl Monate in den Select-Optionen. Default 12. */
   monthOptionCount?: number
+  /**
+   * Initialer unassignedOnly-Filter (issue #52). Default false.
+   * Die Page liest `route.query.unassigned` und übergibt das hier,
+   * damit der Deep-Link ?unassigned=1 direkt greift.
+   */
+  initialUnassignedOnly?: boolean
 }
 
 export type UseTransactionListReturn = ReturnType<typeof useTransactionList>
@@ -60,6 +67,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   // sollen. ref() im Composable ist page-lokal, weil der Composable im
   // setup() jeder Page neu instanziiert wird.
   const month = ref<string>(options.initialMonth && isValidMonthYYYYMM(options.initialMonth) ? options.initialMonth : currentMonthYYYYMM())
+  const unassignedOnly = ref<boolean>(Boolean(options.initialUnassignedOnly))
   const transactions = ref<TransactionItem[]>([])
   const summary = ref<TransactionSummary>({ ...EMPTY_SUMMARY })
   const loading = ref(false)
@@ -82,7 +90,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
 
   /**
    * Laedt Transaktionen + Summary fuer den aktuellen Monat gegen
-   * `GET /api/households/:id/transactions?month=YYYY-MM`.
+   * `GET /api/households/:id/transactions?month=YYYY-MM[&unassigned=1]`.
    *
    * @param householdId - aktiver Haushalt. Wenn `null`, wird der State
    *   auf leer zurueckgesetzt (z. B. wenn der User den Haushalt wechselt).
@@ -97,13 +105,17 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     loading.value = true
     error.value = null
     try {
+      // unassignedOnly-Param nur anhängen, wenn aktiv — Default-Reads
+      // sollen sauber bleiben ("kein redundantes ?unassigned=0").
+      const params: Record<string, string> = { month: month.value }
+      if (unassignedOnly.value) params.unassigned = '1'
       const response = await $fetch<{
         transactions: TransactionItem[]
         summary: TransactionSummary
         monthStart: string
         monthEnd: string
       }>(`/api/households/${householdId}/transactions`, {
-        params: { month: month.value },
+        params,
       })
       transactions.value = response.transactions
       summary.value = response.summary
@@ -129,6 +141,19 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     }
     month.value = nextMonth
     await load(householdId)
+  }
+
+  /**
+   * Setzt den unassignedOnly-Filter (issue #52). Bei Aktivierung wird
+   * beim nächsten load() `?unassigned=1` an die API geschickt, was
+   * serverseitig `budgetId: null` auf den Expense-Read setzt.
+   *
+   * Bewusst KEIN reload direkt hier — der Caller macht
+   * `setUnassignedOnly(value, hhId); await load(hhId)` oder wartet
+   * auf einen URL-Watch. Hält das Pattern konsistent mit setMonth.
+   */
+  function setUnassignedOnly(value: boolean) {
+    unassignedOnly.value = Boolean(value)
   }
 
   /**
@@ -240,6 +265,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
 
   return {
     month,
+    unassignedOnly,
     monthOptions,
     monthLabel,
     monthStart,
@@ -250,6 +276,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     error,
     load,
     setMonth,
+    setUnassignedOnly,
     transactionsByKind,
     updateTransactionLocal,
     restoreTransactionLocal,
