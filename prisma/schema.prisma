@@ -208,6 +208,11 @@ model SavingsGoalExecution {
   savingsGoalId String
   amount        Int               // Cent value actually saved in this month/period
   date          DateTime          // Represents which month/date this execution is for
+  // Optionale Notiz, z. B. "Urlaubssparen Q3" oder "Sonderausgabe".
+  // Wird beim Buchen im UI erfasst (issue #38) und ist im History-View
+  // (issue #39) sichtbar. Nullable, damit bestehende Buchungen und
+  // Quick-Booking ohne Notiz moeglich bleiben.
+  note          String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
