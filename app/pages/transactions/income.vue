@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isFirstRun } from '~/utils/household-age'
+import { todayDateHelperText } from '~/utils/form-helpers'
 
 definePageMeta({ layout: 'default' })
 
@@ -515,6 +516,7 @@ watch(activeHouseholdId, async () => { await loadAll() })
       </FormFieldRow>
       <FormFieldRow label="Datum" html-for="transaction-date">
         <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
+        <small class="form-field-helper">{{ todayDateHelperText }}</small>
       </FormFieldRow>
       <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
         <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />

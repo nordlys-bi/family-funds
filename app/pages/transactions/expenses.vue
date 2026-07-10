@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { isFirstRun } from '~/utils/household-age'
+import { todayDateHelperText } from '~/utils/form-helpers'
 
 definePageMeta({ layout: 'default' })
 
@@ -654,7 +655,7 @@ watch(activeHouseholdId, async () => { await loadAll() })
            Capture-Prioritaet: Betrag > Budget > Kontext > Datum. -->
       <FormFieldRow label="Datum" html-for="transaction-date" subtle>
         <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
-        <small class="form-field-helper">Voreinstellung: heute. Nur bei Bedarf ändern.</small>
+        <small class="form-field-helper">{{ todayDateHelperText }}</small>
       </FormFieldRow>
     </FormDialog>
 
@@ -700,16 +701,6 @@ watch(activeHouseholdId, async () => { await loadAll() })
 .toolbar-month__label {
   font-size: 0.85rem;
   color: var(--text-muted, #94a3b8);
-}
-
-/* Issue #32: Helper-Hint unter dem subtle-Datums-Feld. Klein und
-   gedämpft — soll erklaeren, nicht auffallen. */
-.form-field-helper {
-  display: block;
-  margin-top: 0.15rem;
-  font-size: 0.72rem;
-  color: var(--color-text-muted, #94a3b8);
-  font-weight: 500;
 }
 
 /* Issue #15: Inline-Edit-Cell (Desktop-Tabellen-Zeile) */
