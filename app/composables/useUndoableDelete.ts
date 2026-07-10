@@ -5,10 +5,12 @@
  * machen koennen", den expenses.vue und income.vue brauchen:
  *
  *  1. delete(item) — server-Call (DELETE), optimistic remove aus der
- *     lokalen Liste, Info-Toast mit "Rueckgaengig"-Hinweis.
+ *     lokalen Liste. Page rendert aus `pending` einen <UndoSnackbar />,
+ *     der den Undo-Button + Countdown anzeigt.
  *  2. undo(item) — POST /restore, bei Erfolg Zeile wieder in die Liste
  *     einfuegen, Success-Toast.
- *  3. dismiss(item) — Timer abrechen (z. B. Page-Leave), kein Server-Call.
+ *  3. dismiss(item) — Timer abrechen (z. B. User klickt X auf Banner,
+ *     oder Page-Leave), kein Server-Call.
  *
  * Optimistic mit Rollback: Wenn der DELETE-Call fehlschlaegt, wird
  * die Zeile wiederhergestellt + ein Fehler-Toast gezeigt. Beim RESTORE-
@@ -19,7 +21,9 @@
  * Item-Liste die Quelle der Wahrheit fuer den restore ist.
  *
  * Dependencies:
- *  - useToast (PrimeVue, installiert via @primevue/nuxt-module)
+ *  - useToast (PrimeVue, installiert via @primevue/nuxt-module) — nur
+ *    fuer Error- und Success-Toasts. Die "geloescht"-Bestaetigung kommt
+ *    vom Undo-Banner, nicht von einem Info-Toast.
  *  - $fetch (Nuxt)
  *
  * Test-Strategie (useUndoableDelete.test.ts): useToast wirft ohne
@@ -210,12 +214,10 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
     })
     pending.value = new Map(pending.value)
 
-    toast.add({
-      severity: 'info',
-      summary: `${labelForKind()} geloescht`,
-      detail: `"${itemLabel(item)}" — Rueckgaengig moeglich fuer ${Math.round(undoWindow / 1000)} Sek.`,
-      life: undoWindow,
-    })
+    // Kein Info-Toast mehr: die UI-Bestaetigung kommt jetzt vom
+    // <UndoSnackbar />-Component, den die Page aus `pending` rendert.
+    // Doppel-UX (Toast + Banner) war verwirrend. Error- und Success-Toasts
+    // bleiben weiterhin ueber `toast.add(...)`.
   }
 
   /**
@@ -245,12 +247,8 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
       options.onRestoreLocal(restoredItem)
       options.onAfterChange?.()
 
-      // Bestaetigungs-Toast, separater Lifecycle vom Undo-Banner.
-      // Der Info-Toast (deleteWithUndo) hat `life: undoWindow` und wird
-      // nach Ablauf automatisch versteckt. Ein expliziter removeGroup
-      // ist nicht noetig (und wuerde in PrimeVue 4 ohnehin nur greifen,
-      // wenn <Toast group="..."> mit der gleichen group gesetzt waere,
-      // siehe Hinweis im Modul-Header).
+      // Bestaetigungs-Toast. Der <UndoSnackbar /> wird durch
+      // `dismissPending(id)` oben bereits entfernt — separater Lifecycle.
       toast.add({
         severity: 'success',
         summary: 'Wiederhergestellt',
