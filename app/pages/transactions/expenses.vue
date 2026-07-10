@@ -492,14 +492,26 @@ watch(activeHouseholdId, async () => { await loadAll() })
           placeholder="0,00"
         />
       </FormFieldRow>
-      <FormFieldRow label="Datum" html-for="transaction-date">
-        <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
+      <FormFieldRow label="Budget" html-for="transaction-budget" wide>
+        <Select
+          id="transaction-budget"
+          v-model="transactionForm.budgetId"
+          :options="budgetSelectOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Budget wählen"
+        />
       </FormFieldRow>
       <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
         <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Einkauf bei Rewe" />
       </FormFieldRow>
-      <FormFieldRow label="Budget" html-for="transaction-budget" wide>
-        <Select id="transaction-budget" v-model="transactionForm.budgetId" :options="budgetSelectOptions" optionLabel="label" optionValue="value" />
+      <!-- Datum (issue #32): visuell sekundaer, weil im Default-Flow
+           immer "heute" — der User aendert es nur, wenn die Buchung
+           nicht am aktuellen Tag stattfand. Reihenfolge folgt der
+           Capture-Prioritaet: Betrag > Budget > Kontext > Datum. -->
+      <FormFieldRow label="Datum" html-for="transaction-date" subtle>
+        <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
+        <small class="form-field-helper">Voreinstellung: heute. Nur bei Bedarf ändern.</small>
       </FormFieldRow>
     </FormDialog>
   </ListPageShell>
@@ -532,6 +544,16 @@ watch(activeHouseholdId, async () => { await loadAll() })
 .toolbar-month__label {
   font-size: 0.85rem;
   color: var(--text-muted, #94a3b8);
+}
+
+/* Issue #32: Helper-Hint unter dem subtle-Datums-Feld. Klein und
+   gedämpft — soll erklaeren, nicht auffallen. */
+.form-field-helper {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #94a3b8);
+  font-weight: 500;
 }
 
 /* Issue #15: Inline-Edit-Cell (Desktop-Tabellen-Zeile) */
