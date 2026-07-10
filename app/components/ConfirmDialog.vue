@@ -1,7 +1,24 @@
 <!--
   ConfirmDialog — Bestätigungsdialog als BottomSheet-Wrapper.
 
-  Verwendung:
+  Empfohlene Verwendung (issue #51, ab #51): gar nicht mehr direkt.
+  Stattdessen den Promise-basierten `useConfirm()`-Composable nutzen
+  und die globale <ConfirmDialogRoot />-Instance in app/app.vue
+  rendert den Dialog automatisch:
+
+      const confirm = useConfirm()
+      const ok = await confirm.ask({
+        title: 'Mitglied entfernen?',
+        message: '...',
+        tone: 'danger',
+        confirmLabel: 'Entfernen',
+      })
+      if (!ok) return
+      await $fetch(...)
+
+  Direkte Verwendung ist weiterhin möglich, wenn jemand explizite
+  Steuerung ohne useConfirm-Pattern braucht:
+
   <ConfirmDialog
     v-model:visible="confirmOpen"
     title="Mitglied entfernen?"
