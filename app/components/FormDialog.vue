@@ -32,6 +32,9 @@ defineProps<{
   width?: string
   /** Klick auf die Maske schliesst den Dialog. */
   dismissableMask?: boolean
+  /** Severity des Submit-Buttons (issue #38: 'success' fuer Einzahlen,
+      'danger' fuer Entnehmen). Default = Primary. */
+  submitSeverity?: 'success' | 'danger' | 'primary' | 'secondary' | 'info' | 'warning' | 'contrast' | null
 }>()
 
 const emit = defineEmits<{
@@ -75,6 +78,7 @@ function handleHide() {
           :label="submitLabel ?? 'Speichern'"
           icon="pi pi-check"
           :loading="saving ?? false"
+          :severity="submitSeverity ?? undefined"
         />
       </div>
     </form>

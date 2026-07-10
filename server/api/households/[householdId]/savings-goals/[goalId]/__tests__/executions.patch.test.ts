@@ -159,6 +159,38 @@ describe('PATCH /households/:id/savings-goals/:goalId/executions/:execId — Iss
     expect(updateCall.data.date).toBeUndefined()
   })
 
+  it('patcht nur note (ohne amount/date)', async () => {
+    mockMember()
+    prismaMocks.savingsGoalExecution.findFirst.mockResolvedValue({ id: EXEC_ID })
+    setRequestBody({ note: 'Notiz korrigiert' })
+    prismaMocks.savingsGoalExecution.update.mockResolvedValue({
+      id: EXEC_ID,
+      savingsGoalId: GOAL_ID,
+      amount: 5000,
+      date: new Date(),
+      note: 'Notiz korrigiert',
+    })
+
+    await handler(makeEvent())
+
+    const updateCall = prismaMocks.savingsGoalExecution.update.mock.calls[0][0]
+    expect(updateCall.data).toEqual({ note: 'Notiz korrigiert' })
+    expect(updateCall.data.amount).toBeUndefined()
+    expect(updateCall.data.date).toBeUndefined()
+  })
+
+  it('lehnt Notiz ueber 500 Zeichen mit 400 ab', async () => {
+    mockMember()
+    prismaMocks.savingsGoalExecution.findFirst.mockResolvedValue({ id: EXEC_ID })
+    setRequestBody({ note: 'x'.repeat(501) })
+
+    await expect(handler(makeEvent())).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: expect.stringContaining('500 characters'),
+    })
+    expect(prismaMocks.savingsGoalExecution.update).not.toHaveBeenCalled()
+  })
+
   it('lehnt nicht-Mitglieder mit 403 ab (Auth bleibt geschuetzt)', async () => {
     authMocks.requireHouseholdMembership.mockRejectedValue({
       statusCode: 403,
