@@ -37,7 +37,20 @@ export default defineNuxtConfig({
           darkModeSelector: '.my-app-dark',
         },
       }
-    }
+    },
+    // Komponenten, die das @primevue/nuxt-Modul registrieren soll.
+    // PrimeVue 4 Nuxt-Modul registriert ohne explizites `include`
+    // ueberhaupt KEINE Components automatisch — die App muss
+    // jede genutzte Component listen. Ohne 'Toast' rendert `<Toast />`
+    // als unbekanntes Component und der Page-Setup crashed.
+    //
+    // Format: Array von Component-Namen (case-insensitive). Das
+    // PrimeVue-Module resolved die Pfade selbst ueber sein Metadata-Paket.
+    //
+    // (issue #58: Soft-Delete mit Undo-Banner braucht `<Toast />`.)
+    components: {
+      include: ['Toast'],
+    },
   },
   css: [
     'primeicons/primeicons.css',
