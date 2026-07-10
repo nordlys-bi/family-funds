@@ -157,9 +157,8 @@ const deletePlanningItem = async (id: string) => {
   actionLoadingKey.value = `savingsGoal:${id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
+    await $fetch(`/api/households/${activeHouseholdId.value}/savings-goals/${id}`, {
       method: 'DELETE',
-      body: { kind: 'savingsGoal', id },
     })
     await loadPlanning()
     notice.value = { severity: 'success', text: 'Eintrag wurde gelöscht.' }

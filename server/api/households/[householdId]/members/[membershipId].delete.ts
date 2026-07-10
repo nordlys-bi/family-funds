@@ -2,6 +2,7 @@ import { createError, defineEventHandler } from 'h3'
 import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { assertCanRemoveOrDemoteOwner } from '../../../../utils/household-ownership'
+import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
 
 export default defineEventHandler(async (event) => {
@@ -39,5 +40,5 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { success: true }
+  return defineApiResponse({ success: true })
 })

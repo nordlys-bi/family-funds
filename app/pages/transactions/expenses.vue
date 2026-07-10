@@ -220,9 +220,8 @@ const deleteTransaction = async (transaction: { id: string }) => {
   actionLoadingKey.value = `expense:${transaction.id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
+    await $fetch(`/api/households/${activeHouseholdId.value}/expenses/${transaction.id}`, {
       method: 'DELETE',
-      body: { kind: 'expense', id: transaction.id },
     })
     await loadAll()
     notice.value = { severity: 'success', text: 'Ausgabe wurde gelöscht.' }

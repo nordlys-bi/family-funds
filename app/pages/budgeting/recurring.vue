@@ -174,10 +174,10 @@ const deletePlanningItem = async (kind: 'incomePlan' | 'fixedCostPlan', id: stri
   actionLoadingKey.value = `${kind}:${id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
-      method: 'DELETE',
-      body: { kind, id },
-    })
+    const endpoint = kind === 'incomePlan'
+      ? `/api/households/${activeHouseholdId.value}/income-plans/${id}`
+      : `/api/households/${activeHouseholdId.value}/fixed-cost-plans/${id}`
+    await $fetch(endpoint, { method: 'DELETE' })
     await loadPlanning()
     notice.value = { severity: 'success', text: 'Eintrag wurde gelöscht.' }
   } catch (error: any) {

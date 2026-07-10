@@ -3,6 +3,7 @@ import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
+import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
 type TransactionUpdateBody = {
@@ -76,7 +77,7 @@ export default defineEventHandler(async (event) => {
       },
     })
 
-    return { kind, item }
+    return defineApiResponse({ kind, item })
   }
 
   const existing = await prisma.incomeTransaction.findFirst({
@@ -102,5 +103,5 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { kind, item }
+  return defineApiResponse({ kind, item })
 })

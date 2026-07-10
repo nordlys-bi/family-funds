@@ -9,6 +9,7 @@ import {
   parseMoneyToCents,
   parseOptionalDateInput,
 } from '../../../utils/planning'
+import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
 type PlanningUpdateBody = {
@@ -114,7 +115,7 @@ export default defineEventHandler(async (event) => {
         })
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'incomePlan': {
       const existing = await prisma.incomePlan.findFirst({
@@ -142,7 +143,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'fixedCostPlan': {
       const existing = await prisma.fixedCostPlan.findFirst({
@@ -170,7 +171,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'savingsGoal': {
       const existing = await prisma.savingsGoal.findFirst({
@@ -202,7 +203,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     default:
       throw createError({

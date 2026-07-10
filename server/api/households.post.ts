@@ -1,6 +1,7 @@
 import { defineEventHandler, createError, readBody } from 'h3'
 import { prisma } from '../utils/prisma'
 import { requireAuthenticatedUser } from '../utils/household-access'
+import { defineApiResponse } from '../utils/api-response'
 import { Role } from '@prisma/client'
 
 type CreateHouseholdBody = {
@@ -39,5 +40,5 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { household }
+  return defineApiResponse({ household })
 })

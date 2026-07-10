@@ -2,6 +2,7 @@ import { Role } from '@prisma/client'
 import { createError, defineEventHandler, readBody } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../utils/household-access'
+import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
 type AddMemberBody = {
@@ -63,11 +64,11 @@ export default defineEventHandler(async (event) => {
     })
 
     if (existingMembership) {
-      return {
+      return defineApiResponse({
         kind: 'membership',
         message: 'User is already a member of this household.',
         member: existingMembership,
-      }
+      })
     }
 
     const member = await prisma.$transaction(async (tx) => {
@@ -106,10 +107,10 @@ export default defineEventHandler(async (event) => {
       return createdMember
     })
 
-    return {
+    return defineApiResponse({
       kind: 'membership',
       member,
-    }
+    })
   }
 
   const invitation = await prisma.householdInvitation.upsert({
@@ -138,8 +139,8 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return {
+  return defineApiResponse({
     kind: 'invitation',
     invitation,
-  }
+  })
 })

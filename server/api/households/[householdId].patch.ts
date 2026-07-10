@@ -1,6 +1,7 @@
 import { defineEventHandler, createError, readBody } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireHouseholdOwner } from '../../utils/household-access'
+import { defineApiResponse } from '../../utils/api-response'
 import { parseUuidParam } from '../../utils/validation'
 
 type UpdateHouseholdBody = {
@@ -32,5 +33,5 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { household }
+  return defineApiResponse({ household })
 })

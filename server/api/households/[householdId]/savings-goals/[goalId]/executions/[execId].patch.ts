@@ -7,6 +7,7 @@ import { defineEventHandler, createError, readBody } from 'h3'
 import { prisma } from '../../../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../../../utils/household-access'
 import { parseDateInput, parseExecutionAmount } from '../../../../../../utils/planning'
+import { defineApiResponse } from '../../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../../utils/validation'
 
 type UpdateExecutionBody = {
@@ -49,5 +50,5 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { kind: 'execution', item }
+  return defineApiResponse({ kind: 'execution', item })
 })

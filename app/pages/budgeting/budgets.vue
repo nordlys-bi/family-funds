@@ -162,9 +162,8 @@ const deletePlanningItem = async (id: string) => {
   actionLoadingKey.value = `budget:${id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
+    await $fetch(`/api/households/${activeHouseholdId.value}/budgets/${id}`, {
       method: 'DELETE',
-      body: { kind: 'budget', id },
     })
     await loadPlanning()
     notice.value = { severity: 'success', text: 'Eintrag wurde gelöscht.' }
