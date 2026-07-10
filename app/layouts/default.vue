@@ -46,22 +46,31 @@ const toggleDesktopSidebar = () => {
 
 // === FAB-Aktionen ================================================
 // Mobile-only. Auf Desktop übernimmt der Split-Button im Page-Toolbar.
-// v1: navigieren auf die jeweilige Sub-Seite (Quick-Add-Dialoge müssen
-// in der jeweiligen Page via ?new=1 geöffnet werden — als Follow-up Issue).
+// Quick-Add (issue #29): "Ausgabe" und "Einnahme" navigieren mit
+// ?new=1, die jeweilige Page öffnet den Create-Dialog dann page-lokal
+// via useQueryTrigger({ queryKey: 'new', onTrigger: openCreateDialog })
+// und putzt die URL sofort wieder. Pattern bleibt page-lokal, kein
+// globaler Event-Bus.
+//
+// "Sparziel" bleibt bewusst Navigation-only: die Savings-Seite hat drei
+// verschiedene Dialoge (Sparziel anlegen / History pro Goal / Booking
+// pro Goal), es gibt keinen einzelnen primären Create-Flow. Wer ein
+// neues Sparziel anlegen will, klickt auf der Savings-Seite den
+// Inline-CTA. Quick-Add ueber den FAB wäre hier mehrdeutig.
 const fabActions = [
   {
     key: 'expense',
     label: 'Ausgabe',
     icon: 'pi pi-arrow-up-right',
     tone: 'danger',
-    onSelect: () => navigateTo('/transactions/expenses'),
+    onSelect: () => navigateTo({ path: '/transactions/expenses', query: { new: '1' } }),
   },
   {
     key: 'income',
     label: 'Einnahme',
     icon: 'pi pi-arrow-down-left',
     tone: 'success',
-    onSelect: () => navigateTo('/transactions/income'),
+    onSelect: () => navigateTo({ path: '/transactions/income', query: { new: '1' } }),
   },
   {
     key: 'savings',
