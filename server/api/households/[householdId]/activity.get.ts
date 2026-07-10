@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
   const [memberCount, budgetCount, transactionCount] = await Promise.all([
     prisma.householdMember.count({ where: { householdId } }),
     prisma.budget.count({ where: { householdId } }),
-    prisma.expenseTransaction.count({ where: { householdId } }),
+    prisma.expenseTransaction.count({
+      where: { householdId, deletedAt: null },
+    }),
   ])
 
   return defineApiResponse({

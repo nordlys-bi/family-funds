@@ -72,15 +72,30 @@ export default defineEventHandler(async (event) => {
     // gebucketed fuer `buildBudgetOverview`. Nur der incomeTotal-
     // Reduce konnte wegoptimiert werden.
     prisma.expenseTransaction.findMany({
-      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      where: {
+        householdId,
+        date: { gte: monthStart, lt: monthEnd },
+        // Soft-Delete (issue #58): nur aktive Buchungen aggregieren,
+        // sonst zaehlt das Dashboard eine Buchung weiter, die der
+        // User gerade geloescht hat. Issue #65.
+        deletedAt: null,
+      },
       select: { amount: true, date: true, budgetId: true },
     }),
     prisma.incomeTransaction.aggregate({
-      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      where: {
+        householdId,
+        date: { gte: monthStart, lt: monthEnd },
+        deletedAt: null,
+      },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.findMany({
-      where: { householdId, date: { gte: sevenDaysAgo, lte: now } },
+      where: {
+        householdId,
+        date: { gte: sevenDaysAgo, lte: now },
+        deletedAt: null,
+      },
       orderBy: { date: 'desc' },
       select: {
         id: true,
@@ -93,7 +108,11 @@ export default defineEventHandler(async (event) => {
       },
     }),
     prisma.incomeTransaction.findMany({
-      where: { householdId, date: { gte: sevenDaysAgo, lte: now } },
+      where: {
+        householdId,
+        date: { gte: sevenDaysAgo, lte: now },
+        deletedAt: null,
+      },
       orderBy: { date: 'desc' },
       select: {
         id: true,
