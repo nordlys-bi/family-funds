@@ -11,10 +11,10 @@
  * Auth: `requireHouseholdMembership`.
  */
 import { createError, defineEventHandler } from 'h3'
-import { prisma } from '../../../../utils/prisma'
-import { requireHouseholdMembership } from '../../../../utils/household-access'
-import { defineApiResponse } from '../../../../utils/api-response'
-import { parseUuidParam } from '../../../../utils/validation'
+import { prisma } from '../../../../../utils/prisma'
+import { requireHouseholdMembership } from '../../../../../utils/household-access'
+import { defineApiResponse } from '../../../../../utils/api-response'
+import { parseUuidParam } from '../../../../../utils/validation'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
