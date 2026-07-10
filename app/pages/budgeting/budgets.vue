@@ -227,8 +227,8 @@ const saveBudget = async () => {
 const deletePlanningItem = async (budget: { id: string; name: string }) => {
   if (!activeHouseholdId.value) return
 
-  // ConfirmDialog (issue #51): wir haben hier KEIN Undo (im Gegensatz zu
-  // Transaktionen via Soft-Delete), also ist der Dialog die einzige
+  // ConfirmSheet (issue #51): wir haben hier KEIN Undo (im Gegensatz zu
+  // Transaktionen via Soft-Delete), also ist der Sheet die einzige
   // Sicherung gegen Fehlklicks. Confirm-Text nennt das konkrete Budget.
   const ok = await confirm.ask({
     title: 'Budget löschen?',
