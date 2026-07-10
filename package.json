@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "nuxt build",
+    "prebuild": "prisma migrate deploy && prisma generate",
     "dev": "TMPDIR=/tmp nuxt dev",
     "predev": "prisma migrate deploy && prisma generate",
     "generate": "nuxt generate",
