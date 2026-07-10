@@ -130,6 +130,16 @@ const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.v
 
 const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
 
+// === FAB Quick-Add (issue #29) ====================================
+// Wenn der FAB mit ?new=1 hierher navigiert, soll der Create-Dialog
+// direkt im selben Tick öffnen, ohne weiteren Tap. useQueryTrigger
+// räumt die URL danach auf und garantiert per consumed-Guard, dass
+// Re-Render oder Browser-Back den Dialog nicht doppelt öffnet.
+useQueryTrigger({
+  queryKey: 'new',
+  onTrigger: openCreateTransactionDialog,
+})
+
 // === Inline-Edit (issue #15) ==========================================
 // Single-Edit-Pattern: editingTransactionId haelt die ID der Zeile im
 // Edit-Modus. Setzen einer neuen ID wechselt den Fokus.
