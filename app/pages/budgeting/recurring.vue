@@ -246,10 +246,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${currentHousehold.incomePlans.length} Einträge`"
       >
-        <template #actions>
-          <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openIncomeDialog" />
-        </template>
-
         <ItemCard v-for="plan in currentHousehold.incomePlans" :key="plan.id">
           <template #main>
             <span class="row-title">
@@ -291,10 +287,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${currentHousehold.fixedCosts.length} Einträge`"
       >
-        <template #actions>
-          <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openFixedCostDialog" />
-        </template>
-
         <ItemCard v-for="plan in currentHousehold.fixedCosts" :key="plan.id">
           <template #main>
             <span class="row-title">
