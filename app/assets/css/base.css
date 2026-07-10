@@ -348,6 +348,22 @@ html.my-app-dark .p-datepicker-input {
 }
 
 /* ============================================================================
+ * Form-Helper (issue #54)
+ *
+ * Dezenter Hint-Text unter Form-Feldern (z. B. Datums-Default "heute").
+ * Bewusst klein und muted — soll erklaeren, nicht auffallen. Wird an
+ * mehreren Stellen eingesetzt (Expense-Form, Income-Form, Sparziel-
+ * Booking-Dialog), daher global statt scoped pro Page.
+ * ============================================================================ */
+.form-field-helper {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #94a3b8);
+  font-weight: 500;
+}
+
+/* ============================================================================
  * 5. prefers-reduced-motion (A11y / WCAG 2.3.3)
  *    User mit vestibulaeren Beschwerden (~ 5-10 % der Nutzer) brauchen
  *    reduzierte Animationen. Globale Regel killt alle CSS-Transitions
