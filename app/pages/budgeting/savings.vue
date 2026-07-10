@@ -363,7 +363,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <Button
               icon="pi pi-plus-circle"
               severity="success"
-              outlined
+              text
               size="small"
               :aria-label="`In Sparziel ${goal.name} einzahlen`"
               @click="openBookingDialog(goal.id, 'deposit')"
@@ -371,7 +371,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <Button
               icon="pi pi-minus-circle"
               severity="danger"
-              outlined
+              text
               size="small"
               :aria-label="`Aus Sparziel ${goal.name} entnehmen`"
               @click="openBookingDialog(goal.id, 'withdraw')"
@@ -381,17 +381,16 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <Button
               icon="pi pi-list"
               severity="secondary"
-              outlined
-              size="small"
               text
+              size="small"
               :aria-label="`Bewegungen fuer ${goal.name} anzeigen`"
               @click="openHistoryDialog(goal.id)"
             />
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
+            <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
               icon="pi pi-trash"
               severity="danger"
-              outlined
+              text
               size="small"
               text
               aria-label="Sparziel löschen"
