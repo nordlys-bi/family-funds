@@ -19,6 +19,7 @@ type HouseholdDetail = {
 
 const { user } = useAppAuth()
 const { activeHouseholdId, fetchHouseholds } = useHousehold()
+const onboarding = useOnboarding()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -87,6 +88,14 @@ onMounted(async () => {
   await loadCurrentHousehold()
 })
 watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
+
+// === Onboarding-Tour wiederholen (issue #16) =========================
+// User koennen die Tour jederzeit erneut starten — Reset von skipped-
+// Flag + completedSteps, dann Modal im Layout wird sichtbar.
+const restartOnboarding = async () => {
+  await onboarding.restartTour()
+  message.value = { severity: 'success', text: 'Onboarding-Tour wird erneut gestartet.' }
+}
 </script>
 
 <template>
@@ -140,6 +149,22 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       <Message v-else severity="warn" variant="simple">
         Nur Owner können den Haushalt bearbeiten.
       </Message>
+    </article>
+
+    <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
+      <h3 class="settings-help-title">Hilfe</h3>
+      <p class="settings-help-text">
+        Du kannst die 4-Schritte-Onboarding-Tour jederzeit erneut durchlaufen, um
+        die wichtigsten Funktionen von Family Funds kennenzulernen.
+      </p>
+      <Button
+        label="Onboarding-Tour wiederholen"
+        icon="pi pi-replay"
+        severity="secondary"
+        outlined
+        size="small"
+        @click="restartOnboarding"
+      />
     </article>
 
     <FormDialog
@@ -202,5 +227,23 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   font-size: 0.92rem;
   color: #cbd5e1;
+}
+
+.settings-card--help {
+  margin-top: 1rem;
+}
+
+.settings-help-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.settings-help-text {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  line-height: 1.5;
 }
 </style>

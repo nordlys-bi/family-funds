@@ -32,6 +32,13 @@ model User {
   householdInvitations HouseholdInvitation[] @relation("UserHouseholdInvitations")
   expenses     ExpenseTransaction[]
   incomes      IncomeTransaction[]
+  // Onboarding-Tour-State (issue #16). Per-User, nicht per-Household,
+  // weil ein User mehrere Haushalte haben kann und der Onboarding-Flow
+  // sich auf den User bezieht, nicht auf den Haushalt-Kontext.
+  // completedSteps: Array von Step-IDs ('household' | 'invite' | 'budget' | 'transaction').
+  // skipped: User hat explizit "Setup später" gewählt → kein Auto-Trigger mehr.
+  onboardingCompletedSteps String[] @default([])
+  onboardingSkipped        Boolean  @default(false)
 }
 
 model Household {
