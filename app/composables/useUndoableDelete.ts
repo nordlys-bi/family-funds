@@ -40,9 +40,8 @@ import { useToast } from 'primevue/usetoast'
 //  - Vitest's `vi.mock('primevue/usetoast', ...)` braucht einen expliziten
 //    Import, damit der Mock greift (Auto-Imports werden in Test-Setups
 //    nicht zuverlaessig aufgeloest).
-//  - Nuxt SSR rendert die Page ohne PrimeVue-Plugin-Setup (Plugin ist
-//    `.client.ts`) — `useToast()` wuerde die Setup-Phase crashen. Der
-//    try/catch unten faengt das ab und nutzt einen noopToast-Fallback.
+//  - `import.meta.client`-Guard unten umgeht den SSR-Render komplett
+//    (Toast ist client-only, der Server braucht den ToastService nicht).
 
 
 export type UndoableDeleteKind = 'expense' | 'income'
@@ -103,25 +102,19 @@ const noopToast = {
 export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDeleteKind }>(
   options: UndoableDeleteOptions<TItem>,
 ) {
-  // PrimeVue's useToast benutzt `inject()` mit einem Symbol — das wirft
-  // ohne `provide()`-Setup eine Exception ("No PrimeVue Toast provided!").
-  //
-  // Drei Kontexte, in denen der Toast fehlen kann:
-  //  1. SSR-Render: Plugin ist `.client.ts`, laeuft nicht auf dem Server.
-  //     `useToast()` wuerde die ganze Page-Setup-Phase crashen.
-  //  2. Vitest ohne vi.mock: gleicher Fehler.
-  //  3. Production-Browser mit Plugin: alles gut, useToast liefert Service.
-  //
-  // Loesung: try/catch um den useToast-Aufruf, Fallback auf noopToast.
-  // Im SSR-Path wird der Toast ohnehin nie gerendert (Toast-Component
-  // ist auch client-only) — also ist der noopFallback dort semantisch
-  // korrekt, nicht nur pragmatisch.
-  let toast: { add: (msg: unknown) => void; removeGroup: (group: string) => void } = noopToast
-  try {
-    toast = useToast() as unknown as typeof toast
-  } catch {
-    // useToast nicht verfuegbar — Fallback beibehalten.
-  }
+  // PrimeVue's useToast benutzt `inject()` mit einem Symbol und wirft
+  // ohne `provide()`-Setup ("No PrimeVue Toast provided!"). Im SSR-Render
+  // ist der ToastService nicht verfuegbar (Plugin ist `.client.ts`); im
+  // Vitest-Setup ohne vi.mock ebenfalls. Der try/catch faengt beide Faelle
+  // ab und nutzt einen noopToast-Fallback. Im Production-Browser laeuft
+  // das Plugin, useToast liefert den Service, alles gut.
+  const toast: { add: (msg: unknown) => void; removeGroup: (group: string) => void } = (() => {
+    try {
+      return useToast() as unknown as { add: (msg: unknown) => void; removeGroup: (group: string) => void }
+    } catch {
+      return noopToast
+    }
+  })()
   const undoWindow = options.undoWindowMs ?? UNDO_WINDOW_DEFAULT
 
   // Map<itemId, PendingUndo> — keyed by ID fuer schnellen Lookup
