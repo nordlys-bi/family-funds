@@ -229,6 +229,52 @@ const undoableDelete = useUndoableDelete<{ id: string; description?: string | nu
   onAfterChange: () => recomputeSummaryFromLocal(),
 })
 
+// pending + undo + dismiss aus dem Composable, damit der <UndoSnackbar />
+// sie nutzen kann. latest ist der einzige / neueste Eintrag, so wie in
+// expenses.vue. Siehe dort fuer ausfuehrliche Kommentare.
+const undoPending = undoableDelete.pending
+const undoLatest = computed(() => {
+  const entries = Array.from(undoPending.value.values())
+  return entries[entries.length - 1] ?? null
+})
+
+const undoRemaining = ref(0)
+let undoTickInterval: ReturnType<typeof setInterval> | null = null
+
+function startUndoTick() {
+  if (!import.meta.client) return
+  if (undoTickInterval) return
+  undoRemaining.value = 5
+  undoTickInterval = setInterval(() => {
+    if (undoRemaining.value > 0) undoRemaining.value -= 1
+  }, 1000)
+}
+
+function stopUndoTick() {
+  if (undoTickInterval) {
+    clearInterval(undoTickInterval)
+    undoTickInterval = null
+  }
+  undoRemaining.value = 0
+}
+
+watch(
+  () => undoPending.value.size,
+  (size, prevSize) => {
+    if (size > 0 && prevSize === 0) startUndoTick()
+    if (size === 0) stopUndoTick()
+  },
+)
+
+const undoItem = computed(() => {
+  const entry = undoLatest.value
+  if (!entry) return null
+  return {
+    id: entry.item.id,
+    description: (entry.item as { description?: string | null }).description ?? null,
+  }
+})
+
 const deleteTransaction = async (transaction: { id: string; description?: string | null; [key: string]: unknown }) => {
   if (!activeHouseholdId.value) return
   actionLoadingKey.value = `income:${transaction.id}`
@@ -257,6 +303,7 @@ onBeforeUnmount(() => {
   if (import.meta.client) {
     document.removeEventListener('keydown', onEscapeKey)
   }
+  stopUndoTick()
 })
 watch(activeHouseholdId, async () => { await loadAll() })
 </script>
@@ -473,6 +520,17 @@ watch(activeHouseholdId, async () => { await loadAll() })
         <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />
       </FormFieldRow>
     </FormDialog>
+
+    <!-- Undo-Snackbar (issue #58): siehe expenses.vue fuer Details. -->
+    <UndoSnackbar
+      v-if="undoItem"
+      :item-id="undoItem.id"
+      kind-label="Einnahme"
+      :item-description="undoItem.description"
+      :remaining-seconds="undoRemaining"
+      @undo="undoableDelete.undo"
+      @dismiss="undoableDelete.dismiss"
+    />
   </ListPageShell>
 </template>
 
