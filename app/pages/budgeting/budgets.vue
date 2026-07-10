@@ -49,8 +49,11 @@ type PlanningHousehold = {
 }
 
 import { isFirstRun } from '~/utils/household-age'
+import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel } from '~/utils/month-filter'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const route = useRoute()
+const router = useRouter()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const budgetOverview = ref<BudgetOverview | null>(null)
@@ -59,6 +62,44 @@ const notice = ref<Notice | null>(null)
 const budgetLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
 const budgetDialogOpen = ref(false)
+
+// === Month-Filter (issue #34) =========================================
+// Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat. Validation
+// greift via isValidMonthYYYYMM — ungültige Werte fallen still auf den
+// aktuellen Monat zurück (deep-linkbar ohne explizite Fehlermeldung).
+//
+// Pattern-Vorbild: useTransactionList für /transactions/expenses — gleiche
+// URL-Sync-Strategie (router.replace statt push, Default-Monat ohne Query).
+const month = ref<string>(
+  typeof route.query.month === 'string' && isValidMonthYYYYMM(route.query.month)
+    ? route.query.month
+    : currentMonthYYYYMM(),
+)
+const monthLabel = computed(() => formatMonthLabel(month.value))
+const isCurrentMonth = computed(() => month.value === currentMonthYYYYMM())
+
+// Prev/Next-Monats-Berechnung. Reines Date-Arithmetic, kein useState noetig.
+function shiftMonth(delta: number): string {
+  const [yearStr, monthStr] = month.value.split('-')
+  const shifted = new Date(Number(yearStr), Number(monthStr) - 1 + delta, 1)
+  return currentMonthYYYYMM(shifted)
+}
+const prevMonth = computed(() => shiftMonth(-1))
+const nextMonth = computed(() => shiftMonth(1))
+
+// URL-Sync + Reload. Wie in useTransactionList: aktueller Monat -> Query
+// loeschen (saubere Default-URL), andere Monate -> ?month=YYYY-MM.
+async function onMonthChange(newMonth: string) {
+  if (!isValidMonthYYYYMM(newMonth)) {
+    month.value = currentMonthYYYYMM()
+    return
+  }
+  month.value = newMonth
+  const current = currentMonthYYYYMM()
+  const query = newMonth === current ? {} : { month: newMonth }
+  await router.replace({ query })
+  await loadOverview()
+}
 
 const budgetForm = ref({
   name: '',
@@ -80,19 +121,44 @@ const showFirstTimeEmpty = computed(
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
 const formatDate = formatPlanningDate
 
-const loadPlanning = async () => {
+// Haushalt-Daten sind monats-unabhaengig (Budgets mit Versionen, Namen).
+// Einmal geladen, nur Overview wechselt pro Monat.
+async function loadHousehold() {
   loading.value = true
   try {
-    const data = await $fetch<{ household: PlanningHousehold | null; budgetOverview: BudgetOverview | null }>(
-      '/api/households/current',
-    )
+    const data = await $fetch<{ household: PlanningHousehold | null }>('/api/households/current')
     currentHousehold.value = data.household
-    budgetOverview.value = data.budgetOverview ?? null
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Planungsdaten konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
     loading.value = false
   }
+}
+
+// Monats-spezifischer Overview-Load gegen den dedizierten Endpoint.
+// Endpoint akzeptiert ?month=YYYY-MM, validiert und 400'd bei Müll.
+async function loadOverview() {
+  if (!activeHouseholdId.value) {
+    budgetOverview.value = null
+    return
+  }
+  budgetLoading.value = true
+  try {
+    const data = await $fetch<{ budgetOverview: BudgetOverview | null }>(
+      `/api/households/${activeHouseholdId.value}/budget-overview`,
+      { params: { month: month.value } },
+    )
+    budgetOverview.value = data.budgetOverview ?? null
+  } catch (error: any) {
+    notice.value = { severity: 'error', text: 'Budgetübersicht konnte nicht geladen werden: ' + (error.statusMessage || error.message) }
+    budgetOverview.value = null
+  } finally {
+    budgetLoading.value = false
+  }
+}
+
+const loadPlanning = async () => {
+  await Promise.all([loadHousehold(), loadOverview()])
 }
 
 const resetBudgetForm = () => {
@@ -198,6 +264,32 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     </template>
 
     <template #toolbar>
+      <!-- Monatswechsler (issue #34): Prev / Label / Next, deep-linkbar
+           via ?month=YYYY-MM, aktueller Monat mit grünem 'Jetzt'-Badge. -->
+      <div class="month-switcher" role="group" aria-label="Monatsauswahl">
+        <Button
+          icon="pi pi-chevron-left"
+          severity="secondary"
+          text
+          rounded
+          :aria-label="`Vorheriger Monat (${formatMonthLabel(prevMonth)})`"
+          :title="formatMonthLabel(prevMonth)"
+          @click="onMonthChange(prevMonth)"
+        />
+        <div class="month-switcher__center">
+          <span class="month-switcher__label">{{ monthLabel }}</span>
+          <Tag v-if="isCurrentMonth" severity="success" value="Jetzt" class="month-switcher__badge" />
+        </div>
+        <Button
+          icon="pi pi-chevron-right"
+          severity="secondary"
+          text
+          rounded
+          :aria-label="`Nächster Monat (${formatMonthLabel(nextMonth)})`"
+          :title="formatMonthLabel(nextMonth)"
+          @click="onMonthChange(nextMonth)"
+        />
+      </div>
       <Button label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
     </template>
 
@@ -234,10 +326,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       compact
       :badge="`${currentHousehold.budgets.length} Einträge`"
     >
-      <template #actions>
-        <Button label="Neu" icon="pi pi-plus" severity="success" size="small" @click="openBudgetDialog" />
-      </template>
-
       <ItemCard
         v-for="budget in currentHousehold.budgets"
         :key="budget.id"
@@ -368,5 +456,37 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   color: var(--color-text-muted);
   text-align: center;
   font-size: 0.85rem;
+}
+
+/* === Monatswechsler (issue #34) === */
+.month-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.month-switcher__center {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 8rem;
+  padding: 0 8px;
+}
+
+.month-switcher__label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text-primary, #f1f5f9);
+  white-space: nowrap;
+}
+
+.month-switcher__badge {
+  font-size: 0.65rem !important;
+  padding: 1px 6px !important;
 }
 </style>
