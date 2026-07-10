@@ -115,6 +115,15 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
       return noopToast
     }
   })()
+
+  // Debug: einmalig pro Composable-Instanz loggen, ob useToast gegriffen hat
+  // oder im noopToast-Fallback gelandet ist. Hilft beim Diagnostizieren, ob
+  // das Toast-Setup (app.vue Registrierung) korrekt laeuft. Kann nach dem
+  // Fix wieder raus.
+  if (import.meta.client) {
+    console.log('[useUndoableDelete] toast =', toast === noopToast ? 'noopToast' : 'real PrimeVue ToastService')
+  }
+
   const undoWindow = options.undoWindowMs ?? UNDO_WINDOW_DEFAULT
 
   // Map<itemId, PendingUndo> — keyed by ID fuer schnellen Lookup
