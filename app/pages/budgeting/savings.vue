@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { isFirstRun } from '~/utils/household-age'
+import { todayDateHelperText } from '~/utils/form-helpers'
 import { useEmojiLookup } from '~/composables/useEmojiLookup'
 import { useBookingDialog } from '~/composables/useBookingDialog'
 
@@ -416,6 +417,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           showIcon
           dateFormat="dd.mm.yy"
         />
+        <!-- Issue #54: Helper-Hint analog zum Expense/Income-Form.
+             Booking ist die haeufigste Aktion auf der Sparziel-Seite,
+             der User soll auf einen Blick wissen, dass das Datum
+             standardmaessig "heute" ist. -->
+        <small class="form-field-helper">{{ todayDateHelperText }}</small>
       </FormFieldRow>
       <FormFieldRow label="Notiz (optional)" html-for="booking-note" wide>
         <InputText
