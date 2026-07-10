@@ -4,8 +4,8 @@
  * Bisher hatte jede Page ihren eigenen pendingConfirm-Ref +
  * askConfirm-Funktion (siehe z.B. `app/pages/households/members.vue`
  * Zeile 65-100). Das war Copy-Paste. Mit diesem Composable gibt es
- * EINE globale Instanz des Dialogs (gerendert von
- * <ConfirmDialogRoot /> in `app/app.vue`), und jede Page kann mit
+ * EINE globale Instanz des Sheets (gerendert von
+ * <ConfirmSheetRoot /> in `app/app.vue`), und jede Page kann mit
  *
  *     const confirm = useAskConfirm()
  *     const ok = await confirm.ask({

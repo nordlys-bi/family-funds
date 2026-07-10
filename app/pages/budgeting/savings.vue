@@ -174,7 +174,7 @@ const saveSavingsGoal = async () => {
 const deletePlanningItem = async (goal: { id: string; name: string }) => {
   if (!activeHouseholdId.value) return
 
-  // ConfirmDialog (issue #51): Sparziele haben kein Undo, der Dialog
+  // ConfirmSheet (issue #51): Sparziele haben kein Undo, der Sheet
   // ist die einzige Sicherung. Confirm-Text nennt den konkreten Namen
   // und weist auf die Konsequenz (History weg) hin.
   const ok = await confirm.ask({

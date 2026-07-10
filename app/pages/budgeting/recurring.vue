@@ -176,7 +176,7 @@ const deletePlanningItem = async (
 ) => {
   if (!activeHouseholdId.value) return
 
-  // ConfirmDialog (issue #51): geplante Einnahmen / Fixkosten haben kein
+  // ConfirmSheet (issue #51): geplante Einnahmen / Fixkosten haben kein
   // Undo (kein Soft-Delete wie Transaktionen). Confirm-Text nennt den
   // Plan-Namen und die Konsequenz (zukuenftige Hochrechnung faellt weg).
   const kindLabel = kind === 'incomePlan' ? 'Einnahmenplan' : 'Fixkostenplan'

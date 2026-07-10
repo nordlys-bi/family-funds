@@ -61,9 +61,9 @@ const closeInviteDialog = () => {
   inviteForm.value = { email: '', role: 'MEMBER' }
 }
 
-// ConfirmDialog (issue #51): Promise-basierter Dialog-State via useAskConfirm.
-// Globale <ConfirmDialogRoot />-Component in app/app.vue rendert den
-// eigentlichen Dialog automatisch, sobald `confirm.ask(...)` aufgerufen
+// ConfirmSheet (issue #51): Promise-basierter Sheet-State via useAskConfirm.
+// Globale <ConfirmSheetRoot />-Component in app/app.vue rendert den
+// eigentlichen Sheet automatisch, sobald `confirm.ask(...)` aufgerufen
 // wird. Wir halten hier KEINEN pendingConfirm-Ref mehr — useAskConfirm tut
 // das zentral via useState('confirm:pending').
 const confirm = useAskConfirm()
