@@ -36,7 +36,7 @@ type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
-const confirm = useConfirm()
+const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const loading = ref(false)

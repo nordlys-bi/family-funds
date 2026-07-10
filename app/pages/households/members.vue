@@ -61,12 +61,12 @@ const closeInviteDialog = () => {
   inviteForm.value = { email: '', role: 'MEMBER' }
 }
 
-// ConfirmDialog (issue #51): Promise-basierter Dialog-State via useConfirm.
+// ConfirmDialog (issue #51): Promise-basierter Dialog-State via useAskConfirm.
 // Globale <ConfirmDialogRoot />-Component in app/app.vue rendert den
 // eigentlichen Dialog automatisch, sobald `confirm.ask(...)` aufgerufen
-// wird. Wir halten hier KEINEN pendingConfirm-Ref mehr — useConfirm tut
+// wird. Wir halten hier KEINEN pendingConfirm-Ref mehr — useAskConfirm tut
 // das zentral via useState('confirm:pending').
-const confirm = useConfirm()
+const confirm = useAskConfirm()
 
 const loadCurrentHousehold = async () => {
   currentLoading.value = true

@@ -52,7 +52,7 @@ import { isFirstRun } from '~/utils/household-age'
 import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel } from '~/utils/month-filter'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
-const confirm = useConfirm()
+const confirm = useAskConfirm()
 const route = useRoute()
 const router = useRouter()
 

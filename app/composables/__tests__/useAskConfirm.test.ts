@@ -1,5 +1,5 @@
 /*
- * Unit-Tests fuer `useConfirm` (issue #51 — Promise-basierter
+ * Unit-Tests fuer `useAskConfirm` (issue #51 — Promise-basierter
  * Confirm-Dialog).
  *
  * `useState` aus `#app` ist nicht im Vitest-Setup verfuegbar
@@ -34,9 +34,9 @@ vi.mock('#app', () => ({
   },
 }))
 
-// useConfirm muss NACH dem mock importiert werden, damit der
+// useAskConfirm muss NACH dem mock importiert werden, damit der
 // vi.mock-Hook greift.
-const { useConfirm } = await import('../useConfirm')
+const { useAskConfirm } = await import('../useAskConfirm')
 
 beforeEach(() => {
   // Jeder Test startet mit leerem pending-State
@@ -47,9 +47,9 @@ afterEach(() => {
   stateStore.clear()
 })
 
-describe('useConfirm — ask()', () => {
+describe('useAskConfirm — ask()', () => {
   it('setzt pending-Value mit dem uebergebenen Request', () => {
-    const { pending, ask } = useConfirm()
+    const { pending, ask } = useAskConfirm()
     expect(pending.value).toBeNull()
 
     void ask({
@@ -65,21 +65,21 @@ describe('useConfirm — ask()', () => {
   })
 
   it('gibt einen Promise zurueck, der mit true resolved bei confirm()', async () => {
-    const { ask, confirm } = useConfirm()
+    const { ask, confirm } = useAskConfirm()
     const promise = ask({ title: 't', message: 'm', tone: 'primary' })
     confirm()
     await expect(promise).resolves.toBe(true)
   })
 
   it('gibt einen Promise zurueck, der mit false resolved bei cancel()', async () => {
-    const { ask, cancel } = useConfirm()
+    const { ask, cancel } = useAskConfirm()
     const promise = ask({ title: 't', message: 'm', tone: 'danger' })
     cancel()
     await expect(promise).resolves.toBe(false)
   })
 
   it('setzt pending auf null nach confirm()', async () => {
-    const { pending, ask, confirm } = useConfirm()
+    const { pending, ask, confirm } = useAskConfirm()
     const promise = ask({ title: 't', message: 'm', tone: 'primary' })
     expect(pending.value).not.toBeNull()
     confirm()
@@ -88,7 +88,7 @@ describe('useConfirm — ask()', () => {
   })
 
   it('setzt pending auf null nach cancel()', async () => {
-    const { pending, ask, cancel } = useConfirm()
+    const { pending, ask, cancel } = useAskConfirm()
     const promise = ask({ title: 't', message: 'm', tone: 'danger' })
     cancel()
     await promise
@@ -96,7 +96,7 @@ describe('useConfirm — ask()', () => {
   })
 
   it('optionale Labels werden im Request gespeichert', () => {
-    const { pending, ask } = useConfirm()
+    const { pending, ask } = useAskConfirm()
     void ask({
       title: 't',
       message: 'm',
@@ -109,19 +109,19 @@ describe('useConfirm — ask()', () => {
   })
 })
 
-describe('useConfirm — idempotente confirm()/cancel()', () => {
+describe('useAskConfirm — idempotente confirm()/cancel()', () => {
   it('confirm() ohne pending ist ein no-op (wirft nicht)', () => {
-    const { confirm } = useConfirm()
+    const { confirm } = useAskConfirm()
     expect(() => confirm()).not.toThrow()
   })
 
   it('cancel() ohne pending ist ein no-op (wirft nicht)', () => {
-    const { cancel } = useConfirm()
+    const { cancel } = useAskConfirm()
     expect(() => cancel()).not.toThrow()
   })
 
   it('confirm() nach bereits aufgeloestem Promise ist idempotent', async () => {
-    const { ask, confirm } = useConfirm()
+    const { ask, confirm } = useAskConfirm()
     const promise = ask({ title: 't', message: 'm', tone: 'primary' })
     confirm()
     await promise
@@ -130,9 +130,9 @@ describe('useConfirm — idempotente confirm()/cancel()', () => {
   })
 })
 
-describe('useConfirm — Re-ask waerend pending', () => {
+describe('useAskConfirm — Re-ask waerend pending', () => {
   it('loest den alten Promise mit false auf, wenn ein neuer ask() kommt', async () => {
-    const { ask, cancel } = useConfirm()
+    const { ask, cancel } = useAskConfirm()
     const firstPromise = ask({ title: '1', message: '1', tone: 'primary' })
 
     // Neuer ask(), bevor der erste aufgeloest wurde
@@ -150,8 +150,8 @@ describe('useConfirm — Re-ask waerend pending', () => {
   })
 
   it('nur EIN pending-Dialog kann gleichzeitig offen sein (useState shared)', () => {
-    const instance1 = useConfirm()
-    const instance2 = useConfirm()
+    const instance1 = useAskConfirm()
+    const instance2 = useAskConfirm()
 
     void instance1.ask({ title: '1', message: '1', tone: 'primary' })
     // Gleicher useState-Key, gleicher Ref
@@ -162,5 +162,5 @@ describe('useConfirm — Re-ask waerend pending', () => {
 
 // Helper weil der pending-State innerhalb der Composable-Closure lebt
 function pendingState() {
-  return useConfirm().pending.value
+  return useAskConfirm().pending.value
 }
