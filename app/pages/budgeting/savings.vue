@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import { isFirstRun } from '~/utils/household-age'
 import { useEmojiLookup } from '~/composables/useEmojiLookup'
+import { useSavingsExecutions, type ExecutionDirection } from '~/composables/useSavingsExecutions'
 
 const { lookupEmoji } = useEmojiLookup()
 
@@ -31,6 +32,7 @@ type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const { posting: postingExecution, error: executionError, bookExecution, clearError } = useSavingsExecutions()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const loading = ref(false)
@@ -47,6 +49,21 @@ const savingsForm = ref({
   endDate: null as DateFormValue,
 })
 const savingsEditId = ref<string | null>(null)
+
+// Execution-Booking-State (issue #38). Pro Card-Action "Einzahlen"/"Entnehmen"
+// wird `bookingGoalId` + `bookingDirection` gesetzt, dann oeffnet sich der
+// `bookingDialog`. Nach erfolgreichem Buchen ruft `submitBookingExecution()`
+// `loadPlanning()` auf, damit die Liste + (spaeter) aggregierter Stand frisch
+// sind.
+const bookingDialogOpen = ref(false)
+const bookingGoalId = ref<string | null>(null)
+const bookingDirection = ref<ExecutionDirection>('deposit')
+const bookingForm = ref({
+  amount: null as number | null,
+  date: new Date() as DateFormValue,
+  note: '',
+})
+const bookingError = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
@@ -172,6 +189,74 @@ const deletePlanningItem = async (id: string) => {
   }
 }
 
+// ---- Execution-Booking (issue #38) --------------------------------------
+
+const openBookingDialog = (goalId: string, direction: ExecutionDirection) => {
+  bookingGoalId.value = goalId
+  bookingDirection.value = direction
+  bookingForm.value = { amount: null, date: new Date(), note: '' }
+  bookingError.value = null
+  clearError()
+  bookingDialogOpen.value = true
+}
+
+const closeBookingDialog = () => {
+  bookingDialogOpen.value = false
+  bookingGoalId.value = null
+  bookingError.value = null
+}
+
+const bookingGoal = computed(() => {
+  if (!bookingGoalId.value) return null
+  return currentHousehold.value?.savingsGoals.find((g) => g.id === bookingGoalId.value) ?? null
+})
+
+const isBookingFormValid = computed(() => {
+  const amount = bookingForm.value.amount
+  return Number.isFinite(amount) && amount !== null && amount !== 0 && bookingForm.value.date !== null
+})
+
+const submitBookingExecution = async () => {
+  bookingError.value = null
+  if (!bookingGoalId.value || !activeHouseholdId.value) {
+    bookingError.value = 'Sparziel oder Haushalt fehlt.'
+    return
+  }
+  if (!isBookingFormValid.value) {
+    bookingError.value = 'Betrag muss ungleich 0 sein, Datum ist erforderlich.'
+    return
+  }
+  const goal = bookingGoal.value
+  if (!goal) {
+    bookingError.value = 'Sparziel nicht gefunden.'
+    return
+  }
+  const dateValue = bookingForm.value.date!
+  const dateIso = formatDateInput(dateValue)
+  const result = await bookExecution(
+    activeHouseholdId.value,
+    bookingGoalId.value,
+    bookingDirection.value,
+    {
+      amount: Math.abs(bookingForm.value.amount!),
+      date: dateIso,
+      note: bookingForm.value.note?.trim() || undefined,
+    },
+  )
+  if (!result) {
+    bookingError.value = executionError.value ?? 'Buchung fehlgeschlagen.'
+    return
+  }
+  // Erfolg: Dialog schliessen, Liste neu laden, kompaktes Feedback.
+  const directionLabel = bookingDirection.value === 'deposit' ? 'eingezahlt' : 'entnommen'
+  notice.value = {
+    severity: 'success',
+    text: `${formatMoney(result.amount)} ${directionLabel} in „${goal.name}".`,
+  }
+  closeBookingDialog()
+  await loadPlanning()
+}
+
 onMounted(async () => {
   await fetchHouseholds()
   await loadPlanning()
@@ -230,7 +315,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
         </template>
 
-        <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)">
+        <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)" :hover-actions="false">
           <template #main>
             <span class="row-title">
               <span class="row-emoji" aria-hidden="true">{{ lookupEmoji(goal.name) }}</span>
@@ -250,6 +335,28 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             </div>
           </template>
           <template #actions>
+            <!-- Issue #38: Booking-Actions (Einzahlen / Entnehmen).
+                 Bewusst immer sichtbar (`hoverActions=false` am ItemCard),
+                 weil das der primaere Use-Case auf der Sparziel-Seite ist.
+                 Edit/Delete bleiben daneben, leicht abgegraut. -->
+            <Button
+              icon="pi pi-arrow-down"
+              :label="`Einzahlen`"
+              severity="success"
+              size="small"
+              :aria-label="`In Sparziel ${goal.name} einzahlen`"
+              @click="openBookingDialog(goal.id, 'deposit')"
+            />
+            <Button
+              icon="pi pi-arrow-up"
+              :label="`Entnehmen`"
+              severity="danger"
+              outlined
+              size="small"
+              :aria-label="`Aus Sparziel ${goal.name} entnehmen`"
+              @click="openBookingDialog(goal.id, 'withdraw')"
+            />
+            <span class="goal-card-actions-divider" aria-hidden="true" />
             <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
               icon="pi pi-trash"
@@ -291,6 +398,53 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       </FormFieldRow>
       <FormFieldRow label="Ende" html-for="goal-end">
         <DatePicker id="goal-end" v-model="savingsForm.endDate" showIcon dateFormat="dd.mm.yy" />
+      </FormFieldRow>
+    </FormDialog>
+
+    <!-- Execution-Booking-Dialog (issue #38). Wird per
+         `openBookingDialog(goalId, direction)` geoeffnet und kennt seine
+         Richtung (`Einzahlen` / `Entnehmen`) schon beim Oeffnen. -->
+    <FormDialog
+      v-model:visible="bookingDialogOpen"
+      :header="bookingDirection === 'deposit' ? 'Einzahlung buchen' : 'Entnahme buchen'"
+      :submit-label="bookingDirection === 'deposit' ? 'Einzahlen' : 'Entnehmen'"
+      :submit-severity="bookingDirection === 'deposit' ? 'success' : 'danger'"
+      :saving="postingExecution"
+      width="min(38rem, 94vw)"
+      @save="submitBookingExecution"
+      @cancel="closeBookingDialog"
+    >
+      <p v-if="bookingGoal" class="booking-context">
+        {{ bookingDirection === 'deposit' ? 'Einzahlung' : 'Entnahme' }} fuer
+        <strong>{{ bookingGoal.name }}</strong>
+        ({{ formatMoney(bookingGoal.targetAmount) }} Zielbetrag).
+      </p>
+      <Message v-if="bookingError" severity="error" variant="simple" class="booking-error">
+        {{ bookingError }}
+      </Message>
+      <FormFieldRow label="Betrag" html-for="booking-amount">
+        <MoneyInput
+          id="booking-amount"
+          v-model="bookingForm.amount"
+          :currency="currencyCode"
+          :min="0"
+        />
+      </FormFieldRow>
+      <FormFieldRow label="Datum" html-for="booking-date">
+        <DatePicker
+          id="booking-date"
+          v-model="bookingForm.date"
+          showIcon
+          dateFormat="dd.mm.yy"
+        />
+      </FormFieldRow>
+      <FormFieldRow label="Notiz (optional)" html-for="booking-note" wide>
+        <InputText
+          id="booking-note"
+          v-model="bookingForm.note"
+          placeholder="z. B. Urlaubssparen Q3"
+          maxlength="500"
+        />
       </FormFieldRow>
     </FormDialog>
   </ListPageShell>
@@ -357,5 +511,36 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji',
     'Twemoji', sans-serif;
   line-height: 1;
+}
+
+/* Trennlinie zwischen Booking-Buttons und Edit/Delete in der Card.
+   Visuell abgesetzt, damit die primaere Aktion (Buchen) vom
+   Setup-Kram (Edit/Delete) getrennt bleibt. */
+.goal-card-actions-divider {
+  display: inline-block;
+  width: 1px;
+  height: 22px;
+  background: var(--border-subtle, rgba(148, 163, 184, 0.25));
+  margin: 0 4px;
+}
+
+@media (max-width: 639px) {
+  .goal-card-actions-divider {
+    display: none;
+  }
+}
+
+/* Buchungs-Dialog: Kontext-Text oben und Error-Message unter dem Header.
+   Etwas mehr Luft als die Standard-Reihen, weil das die haeufigste
+   Aktion auf der Sparziel-Seite ist und der User sie schnell erfassen
+   soll. */
+.booking-context {
+  margin: 0 0 0.4rem;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.86rem;
+}
+
+.booking-error {
+  margin-bottom: 0.6rem;
 }
 </style>
