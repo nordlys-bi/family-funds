@@ -71,7 +71,6 @@ export default defineEventHandler(async (event) => {
           id: true,
           email: true,
           role: true,
-          createdAt: true,
           invitedBy: {
             select: {
               id: true,
@@ -131,6 +130,40 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Aggregation: pro SavingsGoal die Summe aller Executions in Cent
+  // (issue #12). Eine groupBy-Query pro Household-Request, kein N+1.
+  const executionSums = await prisma.savingsGoalExecution.groupBy({
+    by: ['savingsGoalId'],
+    where: {
+      savingsGoal: {
+        householdId,
+      },
+    },
+    _sum: {
+      amount: true,
+    },
+  })
+  const currentAmountByGoalId = new Map(
+    executionSums.map((row) => [row.savingsGoalId, row._sum.amount ?? 0]),
+  )
+
+  // Pro Goal: currentAmount + progressPercent in die Response einrechnen.
+  // progressPercent = currentAmount / targetAmount * 100, gerundet auf 1
+  // Nachkommastelle, gedeckelt bei 999 (verhindert 'Infinity %' bei
+  // targetAmount=0). Goals ohne Execution bekommen currentAmount=0.
+  const savingsGoals = household.savingsGoals.map((goal) => {
+    const currentAmount = currentAmountByGoalId.get(goal.id) ?? 0
+    const progressPercent =
+      goal.targetAmount > 0
+        ? Math.min(999, Math.round((currentAmount / goal.targetAmount) * 1000) / 10)
+        : 0
+    return {
+      ...goal,
+      currentAmount,
+      progressPercent,
+    }
+  })
+
   const { monthStart, monthEnd } = getMonthWindow()
   const expenses = await prisma.expenseTransaction.findMany({
     where: {
@@ -149,5 +182,8 @@ export default defineEventHandler(async (event) => {
 
   const budgetOverview = buildBudgetOverview(household.budgets, expenses, monthStart)
 
-  return { household, budgetOverview }
+  return {
+    household: { ...household, savingsGoals },
+    budgetOverview,
+  }
 })

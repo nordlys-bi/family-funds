@@ -19,6 +19,10 @@ type SavingsGoalItem = {
   startDate: string
   endDate: string | null
   createdAt: string
+  // Aggregation aus /api/households/current (issue #12). currentAmount in
+  // Cent, progressPercent als Zahl mit 1 Nachkommastelle (z. B. 25.5).
+  currentAmount?: number
+  progressPercent?: number
 }
 
 type PlanningHousehold = {
@@ -125,18 +129,13 @@ const monthlySavingsRateTotal = computed(
   () => currentHousehold.value?.savingsGoals.reduce((sum, goal) => sum + goal.monthlyRate, 0) ?? 0,
 )
 
-// Mock progress: zwischen 0 und 100% je nach Ziel — wir haben keine echten Buchungen
-// TODO: echte "Sparbuchungen"-Datenquelle anbinden, dann diesen Mock ersetzen
-const goalProgressPercent = (goal: SavingsGoalItem) => {
-  // Stabil basierend auf Monaten seit Start vs. erwarteter Dauer
-  const start = new Date(goal.startDate).getTime()
-  const end = goal.endDate ? new Date(goal.endDate).getTime() : start
-  const now = Date.now()
-  if (end <= start) return 0
-  const total = end - start
-  const elapsed = Math.max(0, Math.min(total, now - start))
-  return Math.round((elapsed / total) * 100)
-}
+// Echte aggregierte Progress-Werte aus /api/households/current (issue #12).
+// Der Mock vorher war zeitbasiert und hat die tatsaechlich angesparten Betraege
+// ignoriert — jetzt kommt der Wert aus dem Backend (groupBy ueber alle
+// SavingsGoalExecution.amount pro Goal, keine N+1).
+const goalCurrentAmount = (goal: SavingsGoalItem) => goal.currentAmount ?? 0
+const goalProgressPercent = (goal: SavingsGoalItem) => goal.progressPercent ?? 0
+const isGoalReached = (goal: SavingsGoalItem) => goalCurrentAmount(goal) >= goal.targetAmount && goal.targetAmount > 0
 
 const resetSavingsForm = () => {
   savingsForm.value = { name: '', targetAmount: null, monthlyRate: null, startDate: new Date(), endDate: null }
@@ -338,15 +337,22 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               <span class="row-tag row-tag--green">{{ formatMoney(goal.monthlyRate) }}/Monat</span>
             </span>
             <span class="row-sub">
-              <span class="row-tag">{{ goalProgressPercent(goal) }}% Zeitfortschritt</span>
+              <span class="row-tag" :class="{ 'row-tag--green': isGoalReached(goal) }">
+                {{ goalProgressPercent(goal) }}% erreicht
+              </span>
               <span>Ziel {{ formatMoney(goal.targetAmount) }}</span>
               <span>· {{ formatDate(goal.startDate) }} – {{ formatDate(goal.endDate) }}</span>
+              <span v-if="goalCurrentAmount(goal) === 0" class="row-tag row-tag--muted">
+                Noch keine Sparbuchungen
+              </span>
             </span>
           </template>
           <template #aside>
             <div>
-              {{ formatMoney(goal.targetAmount) }}
-              <span class="amount-secondary">Zielbetrag</span>
+              <strong>{{ formatMoney(goalCurrentAmount(goal)) }}</strong>
+              <span class="amount-secondary">
+                von {{ formatMoney(goal.targetAmount) }}
+              </span>
             </div>
           </template>
           <template #actions>
@@ -519,6 +525,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .row-tag--green {
   background: rgba(52, 211, 153, 0.16);
   color: #34d399;
+}
+
+.row-tag--muted {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
 }
 
 .amount-secondary {
