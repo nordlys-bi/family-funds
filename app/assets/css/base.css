@@ -249,29 +249,6 @@ html.my-app-dark .p-button {
   min-height: var(--touch-target-min);
 }
 
-/* Outlined Buttons: Severity-Farbe dauerhaft zeigen.
- * PrimeVue 4 + Aura rendert outlined-Buttons im Default-Zustand mit
- * neutralem Border + Icon in surface/text-Color, Severity-Color erst
- * beim Hover. Für Haupt-Aktionen (z. B. Sparziel-Booking mit
- * severity=success/danger outlined) ist das suboptimal — die Farbe
- * kommuniziert die Aktion und sollte immer sichtbar sein.
- * Specificity 0,3,0 (3 Klassen) gewinnt gegen Aura-Default. */
-html.my-app-dark .p-button.p-button-outlined.p-button-success,
-html.my-app-dark .p-button.p-button-outlined.p-button-success .p-button-icon {
-  color: var(--color-accent-success);
-  border-color: var(--color-accent-success);
-}
-html.my-app-dark .p-button.p-button-outlined.p-button-danger,
-html.my-app-dark .p-button.p-button-outlined.p-button-danger .p-button-icon {
-  color: var(--color-accent-danger);
-  border-color: var(--color-accent-danger);
-}
-html.my-app-dark .p-button.p-button-outlined.p-button-primary,
-html.my-app-dark .p-button.p-button-outlined.p-button-primary .p-button-icon {
-  color: var(--color-accent-primary);
-  border-color: var(--color-accent-primary);
-}
-
 /* ============================================================================
  * PrimeVue 4.5.5 + Aura-Theme Bug: Button-Icon-Glyph unsichtbar bei `label`
  *
