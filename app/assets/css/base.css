@@ -227,6 +227,27 @@ html.my-app-dark .p-button {
   min-height: var(--touch-target-min);
 }
 
+/* ============================================================================
+ * PrimeVue 4.5.5 + Aura-Theme Bug: Button-Icon-Glyph unsichtbar bei `label`
+ *
+ * Aura-Theme rendert <span class="p-button-icon pi pi-X" data-pc-section="icon">
+ * mit `display: block` (statt inline-flex) und `color: text-muted`
+ * (statt currentColor). Sobald der Button ein `label` hat, rutscht das
+ * Icon auf eine eigene Zeile unter den Text und verschwindet visuell
+ * im geringen Kontrast. Icon-only-Buttons (Edit/Trash/History) sind
+ * nicht betroffen, weil der data-p-Pfad dort isoliert ist.
+ *
+ * Specificity 0,3,0 (2 Klassen + 1 Attribut) gewinnt zuverlässig gegen
+ * PrimeVue/Aura-Default 0,2,0 (.p-button .p-button-icon). Ohne den
+ * Attribut-Selector wäre es ein Tie und Layer-Reihenfolge entscheidet.
+ * ============================================================================ */
+.p-button .p-button-icon[data-pc-section="icon"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: currentColor;
+}
+
 html.my-app-dark .p-inputtext,
 html.my-app-dark .p-inputnumber-input,
 html.my-app-dark .p-datepicker-input {
