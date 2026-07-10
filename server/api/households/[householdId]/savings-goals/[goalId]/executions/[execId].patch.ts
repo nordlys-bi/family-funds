@@ -29,7 +29,10 @@ import { parseUuidParam } from '../../../../../../utils/validation'
 type UpdateExecutionBody = {
   amount?: number | string
   date?: string
+  note?: string | null
 }
+
+const MAX_NOTE_LENGTH = 500
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -60,12 +63,31 @@ export default defineEventHandler(async (event) => {
   const amount =
     body.amount !== undefined ? parseExecutionAmount(body.amount, 'Amount') : undefined
   const date = body.date ? parseDateInput(body.date, 'Date') : undefined
+  // `note` ist explizit patchbar (issue #38: User kann eine Buchung
+  // nachtraeglich kommentieren). Leer-String wird zu null normalisiert.
+  let note: string | null | undefined
+  if (body.note !== undefined) {
+    if (body.note === null) {
+      note = null
+    } else if (typeof body.note === 'string') {
+      if (body.note.length > MAX_NOTE_LENGTH) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: `Note must be at most ${MAX_NOTE_LENGTH} characters.`,
+        })
+      }
+      note = body.note.trim() || null
+    } else {
+      note = null
+    }
+  }
 
   const item = await prisma.savingsGoalExecution.update({
     where: { id: execId },
     data: {
       ...(amount !== undefined ? { amount } : {}),
       ...(date !== undefined ? { date } : {}),
+      ...(note !== undefined ? { note } : {}),
     },
   })
 

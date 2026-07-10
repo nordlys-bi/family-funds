@@ -143,6 +143,63 @@ describe('POST /households/:id/savings-goals/:goalId/executions — Issue #36', 
     expect(response.data.kind).toBe('execution')
   })
 
+  it('speichert eine optionale Notiz im note-Feld (issue #38)', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    setRequestBody({ amount: 50, note: 'Urlaubssparen Q3' })
+    prismaMocks.savingsGoalExecution.create.mockResolvedValue({
+      id: 'exec-4',
+      savingsGoalId: GOAL_ID,
+      amount: 5000,
+      date: new Date(),
+      note: 'Urlaubssparen Q3',
+    })
+
+    await handler(makeEvent())
+
+    expect(prismaMocks.savingsGoalExecution.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        savingsGoalId: GOAL_ID,
+        amount: 5000,
+        note: 'Urlaubssparen Q3',
+      }),
+    })
+  })
+
+  it('normalisiert leere Notiz zu null', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    setRequestBody({ amount: 10, note: '   ' })
+    prismaMocks.savingsGoalExecution.create.mockResolvedValue({
+      id: 'exec-5',
+      savingsGoalId: GOAL_ID,
+      amount: 1000,
+      date: new Date(),
+      note: null,
+    })
+
+    await handler(makeEvent())
+
+    expect(prismaMocks.savingsGoalExecution.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        amount: 1000,
+        note: null,
+      }),
+    })
+  })
+
+  it('lehnt Notiz ueber 500 Zeichen mit 400 ab', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    setRequestBody({ amount: 10, note: 'x'.repeat(501) })
+
+    await expect(handler(makeEvent())).rejects.toMatchObject({
+      statusCode: 400,
+      statusMessage: expect.stringContaining('500 characters'),
+    })
+    expect(prismaMocks.savingsGoalExecution.create).not.toHaveBeenCalled()
+  })
+
   it('lehnt nicht-Mitglieder mit 403 ab (Auth bleibt geschuetzt)', async () => {
     authMocks.requireHouseholdMembership.mockRejectedValue({
       statusCode: 403,
