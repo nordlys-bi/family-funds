@@ -361,14 +361,14 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
                  weil das der primaere Use-Case auf der Sparziel-Seite ist.
                  Edit/Delete bleiben daneben, leicht abgegraut. -->
             <Button
-              icon="pi pi-arrow-down"
+              icon="pi pi-plus-circle"
               severity="success"
               size="small"
               :aria-label="`In Sparziel ${goal.name} einzahlen`"
               @click="openBookingDialog(goal.id, 'deposit')"
             />
             <Button
-              icon="pi pi-arrow-up"
+              icon="pi pi-minus-circle"
               severity="danger"
               outlined
               size="small"
