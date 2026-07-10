@@ -64,6 +64,8 @@ const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 const updateTransactionLocal = tx.updateTransactionLocal
 const restoreTransactionLocal = tx.restoreTransactionLocal
+const removeTransactionLocal = tx.removeTransactionLocal
+const insertTransactionLocal = tx.insertTransactionLocal
 const recomputeSummaryFromLocal = tx.recomputeSummaryFromLocal
 
 const visibleTransactions = computed(() => transactionsByKind('expense'))
@@ -161,6 +163,9 @@ async function saveInlineEdit(
 
   // Optimistic Update via Composable-Helper (issue #15).
   // Composable liefert das Original zurueck für eventuellen Rollback.
+  // Lokaler State ist in Cents (t.amount / 100 im Editor, *100 zurück hier).
+  // PATCH-Body schickt den Euro-Wert — Server-Endpoint parseMoneyToCents
+  // macht die *100-Konvertierung, sonst wuerde der Wert doppelt skaliert.
   const amountCents = Math.round((payload.amount ?? 0) * 100)
   const original = updateTransactionLocal(transactionId, {
     amount: amountCents,
@@ -179,7 +184,7 @@ async function saveInlineEdit(
       body: {
         kind: 'expense',
         id: transactionId,
-        amount: amountCents,
+        amount: payload.amount,
         description: payload.description,
         date: payload.date,
         budgetId: payload.budgetId,
@@ -225,18 +230,32 @@ const saveTransaction = async () => {
   }
 }
 
-const deleteTransaction = async (transaction: { id: string }) => {
+// === Soft-Delete mit Undo (issue #58) =================================
+// useUndoableDelete kapselt Optimistic-Remove, 5-Sekunden-Undo-Banner,
+// und Server-Restore. Pattern-Detail: removeTransactionLocal/insert
+// kommen aus useTransactionList, weil der Composable die Listen-Source
+// verwaltet (inkl. Sort). useUndoableDelete ist generisch und kennt
+// nur die beiden Lambdas.
+const undoableDelete = useUndoableDelete<{ id: string; description?: string | null; [key: string]: unknown }>({
+  householdId: () => activeHouseholdId.value,
+  kind: 'expense',
+  onRemoveLocal: (id) => {
+    removeTransactionLocal(id)
+  },
+  onRestoreLocal: (item) => {
+    insertTransactionLocal(item as never)
+  },
+  onAfterChange: () => recomputeSummaryFromLocal(),
+})
+
+const deleteTransaction = async (transaction: { id: string; description?: string | null; [key: string]: unknown }) => {
   if (!activeHouseholdId.value) return
+  // Loading-State bleibt auf dem Trash-Button, bis der DELETE-Call
+  // durch ist. Danach verschwindet der Button mit der Zeile (Optimistic
+  // Remove), Loading-State ist irrelevant.
   actionLoadingKey.value = `expense:${transaction.id}`
-  notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/expenses/${transaction.id}`, {
-      method: 'DELETE',
-    })
-    await loadAll()
-    notice.value = { severity: 'success', text: 'Ausgabe wurde gelöscht.' }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Ausgabe konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
+    await undoableDelete.deleteWithUndo(transaction as never)
   } finally {
     actionLoadingKey.value = null
   }

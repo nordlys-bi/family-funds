@@ -58,6 +58,8 @@ const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 const updateTransactionLocal = tx.updateTransactionLocal
 const restoreTransactionLocal = tx.restoreTransactionLocal
+const removeTransactionLocal = tx.removeTransactionLocal
+const insertTransactionLocal = tx.insertTransactionLocal
 const recomputeSummaryFromLocal = tx.recomputeSummaryFromLocal
 
 const visibleTransactions = computed(() => transactionsByKind('income'))
@@ -140,6 +142,9 @@ async function saveInlineEdit(
   actionLoadingKey.value = `income:${transactionId}`
 
   // Optimistic Update via Composable-Helper (issue #15).
+  // Lokaler State ist in Cents (t.amount / 100 im Editor, *100 zurück hier).
+  // PATCH-Body schickt den Euro-Wert — Server-Endpoint parseMoneyToCents
+  // macht die *100-Konvertierung, sonst wuerde der Wert doppelt skaliert.
   const amountCents = Math.round((payload.amount ?? 0) * 100)
   const original = updateTransactionLocal(transactionId, {
     amount: amountCents,
@@ -157,7 +162,7 @@ async function saveInlineEdit(
       body: {
         kind: 'income',
         id: transactionId,
-        amount: amountCents,
+        amount: payload.amount,
         description: payload.description,
         date: payload.date,
       },
@@ -209,18 +214,26 @@ const saveTransaction = async () => {
   }
 }
 
-const deleteTransaction = async (transaction: { id: string }) => {
+// === Soft-Delete mit Undo (issue #58) =================================
+// Siehe expenses.vue — gleiches Pattern. useUndoableDelete kapselt den
+// Flow, useTransactionList liefert die Listen-Helfer.
+const undoableDelete = useUndoableDelete<{ id: string; description?: string | null; [key: string]: unknown }>({
+  householdId: () => activeHouseholdId.value,
+  kind: 'income',
+  onRemoveLocal: (id) => {
+    removeTransactionLocal(id)
+  },
+  onRestoreLocal: (item) => {
+    insertTransactionLocal(item as never)
+  },
+  onAfterChange: () => recomputeSummaryFromLocal(),
+})
+
+const deleteTransaction = async (transaction: { id: string; description?: string | null; [key: string]: unknown }) => {
   if (!activeHouseholdId.value) return
   actionLoadingKey.value = `income:${transaction.id}`
-  notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/incomes/${transaction.id}`, {
-      method: 'DELETE',
-    })
-    await loadAll()
-    notice.value = { severity: 'success', text: 'Einnahme wurde gelöscht.' }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Einnahme konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
+    await undoableDelete.deleteWithUndo(transaction as never)
   } finally {
     actionLoadingKey.value = null
   }
