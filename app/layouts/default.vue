@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const { user, logout } = useAppAuth()
 const { households, activeHousehold, setActiveHousehold } = useHousehold()
+const onboarding = useOnboarding()
 const config = useRuntimeConfig()
 const isClerkMode = config.public.authMode === 'clerk'
 
@@ -71,13 +72,68 @@ const fabActions = [
   },
 ] as const
 
-onMounted(() => {
+onMounted(async () => {
   if (import.meta.client) {
     compactQuery = window.matchMedia('(max-width: 1023px)')
     syncCompactMode(compactQuery)
     compactQuery.addEventListener('change', syncCompactMode)
   }
+
+  // Onboarding-Auto-Trigger (issue #16): Wenn der User eingeloggt ist
+  // UND der Haushalt "leer" wirkt (keine Mitglieder/Budgets/Transaktionen)
+  // UND der User nicht explizit geskippt hat → Tour starten.
+  if (user.value) {
+    await onboarding.load()
+    if (activeHousehold.value) {
+      try {
+        const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
+        const data = await $fetch<{
+          data: { memberCount: number; budgetCount: number; transactionCount: number }
+        }>(`/api/households/${activeHousehold.value.id}/activity`, { headers })
+        if (onboarding.shouldAutoTrigger(data.data)) {
+          onboarding.start()
+        }
+      } catch {
+        // Kein Household-Zugriff (z. B. noch kein aktiver Haushalt gewaehlt)
+        // → Onboarding triggert ueber shouldAutoTrigger(null) automatisch.
+        if (onboarding.shouldAutoTrigger(null)) {
+          onboarding.start()
+        }
+      }
+    } else if (onboarding.shouldAutoTrigger(null)) {
+      onboarding.start()
+    }
+  }
 })
+
+watch(
+  () => user.value?.id,
+  async (newId, oldId) => {
+    // Nur beim Login-Transition triggern (id-Wechsel von undefined/other auf Wert).
+    if (newId && newId !== oldId) {
+      await onboarding.load()
+      onboarding.start() // visibility-Check passiert in shouldAutoTrigger
+    }
+  },
+)
+
+// === Onboarding-Tour Step-Completion =================================
+// Per Step: persistiere + navigiere zur passenden Seite (falls zutreffend).
+const stepNavTargets: Record<string, string | null> = {
+  household: null,
+  invite: '/households/members',
+  budget: '/budgeting/budgets',
+  transaction: '/transactions/expenses',
+}
+
+async function handleOnboardingCompleteStep(step: 'household' | 'invite' | 'budget' | 'transaction') {
+  await onboarding.markComplete(step)
+  const target = stepNavTargets[step]
+  if (target) {
+    onboarding.close()
+    await navigateTo(target)
+  }
+}
 
 onBeforeUnmount(() => {
   compactQuery?.removeEventListener('change', syncCompactMode)
@@ -230,6 +286,18 @@ onBeforeUnmount(() => {
 
     <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop) -->
     <FabSpeedDial :actions="fabActions" />
+
+    <!-- Onboarding-Tour (issue #16): 4-Step-Modal, auto-getriggert fuer
+         neue User mit leerem Haushalt. Persistiert pro User, ueberlebt
+         Reloads. -->
+    <OnboardingTour
+      :active="onboarding.isActive.value"
+      :completed-steps="onboarding.completedSteps.value"
+      :progress="onboarding.progress.value"
+      @complete-step="handleOnboardingCompleteStep"
+      @skip="onboarding.skipTour"
+      @close="onboarding.close"
+    />
   </div>
 </template>
 
