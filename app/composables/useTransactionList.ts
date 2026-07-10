@@ -163,6 +163,60 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   }
 
   /**
+   * Entfernt eine Transaktion aus dem lokalen State (issue #58 Soft-Delete).
+   * Liefert das entfernte Item inkl. Index zurueck, damit der Caller es
+   * bei Undo oder Rollback wiederherstellen kann.
+   *
+   * Greift NICHT in den Server-State ein — der DELETE-Call gehoert in
+   * den useUndoableDelete-Composable, der diesen Helper aufruft.
+   */
+  function removeTransactionLocal(id: string): { index: number; item: TransactionItem } | null {
+    const index = transactions.value.findIndex((transaction) => transaction.id === id)
+    if (index === -1) return null
+    const item = transactions.value[index]!
+    transactions.value = transactions.value.filter((transaction) => transaction.id !== id)
+    return { index, item }
+  }
+
+  /**
+   * Fuegt eine Transaktion an der richtigen Position in den lokalen
+   * State ein (issue #58 Soft-Delete-Undo). Die Position wird anhand
+   * des `date`-Felds bestimmt (desc), analog zur Server-Sortierung
+   * in transactions.get.ts.
+   */
+  function insertTransactionLocal(item: TransactionItem, atIndex?: number): void {
+    // Doppelinsert verhindern (z. B. wenn der Server-Refresh das Item
+    // schon mitgebracht hat, waehrend der Undo noch laeuft).
+    if (transactions.value.some((transaction) => transaction.id === item.id)) return
+
+    if (typeof atIndex === 'number') {
+      const next = transactions.value.slice()
+      next.splice(atIndex, 0, item)
+      transactions.value = next
+      return
+    }
+
+    // Sort-Position ableiten: neues Item einfuegen, so dass `date DESC`
+    // weiterhin gilt. Dafür reicht eine einfache binaere Suche, weil
+    // die Liste klein ist (max. 500 laut Pagination-Limit).
+    const itemTime = new Date(item.date).getTime()
+    let low = 0
+    let high = transactions.value.length
+    while (low < high) {
+      const mid = (low + high) >>> 1
+      const midTime = new Date(transactions.value[mid]!.date).getTime()
+      if (midTime > itemTime) {
+        low = mid + 1
+      } else {
+        high = mid
+      }
+    }
+    const next = transactions.value.slice()
+    next.splice(low, 0, item)
+    transactions.value = next
+  }
+
+  /**
    * Recompute Summary aus den aktuellen Transactions (issue #15
    * Optimistic-Update-Helper). Wird nach erfolgreichem Inline-Edit
    * aufgerufen, damit die Tags oben den neuen Wert zeigen ohne
@@ -199,6 +253,8 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     transactionsByKind,
     updateTransactionLocal,
     restoreTransactionLocal,
+    removeTransactionLocal,
+    insertTransactionLocal,
     recomputeSummaryFromLocal,
   }
 }

@@ -24,8 +24,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { H3Event } from 'h3'
 
 const prismaMocks = vi.hoisted(() => ({
-  expenseTransaction: { findFirst: vi.fn(), delete: vi.fn() },
-  incomeTransaction: { findFirst: vi.fn(), delete: vi.fn() },
+  // issue #58: Transaction-DELETE ist Soft-Delete (update mit deletedAt),
+  // nicht Hard-Delete. Mock spiegelt die echte Prisma-Client-API.
+  expenseTransaction: { findFirst: vi.fn(), update: vi.fn() },
+  incomeTransaction: { findFirst: vi.fn(), update: vi.fn() },
   budget: { findFirst: vi.fn(), delete: vi.fn() },
   incomePlan: { findFirst: vi.fn(), delete: vi.fn() },
   fixedCostPlan: { findFirst: vi.fn(), delete: vi.fn() },
@@ -84,12 +86,18 @@ describe('DELETE /households/:id/expenses/:expenseId', () => {
   it('returns the envelope `{ data: { kind, deleted: true } }` on success', async () => {
     mockMember()
     prismaMocks.expenseTransaction.findFirst.mockResolvedValue({ id: ITEM_ID })
-    prismaMocks.expenseTransaction.delete.mockResolvedValue({ id: ITEM_ID })
+    prismaMocks.expenseTransaction.update.mockResolvedValue({ id: ITEM_ID, deletedAt: new Date() })
 
     const response = await expenseHandler(makeEvent())
 
     expect(response).toEqual({ data: { kind: 'expense', deleted: true } })
-    expect(prismaMocks.expenseTransaction.delete).toHaveBeenCalledWith({ where: { id: ITEM_ID } })
+    // Soft-Delete (issue #58): update mit deletedAt statt delete.
+    expect(prismaMocks.expenseTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: ITEM_ID },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) }),
+      }),
+    )
   })
 
   it('scopes the lookup to the household (cross-household protection)', async () => {
@@ -99,7 +107,13 @@ describe('DELETE /households/:id/expenses/:expenseId', () => {
     await expenseHandler(makeEvent())
 
     expect(prismaMocks.expenseTransaction.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: ITEM_ID, householdId: HH_ID } }),
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: ITEM_ID,
+          householdId: HH_ID,
+          deletedAt: null,
+        }),
+      }),
     )
   })
 
@@ -137,11 +151,17 @@ describe('DELETE /households/:id/incomes/:incomeId', () => {
   it('returns the envelope on success', async () => {
     mockMember()
     prismaMocks.incomeTransaction.findFirst.mockResolvedValue({ id: ITEM_ID })
-    prismaMocks.incomeTransaction.delete.mockResolvedValue({ id: ITEM_ID })
+    prismaMocks.incomeTransaction.update.mockResolvedValue({ id: ITEM_ID, deletedAt: new Date() })
 
     const response = await incomeHandler(makeEvent())
 
     expect(response).toEqual({ data: { kind: 'income', deleted: true } })
+    expect(prismaMocks.incomeTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: ITEM_ID },
+        data: expect.objectContaining({ deletedAt: expect.any(Date) }),
+      }),
+    )
   })
 
   it('throws 404 when income not found', async () => {

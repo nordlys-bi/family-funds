@@ -34,10 +34,16 @@ export default defineEventHandler(async (event) => {
   const description = body.description === undefined ? undefined : body.description?.trim() || null
 
   if (kind === 'expense') {
+    // Soft-Delete (issue #58): PATCH wirkt nur auf das aktive Set. Soft-
+    // deletete Buchungen sind ueber den expliziten POST /restore zu
+    // reaktivieren — PATCH ist hier bewusst 404, damit das UI nicht
+    // versehentlich eine "geloeschte" Buchung mit anderen Werten
+    // ueberschreibt.
     const existing = await prisma.expenseTransaction.findFirst({
       where: {
         id: body.id,
         householdId,
+        deletedAt: null,
       },
     })
 
@@ -80,10 +86,12 @@ export default defineEventHandler(async (event) => {
     return defineApiResponse({ kind, item })
   }
 
+  // Income-Pfad: gleiche Soft-Delete-Semantik.
   const existing = await prisma.incomeTransaction.findFirst({
     where: {
       id: body.id,
       householdId,
+      deletedAt: null,
     },
   })
 
