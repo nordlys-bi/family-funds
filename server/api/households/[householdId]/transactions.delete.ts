@@ -1,68 +1,24 @@
-import { defineEventHandler, createError, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
-import { requireHouseholdMembership } from '../../../utils/household-access'
-import { assertTransactionKind } from '../../../utils/transactions'
+/*
+ * DEPRECATED (issue #27): DELETE /api/households/:householdId/transactions
+ *
+ * Liefert ab Sprint 3 nur noch **410 Gone** mit Hinweis auf die neuen
+ * Split-Endpoints. Die alten Routes haben DELETE-mit-Body genutzt
+ * (REST-Verletzung), die neuen Routes haben die ID im Path:
+ *
+ *   DELETE /api/households/:householdId/expenses/:id
+ *   DELETE /api/households/:householdId/incomes/:id
+ *
+ * Das alte Frontend wurde in demselben Slice migriert; dieser Endpoint
+ * wird nur noch als dokumentierter Tombstone gehalten.
+ */
+import { createError, defineEventHandler } from 'h3'
 import { parseUuidParam } from '../../../utils/validation'
 
-type TransactionDeleteBody = {
-  kind: string
-  id: string
-}
-
 export default defineEventHandler(async (event) => {
-  const householdId = parseUuidParam(event, 'householdId')
+  parseUuidParam(event, 'householdId') // validiert Format; Fehler soll vor 410 kommen
 
-  await requireHouseholdMembership(event, householdId)
-
-  const body = await readBody<TransactionDeleteBody>(event)
-  const kind = assertTransactionKind(body.kind)
-
-  if (!body.id) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'Transaction ID is required.',
-    })
-  }
-
-  if (kind === 'expense') {
-    const existing = await prisma.expenseTransaction.findFirst({
-      where: {
-        id: body.id,
-        householdId,
-      },
-    })
-
-    if (!existing) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Expense transaction not found.',
-      })
-    }
-
-    await prisma.expenseTransaction.delete({
-      where: { id: body.id },
-    })
-
-    return { kind, deleted: true }
-  }
-
-  const existing = await prisma.incomeTransaction.findFirst({
-    where: {
-      id: body.id,
-      householdId,
-    },
+  throw createError({
+    statusCode: 410,
+    statusMessage: 'This endpoint is gone. Use DELETE /api/households/:householdId/expenses/:id or /incomes/:id instead.',
   })
-
-  if (!existing) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Income transaction not found.',
-    })
-  }
-
-  await prisma.incomeTransaction.delete({
-    where: { id: body.id },
-  })
-
-  return { kind, deleted: true }
 })

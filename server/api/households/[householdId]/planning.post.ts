@@ -10,6 +10,7 @@ import {
   parseMoneyToCents,
   parseOptionalDateInput,
 } from '../../../utils/planning'
+import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
 type PlanningCreateBody = {
@@ -62,7 +63,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'incomePlan': {
       const amount = parseMoneyToCents(body.amount, 'Amount')
@@ -81,7 +82,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'fixedCostPlan': {
       const amount = parseMoneyToCents(body.amount, 'Amount')
@@ -100,7 +101,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     case 'savingsGoal': {
       const targetAmount = parseMoneyToCents(body.targetAmount, 'Target amount')
@@ -119,7 +120,7 @@ export default defineEventHandler(async (event) => {
         },
       })
 
-      return { kind, item }
+      return defineApiResponse({ kind, item })
     }
     default:
       throw createError({

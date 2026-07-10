@@ -6,6 +6,7 @@
 import { defineEventHandler, createError } from 'h3'
 import { prisma } from '../../../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../../../utils/household-access'
+import { defineApiResponse } from '../../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../../utils/validation'
 
 export default defineEventHandler(async (event) => {
@@ -32,5 +33,5 @@ export default defineEventHandler(async (event) => {
 
   await prisma.savingsGoalExecution.delete({ where: { id: execId } })
 
-  return { kind: 'execution', deleted: true }
+  return defineApiResponse({ kind: 'execution', deleted: true })
 })
