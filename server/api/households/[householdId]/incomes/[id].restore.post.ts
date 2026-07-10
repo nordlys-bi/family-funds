@@ -1,11 +1,8 @@
 /*
- * DELETE /api/households/:householdId/incomes/:id
+ * POST /api/households/:householdId/incomes/:id/restore
  *
- * Soft-Delete einer Income-Transaktion (issue #58).
- *
- * Siehe expenses/[id].delete.ts fuer die vollstaendige Begruendung.
- * 404 fuer bereits soft-deletete Zeilen, idempotente Aufrufe loesen
- * keinen weiteren State-Change aus.
+ * Stellt eine soft-deletete Income-Transaktion wieder her (issue #58).
+ * Siehe expenses/[id]/restore.post.ts fuer die vollstaendige Begruendung.
  *
  * Auth: `requireHouseholdMembership`.
  */
@@ -25,9 +22,8 @@ export default defineEventHandler(async (event) => {
     where: {
       id: incomeId,
       householdId,
-      deletedAt: null,
     },
-    select: { id: true },
+    select: { id: true, deletedAt: true },
   })
 
   if (!existing) {
@@ -37,10 +33,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  if (existing.deletedAt === null) {
+    return defineApiResponse({ kind: 'income', restored: true, alreadyActive: true })
+  }
+
   await prisma.incomeTransaction.update({
     where: { id: incomeId },
-    data: { deletedAt: new Date() },
+    data: { deletedAt: null },
   })
 
-  return defineApiResponse({ kind: 'income', deleted: true })
+  return defineApiResponse({ kind: 'income', restored: true })
 })

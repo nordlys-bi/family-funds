@@ -307,6 +307,12 @@ onBeforeUnmount(() => {
       @skip="onboarding.skipTour"
       @close="onboarding.close"
     />
+
+    <!-- Globaler Toast-Container (issue #58). Wird vom PrimeVue ToastService
+         befüllt, den useUndoableDelete (und spaeter andere Actions) nutzen.
+         position="top-right" haelt den Toast ausserhalb der Bottom-Nav
+         (Mobile) und der Sidebar (Desktop). -->
+    <Toast position="top-right" />
   </div>
 </template>
 

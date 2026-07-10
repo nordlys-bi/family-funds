@@ -22,17 +22,27 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                       ?limit=0 und ?limit=501 -> 400.
  *   - `?before=DATE`    Cursor — liefert nur Transaktionen mit
  *                       date < DATE. DATE ist ISO-8601 (YYYY-MM-DD oder voll).
+ *   - `?includeDeleted=1`  Power-User-Schalter: liefert auch soft-deletete
+ *                          Transaktionen (issue #58). Default: `0` (filter
+ *                          `deletedAt: null` wird auf alle Reads +
+ *                          Aggregate angewendet). Wird fuer "Restore"
+ *                          UI-Pattern gebraucht, falls man eine Vorschau
+ *                          der geloeschten Items braucht.
  *
  * Date-Bereich ist der gewählte Monat (issue-spec #9: spaetere `?from&to`-Range
  * ist eigene Iteration). Cursor ist ein date-only Cursor: das letzte Item des
  * Pages liefert `nextCursor` als ISO-Datum seines `date`-Felds. Bei mehreren
- * Transaktionen am gleichen Tag ist die Page etwas groesser als `limit` — das
- * ist akzeptabel, da Haushalte in der Praxis < 50 Buchungen/Tag haben.
+ * Transaktionen am gleichen Tag ist die Page etwas groesser als `limit` —
+ * das ist akzeptabel, da Haushalte in der Praxis < 50 Buchungen/Tag haben.
  *
  * Antwort erweitert um `hasMore: boolean` + `nextCursor: string | null`.
  * Aeltere Frontend-Aufrufer ohne Cursor bekommen das Default-Limit und
  * ignorieren die neuen Felder (additiv). `monthStart`/`monthEnd` im Response
  * spiegeln den effektiv gefilterten Bereich (fuer URL-Sync im Frontend).
+ *
+ * Soft-Delete (issue #58): Default-Reads filtern `deletedAt: null`. Der
+ * Power-User-Schalter `?includeDeleted=1` setzt den Filter bewusst aus,
+ * damit Admins/Audits auch soft-deletete Items sehen koennen.
  */
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -101,12 +111,18 @@ export default defineEventHandler(async (event) => {
     beforeDate = parsed
   }
 
+  // Soft-Delete-Filter (issue #58): Default schliesst soft-deletete Items
+  // aus. `?includeDeleted=1` ist der explizite Power-User-Schalter.
+  const includeDeleted = query.includeDeleted === '1'
+  const softDeleteFilter = includeDeleted ? {} : { deletedAt: null }
+
   // Rows werden fuer die Listen-Darstellung gebraucht. Summen kommen
   // separat via `_sum`-Aggregates (Backend-Review Finding #6).
   // Pagination: `take: limit + 1` fuer jeden der beiden Calls — das
   // zusaetzliche Element ermoeglicht `hasMore`-Detektion ohne Count-Query.
   const expenseFilter = {
     householdId,
+    ...softDeleteFilter,
     date: {
       gte: monthStart,
       lt: monthEnd,
@@ -115,6 +131,7 @@ export default defineEventHandler(async (event) => {
   }
   const incomeFilter = {
     householdId,
+    ...softDeleteFilter,
     date: {
       gte: monthStart,
       lt: monthEnd,
@@ -176,16 +193,17 @@ export default defineEventHandler(async (event) => {
       },
     }),
     prisma.incomeTransaction.aggregate({
-      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      where: { householdId, ...softDeleteFilter, date: { gte: monthStart, lt: monthEnd } },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
-      where: { householdId, date: { gte: monthStart, lt: monthEnd } },
+      where: { householdId, ...softDeleteFilter, date: { gte: monthStart, lt: monthEnd } },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
       where: {
         householdId,
+        ...softDeleteFilter,
         date: { gte: monthStart, lt: monthEnd },
         budgetId: null,
       },
