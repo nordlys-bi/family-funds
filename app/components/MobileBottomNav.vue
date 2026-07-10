@@ -1,9 +1,10 @@
 <!--
   MobileBottomNav — primäre Navigation auf Mobile und Tablet (< 1024px).
 
-  Vier primäre Items + "Mehr"-Aktion, die ein Bottom-Sheet mit den
-  sekundären Items öffnet (Mitglieder, Einstellungen, Recurring,
-  Logout). Active-State wird route-basiert über `route.path.startsWith`
+  Vier primäre Items (Dashboard, Buchungen, Budgets, Sparziele) +
+  "Mehr"-Aktion, die ein Bottom-Sheet mit den sekundären Items öffnet
+  (Haushalte, Mitglieder, Wiederkehrend, Einstellungen, Abmelden).
+  Active-State wird route-basiert über `route.path.startsWith`
   ermittelt — Items können ein eigenes `matchPrefix` haben, falls die
   exakte Route zu eng ist (z. B. /transactions soll auch fuer
   /transactions/expenses active sein).
@@ -16,6 +17,12 @@
   Verwendung:
   <MobileBottomNav />
   (Komponente erkennt ihre Sichtbarkeit selbst via @media im <style>.)
+
+  Issue #30: Primär-Stack ist jetzt auf den täglichen Job ausgerichtet
+  (Erfassen, Budgets, Sparziele). Admin/Setup-Themen (Haushalte,
+  Mitglieder, Einstellungen) wandern in das "Mehr"-Sheet. Logout
+  wandert aus dem Sheet-Footer in die Liste als destructive Item —
+  einheitliche Optik mit den anderen sekundären Aktionen.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -26,10 +33,11 @@ const router = useRouter()
 const { logout } = useAppAuth()
 
 // === Primäre Items ====================================================
-// 4 Slots + Mehr. "Transaktionen" linkt auf /transactions/expenses als
+// 4 Slots + Mehr. "Buchungen" linkt auf /transactions/expenses als
 // Default-Ziel, markiert aber den ganzen /transactions/-Bereich als
-// active. Wer "Buchung anlegen" will, nutzt den FAB Speed-Dial (extra
-// Komponente, nicht teil dieser Nav).
+// active. "Budgets" markiert /budgeting/* komplett (budgets, recurring,
+// savings sind alle "Budgetierung"). Wer eine "Buchung anlegen" will,
+// nutzt den FAB Speed-Dial (extra Komponente, nicht teil dieser Nav).
 type NavItem = {
   key: string
   label: string
@@ -42,13 +50,19 @@ type NavItem = {
 
 const primaryItems: NavItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: 'pi pi-home', to: '/' },
-  { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   {
     key: 'transactions',
     label: 'Buchungen',
     icon: 'pi pi-list',
     to: '/transactions/expenses',
     matchPrefix: '/transactions',
+  },
+  {
+    key: 'budgets',
+    label: 'Budgets',
+    icon: 'pi pi-wallet',
+    to: '/budgeting/budgets',
+    matchPrefix: '/budgeting',
   },
   { key: 'savings', label: 'Sparziele', icon: 'pi pi-star', to: '/budgeting/savings' },
 ]
@@ -60,6 +74,7 @@ type SecondaryItem = {
   icon: string
   to?: string
   onClick?: () => void | Promise<void>
+  /** Visuell als destruktive Aktion kennzeichnen (z. B. Logout). */
   destructive?: boolean
 }
 
@@ -73,13 +88,14 @@ const navigateAndClose = (to: string) => {
 }
 
 const secondaryItems: SecondaryItem[] = [
-  { key: 'budgets', label: 'Budgets', icon: 'pi pi-wallet', to: '/budgeting/budgets' },
-  { key: 'recurring', label: 'Recurring', icon: 'pi pi-sync', to: '/budgeting/recurring' },
+  { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   { key: 'members', label: 'Mitglieder', icon: 'pi pi-user-plus', to: '/households/members' },
+  { key: 'recurring', label: 'Wiederkehrend', icon: 'pi pi-sync', to: '/budgeting/recurring' },
   { key: 'settings', label: 'Einstellungen', icon: 'pi pi-cog', to: '/households/settings' },
+  { key: 'logout', label: 'Abmelden', icon: 'pi pi-power-off', onClick: handleLogout, destructive: true },
 ]
 
-const handleLogout = async () => {
+async function handleLogout() {
   closeMore()
   await logout()
 }
@@ -141,23 +157,17 @@ const isMoreActive = computed(() => {
         v-for="item in secondaryItems"
         :key="item.key"
         type="button"
-        :class="['more-list__item', { 'more-list__item--active': item.to && route.path.startsWith(item.to) }]"
+        :class="[
+          'more-list__item',
+          { 'more-list__item--active': item.to && route.path.startsWith(item.to) },
+          { 'more-list__item--destructive': item.destructive },
+        ]"
         @click="item.to ? navigateAndClose(item.to) : item.onClick?.()"
       >
         <i :class="item.icon" aria-hidden="true" />
         <span>{{ item.label }}</span>
       </button>
     </div>
-    <template #footer>
-      <Button
-        label="Abmelden"
-        icon="pi pi-power-off"
-        severity="secondary"
-        outlined
-        class="w-full"
-        @click="handleLogout"
-      />
-    </template>
   </BottomSheet>
 </template>
 
@@ -270,6 +280,23 @@ const isMoreActive = computed(() => {
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(59, 130, 246, 0.32);
   color: #93c5fd;
+}
+
+/* Destructive Aktionen (z. B. Abmelden): rot getönt, aber nicht
+   aufdringlich — die Optik soll klar machen "Vorsicht", nicht
+   "Panik-Button". Active-Hover verstärkt den Rotton. */
+.more-list__item--destructive {
+  color: #fca5a5;
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.more-list__item--destructive:hover {
+  background: rgba(248, 113, 113, 0.08);
+  color: #fecaca;
+}
+
+.more-list__item--destructive i {
+  color: #f87171;
 }
 
 .more-list__item i {

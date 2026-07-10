@@ -145,10 +145,16 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .fab-speed-dial {
-  /* Position: rechts unten, mit Safe-Area-Insets für iPhone-Notch / Home-Indicator */
+  /* Position: rechts unten, ABER oberhalb der Mobile-Bottom-Nav (issue #31).
+     Die Bottom-Nav belegt unten ca. 56px (min-height) + 20px Padding +
+     1px Border + safe-area-inset-bottom = ~5rem + safe-area. Wir setzen
+     den FAB auf 5.5rem + safe-area, das gibt ~11px Atemraum auf
+     Geraeten ohne Safe-Area und ~6px auf iPhones mit Home-Indicator.
+     Wenn die Bottom-Nav-Hoehe sich mal aendert, muss dieser Wert
+     nachjustiert werden — die zentrale Konstante waere eine CSS-Variable. */
   position: fixed;
   right: calc(1.25rem + env(safe-area-inset-right, 0px));
-  bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
   z-index: 1200;
 
   display: flex;
