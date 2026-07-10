@@ -22,11 +22,15 @@ defineProps<{
   htmlFor: string
   /** Volle Breite im Grid-Layout. */
   wide?: boolean
+  /** Visuell sekundäres Feld (issue #32): Label wird kleiner und dimmer,
+      um zu signalisieren, dass dieses Feld im Default-Flow nicht im
+      Fokus steht (z. B. Datums-Feld mit Default "heute"). */
+  subtle?: boolean
 }>()
 </script>
 
 <template>
-  <div class="form-field" :class="{ 'form-field--wide': wide }">
+  <div class="form-field" :class="{ 'form-field--wide': wide, 'form-field--subtle': subtle }">
     <label :for="htmlFor" class="form-field__label">{{ label }}</label>
     <slot />
   </div>
@@ -48,6 +52,17 @@ defineProps<{
   font-size: 0.84rem;
   font-weight: 700;
   color: #e2e8f0;
+}
+
+/* Subtle-Variante: Label schrumpft auf Helper-Hint-Groesse und wird
+   in den text-muted-Ton verschoben. Visuelle Hierarchie macht klar:
+   dieses Feld ist nicht der primaere Fokus des Dialogs. */
+.form-field--subtle .form-field__label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #94a3b8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 :deep(.p-inputtext),
