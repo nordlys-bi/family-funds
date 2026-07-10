@@ -19,7 +19,6 @@ import { useUndoableDelete } from '../useUndoableDelete'
 const fetchMock = vi.fn()
 const toastMock = {
   add: vi.fn(),
-  removeGroup: vi.fn(),
 }
 
 vi.mock('primevue/usetoast', () => ({
@@ -70,7 +69,6 @@ function makeHarness(opts: HarnessOptions = {}) {
 beforeEach(() => {
   fetchMock.mockReset()
   toastMock.add.mockReset()
-  toastMock.removeGroup.mockReset()
   vi.stubGlobal('$fetch', fetchMock)
   vi.useFakeTimers()
 })
@@ -132,16 +130,33 @@ describe('useUndoableDelete — deleteWithUndo', () => {
     expect(h.onRemoveLocal).not.toHaveBeenCalled()
   })
 
-  it('shows a success/info toast with the undo group tag', async () => {
+  it('shows an info toast with the kind label and undo hint', async () => {
     fetchMock.mockResolvedValue({ data: { kind: 'expense', deleted: true } })
     const h = makeHarness()
     await h.deleteWithUndo(makeItem())
 
     expect(toastMock.add).toHaveBeenCalledWith(
       expect.objectContaining({
-        group: `undo-${EXPENSE_ID}`,
+        severity: 'info',
+        summary: 'Ausgabe geloescht',
+        life: 5000,
       }),
     )
+  })
+
+  it('does NOT set a group on the toast message (PrimeVue 4 <Toast /> would silently drop it)', async () => {
+    // Hintergrund: PrimeVue 4's <Toast /> checkt `if (this.group ==
+    // message.group)` in `onAdd`. Wenn die Component keine group hat
+    // (group === undefined) und die Message eine group hat, wird die
+    // Message still verworfen. useUndoableDelete setzt deshalb KEIN
+    // group, sondern nutzt `life` fuer Auto-Hide.
+    fetchMock.mockResolvedValue({ data: { kind: 'expense', deleted: true } })
+    const h = makeHarness()
+    await h.deleteWithUndo(makeItem())
+
+    const call = toastMock.add.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(call).toBeDefined()
+    expect(call).not.toHaveProperty('group')
   })
 })
 
@@ -193,7 +208,7 @@ describe('useUndoableDelete — undo', () => {
     )
   })
 
-  it('removes the undo toast group after a successful restore', async () => {
+  it('shows a success toast after a successful restore', async () => {
     fetchMock
       .mockResolvedValueOnce({ data: { kind: 'expense', deleted: true } })
       .mockResolvedValueOnce({ data: { kind: 'expense', restored: true } })
@@ -201,7 +216,11 @@ describe('useUndoableDelete — undo', () => {
     await h.deleteWithUndo(makeItem())
     await h.undo(EXPENSE_ID)
 
-    expect(toastMock.removeGroup).toHaveBeenCalledWith(`undo-${EXPENSE_ID}`)
+    // Erwartet: zweiter toast.add-Aufruf (deleteWithUndo = info,
+    // undo success = success)
+    expect(toastMock.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ severity: 'success' }),
+    )
   })
 })
 
