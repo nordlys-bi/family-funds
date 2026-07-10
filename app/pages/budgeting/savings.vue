@@ -363,6 +363,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <Button
               icon="pi pi-plus-circle"
               severity="success"
+              outlined
               size="small"
               :aria-label="`In Sparziel ${goal.name} einzahlen`"
               @click="openBookingDialog(goal.id, 'deposit')"
