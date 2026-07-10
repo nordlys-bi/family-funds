@@ -73,6 +73,14 @@
   /* Touch */
   --touch-target-min: 2.75rem; /* 44pt — Apple HIG & Material Empfehlung */
 
+  /* Mobile Bottom-Nav: reservierter Platz am unteren Viewport-Rand.
+     Setzt sich zusammen aus der tatsaechlichen Nav-Hoehe (siehe
+     MobileBottomNav.vue) + Safe-Area-Inset + Atemraum fuer Floating-
+     Elemente (FAB Speed-Dial). FAB-`bottom`-Position referenziert
+     diesen Token — wenn die Nav-Hoehe sich mal aendert, nur hier
+     anpassen, nicht an mehreren Stellen. */
+  --mobile-nav-bottom-offset: 5.5rem;
+
   /* Form-Field-Sizing (uniform für InputText/Select/DatePicker/InputNumber)
      Werden von PrimeVue als Default für `padding: var(--p-form-field-padding-y) var(--p-form-field-padding-x)`
      referenziert. Ohne explizite Werte fallen Aura-Presets auf kleinere Defaults
