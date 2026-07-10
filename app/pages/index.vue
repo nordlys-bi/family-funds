@@ -170,6 +170,22 @@ watch(() => activeHousehold.value?.id, loadDashboard)
           <NuxtLink to="/transactions/expenses">
             <Button label="Ausgabe erfassen" icon="pi pi-plus" size="small" severity="primary" />
           </NuxtLink>
+          <!-- Issue #53: Sekundaere "Alle anzeigen"-Action, die auf die
+               volle Monatsliste der Ausgaben springt. Pattern-konsistent
+               mit dem Budget- und Sparziele-Panel, deren sekundaere
+               Action-Buttons ebenfalls `outlined` sind. Visuelle Hierarchie:
+               der primaere "Ausgabe erfassen" (filled, primary) bleibt
+               dominanter; "Alle anzeigen" daneben als Outline. -->
+          <NuxtLink to="/transactions/expenses">
+            <Button
+              label="Alle anzeigen"
+              icon="pi pi-list"
+              size="small"
+              severity="secondary"
+              outlined
+              aria-label="Alle Ausgaben anzeigen"
+            />
+          </NuxtLink>
         </template>
         <DashboardActivityList :activity="recentActivity" :format-money="formatMoney" />
       </ListPanel>
