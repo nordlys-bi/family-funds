@@ -28,6 +28,12 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                          Aggregate angewendet). Wird fuer "Restore"
  *                          UI-Pattern gebraucht, falls man eine Vorschau
  *                          der geloeschten Items braucht.
+ *   - `?unassigned=1`     Nur Ausgaben ohne Budget-Zuordnung (issue #52,
+ *                          Dashboard "Handlungsbedarf"-Link). Setzt
+ *                          `budgetId: null` auf dem Expense-Read, lässt
+ *                          Income + Summary-Aggregate unveraendert
+ *                          (expenseTotal === unassignedExpenseTotal wenn
+ *                          aktiv).
  *
  * Date-Bereich ist der gewählte Monat (issue-spec #9: spaetere `?from&to`-Range
  * ist eigene Iteration). Cursor ist ein date-only Cursor: das letzte Item des
@@ -116,6 +122,14 @@ export default defineEventHandler(async (event) => {
   const includeDeleted = query.includeDeleted === '1'
   const softDeleteFilter = includeDeleted ? {} : { deletedAt: null }
 
+  // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
+  // verlinkt auf ?unassigned=1. Setzt budgetId: null auf dem Expense-Read,
+  // lasst Income-Read unveraendert. Summary-Aggregates beziehen sich weiter
+  // auf den Monat (expenseTotal === unassignedExpenseTotal wenn aktiv),
+  // damit der Monats-Tag oben auf der Expenses-Page konsistent bleibt.
+  const unassignedOnly = query.unassigned === '1'
+  const unassignedFilter = unassignedOnly ? { budgetId: null } : {}
+
   // Rows werden fuer die Listen-Darstellung gebraucht. Summen kommen
   // separat via `_sum`-Aggregates (Backend-Review Finding #6).
   // Pagination: `take: limit + 1` fuer jeden der beiden Calls — das
@@ -123,6 +137,7 @@ export default defineEventHandler(async (event) => {
   const expenseFilter = {
     householdId,
     ...softDeleteFilter,
+    ...unassignedFilter,
     date: {
       gte: monthStart,
       lt: monthEnd,
