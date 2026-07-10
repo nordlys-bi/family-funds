@@ -1,8 +1,25 @@
 <!--
-  ConfirmDialog — Bestätigungsdialog als BottomSheet-Wrapper.
+  ConfirmSheet — Bestätigungsdialog als BottomSheet-Wrapper.
 
-  Verwendung:
-  <ConfirmDialog
+  Empfohlene Verwendung (issue #51, ab #51): gar nicht mehr direkt.
+  Stattdessen den Promise-basierten `useAskConfirm()`-Composable nutzen
+  und die globale <ConfirmSheetRoot />-Instance in app/app.vue
+  rendert den Sheet automatisch:
+
+      const confirm = useAskConfirm()
+      const ok = await confirm.ask({
+        title: 'Mitglied entfernen?',
+        message: '...',
+        tone: 'danger',
+        confirmLabel: 'Entfernen',
+      })
+      if (!ok) return
+      await $fetch(...)
+
+  Direkte Verwendung ist weiterhin möglich, wenn jemand explizite
+  Steuerung ohne useAskConfirm-Pattern braucht:
+
+  <ConfirmSheet
     v-model:visible="confirmOpen"
     title="Mitglied entfernen?"
     message="Anna darf dann nicht mehr auf den Haushalt zugreifen."
@@ -16,6 +33,11 @@
   - v-model:visible für open/close.
   - Esc, Tap auf Maske, Abbrechen-Button: schließt (emits cancel).
   - Bestätigen: emits confirm und schließt.
+
+  Naming: NICHT <ConfirmDialog> — PrimeVue 4 hat eine eigene
+  `ConfirmDialog`-Component, die bei falscher Resolution zu
+  `Cannot read properties of null (reading 'icon')` crashed
+  (siehe `nuxt-primevue-gotchas`-Memory-Topic).
 -->
 <script setup lang="ts">
 import { ref, watch } from 'vue'

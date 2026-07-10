@@ -35,6 +35,7 @@ type PlanningHousehold = {
 import { isFirstRun } from '~/utils/household-age'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const loading = ref(false)
@@ -169,14 +170,30 @@ async function savePlan(
 const saveIncomePlan = () => savePlan('incomePlan', incomeForm.value, incomeEditId.value, incomeLoading, closeIncomeDialog, 'Einnahmenplan')
 const saveFixedCostPlan = () => savePlan('fixedCostPlan', fixedCostForm.value, fixedCostEditId.value, fixedCostLoading, closeFixedCostDialog, 'Fixkostenplan')
 
-const deletePlanningItem = async (kind: 'incomePlan' | 'fixedCostPlan', id: string) => {
+const deletePlanningItem = async (
+  kind: 'incomePlan' | 'fixedCostPlan',
+  plan: { id: string; name: string },
+) => {
   if (!activeHouseholdId.value) return
-  actionLoadingKey.value = `${kind}:${id}`
+
+  // ConfirmSheet (issue #51): geplante Einnahmen / Fixkosten haben kein
+  // Undo (kein Soft-Delete wie Transaktionen). Confirm-Text nennt den
+  // Plan-Namen und die Konsequenz (zukuenftige Hochrechnung faellt weg).
+  const kindLabel = kind === 'incomePlan' ? 'Einnahmenplan' : 'Fixkostenplan'
+  const ok = await confirm.ask({
+    title: `${kindLabel} löschen?`,
+    message: `„${plan.name}" wird endgültig entfernt. Die monatliche Hochrechnung wird zurückgerechnet — vergangene Buchungen bleiben unberührt.`,
+    tone: 'danger',
+    confirmLabel: 'Endgültig löschen',
+  })
+  if (!ok) return
+
+  actionLoadingKey.value = `${kind}:${plan.id}`
   notice.value = null
   try {
     const endpoint = kind === 'incomePlan'
-      ? `/api/households/${activeHouseholdId.value}/income-plans/${id}`
-      : `/api/households/${activeHouseholdId.value}/fixed-cost-plans/${id}`
+      ? `/api/households/${activeHouseholdId.value}/income-plans/${plan.id}`
+      : `/api/households/${activeHouseholdId.value}/fixed-cost-plans/${plan.id}`
     await $fetch(endpoint, { method: 'DELETE' })
     await loadPlanning()
     notice.value = { severity: 'success', text: 'Eintrag wurde gelöscht.' }
@@ -273,7 +290,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               text
               aria-label="Einnahmenplan löschen"
               :loading="actionLoadingKey === `incomePlan:${plan.id}`"
-              @click="deletePlanningItem('incomePlan', plan.id)"
+              @click="deletePlanningItem('incomePlan', plan)"
             />
           </template>
         </ItemCard>
@@ -314,7 +331,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               text
               aria-label="Fixkostenplan löschen"
               :loading="actionLoadingKey === `fixedCostPlan:${plan.id}`"
-              @click="deletePlanningItem('fixedCostPlan', plan.id)"
+              @click="deletePlanningItem('fixedCostPlan', plan)"
             />
           </template>
         </ItemCard>
