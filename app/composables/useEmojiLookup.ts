@@ -29,6 +29,7 @@
  *   lookupEmoji('Urlaub 2026')     // '🏖️'
  *   lookupEmoji('xyz123')          // '💸'  (Default-Fallback)
  */
+import emojilib from 'emojilib'
 import { emojiDomainMap, DEFAULT_EMOJI } from '../utils/emojiDomainMap'
 
 /**
@@ -48,11 +49,10 @@ const SUBSTRING_MIN_LENGTH = 3
 let invertedEmojilib: Map<string, string> | null = null
 
 function buildInvertedEmojilib(): Map<string, string> {
-  // emojilib ist CommonJS (default-Export ist die Map). Im Nuxt/Vite-
-  // ESM-Kontext landet es unter `.default` ODER direkt am Root — beide
-  // Faelle absichern.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const lib = require('emojilib') as Record<string, string[] | undefined> | { default: Record<string, string[]> }
+  // emojilib ist CommonJS. Im Nuxt/Vite-ESM-Kontext landet der Inhalt
+  // unter `.default` (default-Import-Wrapping) ODER direkt am Modul-Root,
+  // je nach interop-Modus — beide Faelle absichern.
+  const lib = emojilib as unknown as Record<string, string[] | undefined> | { default: Record<string, string[]> }
 
   const emojiByKeyword: Record<string, string[]> = {}
   const raw = (lib as any).default ?? lib
