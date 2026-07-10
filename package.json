@@ -5,6 +5,7 @@
   "scripts": {
     "build": "nuxt build",
     "dev": "TMPDIR=/tmp nuxt dev",
+    "predev": "prisma migrate deploy && prisma generate",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
@@ -13,7 +14,9 @@
     "pretest:coverage": "node scripts/prisma-pretest.mjs",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "db:status": "prisma migrate status",
+    "db:migrate": "prisma migrate dev"
   },
   "dependencies": {
     "@clerk/nuxt": "^2.5.3",
