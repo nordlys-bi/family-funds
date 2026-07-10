@@ -83,6 +83,13 @@ export default defineEventHandler(async (event) => {
       where: {
         householdId,
         date: { gte: monthStart, lt: monthEnd },
+        // Soft-Delete (issue #58): nur aktive Buchungen aggregieren.
+        // Eine soft-deletete Buchung ist aus der UX-Sicht weg, das
+        // Budget muss zurueckgerechnet sein. Ohne den Filter wuerde
+        // die Buchung fuer 5 Sek (Undo-Fenster) oder permanent
+        // (deletedAt bleibt in der DB) weiterhin in die Auslastung
+        // einfliesen. Issue #65.
+        deletedAt: null,
       },
       select: { amount: true, date: true, budgetId: true },
     }),
