@@ -5,12 +5,10 @@
  * machen koennen", den expenses.vue und income.vue brauchen:
  *
  *  1. delete(item) — server-Call (DELETE), optimistic remove aus der
- *     lokalen Liste, Banner mit "Rueckgaengig"-Button einblenden.
+ *     lokalen Liste, Info-Toast mit "Rueckgaengig"-Hinweis.
  *  2. undo(item) — POST /restore, bei Erfolg Zeile wieder in die Liste
- *     einfuegen, Banner verschwindet.
- *  3. expireUndo(item) — 5-Sekunden-Timer abgelaufen, kein Hard-Delete
- *     (Variante A, soft-permanent). Eintrag verschwindet aus dem
- *     pending-State, Datensatz bleibt mit deletedAt in der DB.
+ *     einfuegen, Success-Toast.
+ *  3. dismiss(item) — Timer abrechen (z. B. Page-Leave), kein Server-Call.
  *
  * Optimistic mit Rollback: Wenn der DELETE-Call fehlschlaegt, wird
  * die Zeile wiederhergestellt + ein Fehler-Toast gezeigt. Beim RESTORE-
@@ -21,15 +19,23 @@
  * Item-Liste die Quelle der Wahrheit fuer den restore ist.
  *
  * Dependencies:
- *  - useToast (PrimeVue, registriert in app/plugins/primevue-toast.client.ts)
+ *  - useToast (PrimeVue, installiert via @primevue/nuxt-module)
  *  - $fetch (Nuxt)
- *  - useTransactionList (liefert restoreTransactionLocal + recomputeSummaryFromLocal
- *    fuer die Optimistic-Logik auf der Liste)
  *
  * Test-Strategie (useUndoableDelete.test.ts): useToast wirft ohne
  * `provide()`-Setup in Vitest, daher wird der Toast optional
- * aufgerufen (try/catch). Im Production-Pfad (mit Plugin) ist
- * PrimeVue-Toast immer verfuegbar.
+ * aufgerufen (try/catch). Im Test wird das `primevue/usetoast`-Modul
+ * per vi.mock ersetzt.
+ *
+ * WICHTIG: KEINE `group`-Property auf `toast.add(...)` setzen!
+ * PrimeVue 4's <Toast /> rendert eine Message nur, wenn die `group`-Prop
+ * der Component exakt mit der `group`-Prop der Message uebereinstimmt
+ * (siehe node_modules/primevue/toast/Toast.vue: `if (this.group ==
+ * message.group) this.add(message)`). Wenn die <Toast />-Component im
+ * Layout keine group hat (group === undefined) und die Message eine
+ * group hat, wird die Message still verworfen. Da wir nur eine globale
+ * <Toast />-Instanz im Layout haben und nicht pro Page filtern wollen,
+ * lassen wir group weg. Die `life`-Property steuert die Auto-Hide-Dauer.
  */
 
 import { ref, onBeforeUnmount } from 'vue'
@@ -96,7 +102,6 @@ const UNDO_WINDOW_DEFAULT = 5000
  */
 const noopToast = {
   add: () => {},
-  removeGroup: () => {},
 }
 
 export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDeleteKind }>(
@@ -107,22 +112,14 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
   // ist der ToastService nicht verfuegbar (Plugin ist `.client.ts`); im
   // Vitest-Setup ohne vi.mock ebenfalls. Der try/catch faengt beide Faelle
   // ab und nutzt einen noopToast-Fallback. Im Production-Browser laeuft
-  // das Plugin, useToast liefert den Service, alles gut.
-  const toast: { add: (msg: unknown) => void; removeGroup: (group: string) => void } = (() => {
+  // das PrimeVue-Nuxt-Plugin, useToast liefert den Service, alles gut.
+  const toast: { add: (msg: unknown) => void } = (() => {
     try {
-      return useToast() as unknown as { add: (msg: unknown) => void; removeGroup: (group: string) => void }
+      return useToast() as unknown as { add: (msg: unknown) => void }
     } catch {
       return noopToast
     }
   })()
-
-  // Debug: einmalig pro Composable-Instanz loggen, ob useToast gegriffen hat
-  // oder im noopToast-Fallback gelandet ist. Hilft beim Diagnostizieren, ob
-  // das Toast-Setup (app.vue Registrierung) korrekt laeuft. Kann nach dem
-  // Fix wieder raus.
-  if (import.meta.client) {
-    console.log('[useUndoableDelete] toast =', toast === noopToast ? 'noopToast' : 'real PrimeVue ToastService')
-  }
 
   const undoWindow = options.undoWindowMs ?? UNDO_WINDOW_DEFAULT
 
@@ -218,7 +215,6 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
       summary: `${labelForKind()} geloescht`,
       detail: `"${itemLabel(item)}" — Rueckgaengig moeglich fuer ${Math.round(undoWindow / 1000)} Sek.`,
       life: undoWindow,
-      group: `undo-${item.id}`,
     })
   }
 
@@ -249,23 +245,18 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
       options.onRestoreLocal(restoredItem)
       options.onAfterChange?.()
 
-      // Bestätigungs-Toast, separater Lifecycle vom Undo-Banner.
+      // Bestaetigungs-Toast, separater Lifecycle vom Undo-Banner.
+      // Der Info-Toast (deleteWithUndo) hat `life: undoWindow` und wird
+      // nach Ablauf automatisch versteckt. Ein expliziter removeGroup
+      // ist nicht noetig (und wuerde in PrimeVue 4 ohnehin nur greifen,
+      // wenn <Toast group="..."> mit der gleichen group gesetzt waere,
+      // siehe Hinweis im Modul-Header).
       toast.add({
         severity: 'success',
         summary: 'Wiederhergestellt',
         detail: `"${itemLabel(restoredItem)}" ist wieder in der Liste.`,
         life: 3000,
       })
-
-      // Falls der Undo-Banner noch sichtbar war (Toast-Lifecycle),
-      // entfernen wir die zugehoerige Toast-Gruppe explizit.
-      // PrimeVue 4 hat dafuer `toast.removeGroup()`.
-      // (Best effort — wenn der Banner schon weg ist, ist das ein no-op.)
-      try {
-        toast.removeGroup(`undo-${id}`)
-      } catch {
-        // no-op
-      }
 
       // response ist aktuell ungenutzt ausser fuer Fehler-Logging
       void response
@@ -286,15 +277,10 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
   /**
    * Wird aufgerufen, wenn der User den Undo-Banner schliesst oder die
    * Page verlaesst, ohne Undo zu klicken. Kein server-Call noetig
-   * (Variante A, soft-permanent).
+   * (Variante A, soft-permanent). Toast laeuft per `life` aus.
    */
   function dismiss(id: string): void {
     dismissPending(id)
-    try {
-      toast.removeGroup(`undo-${id}`)
-    } catch {
-      // no-op
-    }
   }
 
   // Cleanup: alle offenen Timer bei Page-Leave abbrechen, sonst

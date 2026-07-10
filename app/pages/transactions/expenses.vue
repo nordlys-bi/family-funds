@@ -250,8 +250,6 @@ const undoableDelete = useUndoableDelete<{ id: string; description?: string | nu
 
 const deleteTransaction = async (transaction: { id: string; description?: string | null; [key: string]: unknown }) => {
   if (!activeHouseholdId.value) return
-  // Debug-Log: bestaetigen, dass der Klick ueberhaupt hier landet.
-  console.log('[expenses] deleteTransaction called for', transaction.id)
   // Loading-State bleibt auf dem Trash-Button, bis der DELETE-Call
   // durch ist. Danach verschwindet der Button mit der Zeile (Optimistic
   // Remove), Loading-State ist irrelevant.
