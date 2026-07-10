@@ -41,6 +41,21 @@ const savingsLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
 const savingsDialogOpen = ref(false)
 
+// History-Dialog-State (issue #39). `historyDialogOpen` steuert den
+// `SavingsHistoryDialog`, `historyGoalId` ist die ID des Ziels, dessen
+// Bewegungen gezeigt werden. Der Dialog laedt seine Daten selbst
+// (ueber `useSavingsExecutionHistory`); wir geben ihm nur Goal + HH-ID.
+const historyDialogOpen = ref(false)
+const historyGoalId = ref<string | null>(null)
+const historyGoal = computed(() => {
+  if (!historyGoalId.value) return null
+  return currentHousehold.value?.savingsGoals.find((g) => g.id === historyGoalId.value) ?? null
+})
+const openHistoryDialog = (goalId: string) => {
+  historyGoalId.value = goalId
+  historyDialogOpen.value = true
+}
+
 const savingsForm = ref({
   name: '',
   targetAmount: null as number | null,
@@ -357,6 +372,16 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               @click="openBookingDialog(goal.id, 'withdraw')"
             />
             <span class="goal-card-actions-divider" aria-hidden="true" />
+            <!-- Issue #39: History-Button pro Card. -->
+            <Button
+              icon="pi pi-list"
+              severity="secondary"
+              outlined
+              size="small"
+              text
+              :aria-label="`Bewegungen fuer ${goal.name} anzeigen`"
+              @click="openHistoryDialog(goal.id)"
+            />
             <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
               icon="pi pi-trash"
@@ -447,6 +472,16 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         />
       </FormFieldRow>
     </FormDialog>
+
+    <!-- History-Dialog (issue #39). Zeigt die Bewegungen des
+         ausgewaehlten Sparziels. Laedt seine Daten selbst ueber
+         `useSavingsExecutionHistory`; reset beim Schliessen. -->
+    <SavingsHistoryDialog
+      v-model:visible="historyDialogOpen"
+      :goal="historyGoal"
+      :household-id="activeHouseholdId"
+      :currency="currencyCode"
+    />
   </ListPageShell>
 </template>
 
