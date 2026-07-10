@@ -52,14 +52,20 @@ function formatDateInput(value: Date) {
 // des Arrays bekommen und mit "findIndex is not a function" sterben.
 const tx = useTransactionList({
   initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
+  // Issue #52: Dashboard "ohne Budgetzuordnung"-Link setzt ?unassigned=1
+  // in der URL. Die Page liest das hier und übergibt es als initial-Filter
+  // an die Composable, damit der Deep-Link ohne Roundtrip greift.
+  initialUnassignedOnly: route.query.unassigned === '1',
 })
 const month = tx.month
+const unassignedOnly = tx.unassignedOnly
 const monthOptions = tx.monthOptions
 const monthLabel = tx.monthLabel
 const summary = tx.summary
 const txLoading = tx.loading
 const txError = tx.error
 const setMonth = tx.setMonth
+const setUnassignedOnly = tx.setUnassignedOnly
 const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 const updateTransactionLocal = tx.updateTransactionLocal
@@ -101,10 +107,46 @@ async function onMonthChange(newMonth: string) {
   // URL updaten (replace, kein History-Eintrag pro Monats-Klick).
   // query.month == aktueller Monat → Query loeschen, damit die Default-URL
   // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
+  // Issue #52: aktiven unassigned-Filter in der Query erhalten, damit der
+  // Deep-Link ueber Browser-Back / -Forward bestehen bleibt.
   const currentMonth = new Date().toISOString().slice(0, 7)
-  const query = newMonth === currentMonth ? {} : { month: newMonth }
+  const query: Record<string, string> = {}
+  if (newMonth !== currentMonth) query.month = newMonth
+  if (unassignedOnly.value) query.unassigned = '1'
   await router.replace({ query })
 }
+
+// Issue #52: Unassigned-Filter togglen. Schreibt in den URL-Query und
+// triggert ein Reload, damit der Server mit dem neuen ?unassigned=1-
+// Param die gefilterte Liste liefert. URL-Param wird zur einzigen
+// Source-of-Truth, damit Browser-Back / -Forward konsistent funktioniert.
+async function toggleUnassignedFilter() {
+  const next = !unassignedOnly.value
+  setUnassignedOnly(next)
+  await loadTransactions(activeHouseholdId.value)
+  // Query aufbauen — month nur, wenn nicht Default. unassigned nur,
+  // wenn aktiv. So bleibt die URL sauber (kein redundantes ?unassigned=0).
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const query: Record<string, string> = {}
+  if (month.value !== currentMonth) query.month = month.value
+  if (next) query.unassigned = '1'
+  await router.replace({ query })
+}
+
+// Issue #52: reaktive Sync, wenn der User per Browser-Back / -Forward
+// die URL aendert (z. B. von /transactions/expenses?unassigned=1 zurueck
+// auf /transactions/expenses ohne Filter). Ohne diesen Watch wuerde die
+// Page den Filter-State behalten, obwohl die URL ihn nicht mehr traegt.
+watch(
+  () => route.query.unassigned,
+  async (newValue) => {
+    const shouldBeUnassigned = newValue === '1'
+    if (shouldBeUnassigned !== unassignedOnly.value) {
+      setUnassignedOnly(shouldBeUnassigned)
+      await loadTransactions(activeHouseholdId.value)
+    }
+  },
+)
 
 // --- Daten laden ---
 async function loadCurrentHousehold() {
@@ -372,6 +414,19 @@ watch(activeHouseholdId, async () => { await loadAll() })
           @update:model-value="onMonthChange"
         />
       </div>
+      <!-- Issue #52: Toggle-Button fuer den ?unassigned=1-Filter.
+           Severity wechselt zwischen secondary (inaktiv) und warn (aktiv),
+           damit der User auf einen Blick sieht, dass gefiltert wird. -->
+      <Button
+        :label="unassignedOnly ? 'Alle anzeigen' : 'Nur ohne Budget'"
+        :icon="unassignedOnly ? 'pi pi-times' : 'pi pi-filter'"
+        :severity="unassignedOnly ? 'warn' : 'secondary'"
+        :outlined="!unassignedOnly"
+        size="small"
+        :aria-pressed="unassignedOnly"
+        aria-label="Nach Buchungen ohne Budgetzuordnung filtern"
+        @click="toggleUnassignedFilter"
+      />
       <Button label="Ausgabe anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
     </template>
 
@@ -393,6 +448,18 @@ watch(activeHouseholdId, async () => { await loadAll() })
       headline="Noch keine Ausgaben"
       :description="`Lege deine erste Ausgabe fuer ${monthLabel} an, um Auswertungen zu sehen.`"
       :cta="{ label: 'Ausgabe anlegen', onClick: openCreateTransactionDialog, severity: 'primary' }"
+    />
+    <!-- Issue #52: Empty-State fuer den unassigned-Filter. Wenn aktiv
+         und keine Treffer, ist die Aussage "kein Eintrag ohne Budget"
+         informativer als das generische "Keine Ausgaben in <Monat>". -->
+    <EmptyState
+      v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0 && unassignedOnly"
+      variant="no-data"
+      icon="pi pi-check-circle"
+      icon-tone="success"
+      :headline="`Alle Ausgaben in ${monthLabel} haben ein Budget`"
+      :description="`In ${monthLabel} ist keine Ausgabe ohne Budgetzuordnung offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
+      :cta="{ label: 'Alle Ausgaben anzeigen', onClick: toggleUnassignedFilter, severity: 'secondary' }"
     />
     <EmptyState
       v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0"

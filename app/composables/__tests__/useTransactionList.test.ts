@@ -179,3 +179,75 @@ describe('useTransactionList — transactionsByKind()', () => {
     expect(list.transactionsByKind('income')[0].id).toBe('i-1')
   })
 })
+
+describe('useTransactionList — unassignedOnly filter (issue #52)', () => {
+  it('defaults unassignedOnly to false', () => {
+    const list = useTransactionList()
+    expect(list.unassignedOnly.value).toBe(false)
+  })
+
+  it('respects an explicit initialUnassignedOnly', () => {
+    const list = useTransactionList({ initialUnassignedOnly: true })
+    expect(list.unassignedOnly.value).toBe(true)
+  })
+
+  it('coerces non-boolean initialUnassignedOnly to false', () => {
+    // Edge case: route.query.unassigned === '1' waere ein String, nicht
+    // ein Boolean. Page-Code muss '1' selbst mappen — Composable
+    // erwartet explizit boolean und coerced sicherheitshalber.
+    const list = useTransactionList({ initialUnassignedOnly: '1' as unknown as boolean })
+    expect(list.unassignedOnly.value).toBe(true)
+  })
+
+  it('does not add unassigned param to fetch when unassignedOnly is false', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialMonth: '2026-05' })
+    await list.load('hh-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/households/hh-1/transactions',
+      expect.objectContaining({ params: { month: '2026-05' } }),
+    )
+    const call = fetchMock.mock.calls[0][1] as { params: Record<string, string> }
+    expect(call.params.unassigned).toBeUndefined()
+  })
+
+  it('adds unassigned=1 to fetch when unassignedOnly is true', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialMonth: '2026-05', initialUnassignedOnly: true })
+    await list.load('hh-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/households/hh-1/transactions',
+      expect.objectContaining({ params: { month: '2026-05', unassigned: '1' } }),
+    )
+  })
+
+  it('setUnassignedOnly updates the flag and a subsequent load sends the new param', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialMonth: '2026-05' })
+    // Initial: kein unassigned
+    await list.load('hh-1')
+    expect(list.unassignedOnly.value).toBe(false)
+
+    // Aktivieren, neu laden
+    list.setUnassignedOnly(true)
+    expect(list.unassignedOnly.value).toBe(true)
+    await list.load('hh-1')
+    const secondCall = fetchMock.mock.calls[1][1] as { params: Record<string, string> }
+    expect(secondCall.params.unassigned).toBe('1')
+
+    // Deaktivieren, neu laden
+    list.setUnassignedOnly(false)
+    expect(list.unassignedOnly.value).toBe(false)
+    await list.load('hh-1')
+    const thirdCall = fetchMock.mock.calls[2][1] as { params: Record<string, string> }
+    expect(thirdCall.params.unassigned).toBeUndefined()
+  })
+
+  it('coerces non-boolean values in setUnassignedOnly', () => {
+    const list = useTransactionList()
+    list.setUnassignedOnly('true' as unknown as boolean)
+    expect(list.unassignedOnly.value).toBe(true)
+    list.setUnassignedOnly(0 as unknown as boolean)
+    expect(list.unassignedOnly.value).toBe(false)
+  })
+})
