@@ -111,6 +111,15 @@ const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.v
 
 const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
 
+// === FAB Quick-Add (issue #29) ====================================
+// Pattern identisch zu expenses.vue: ?new=1 öffnet den Dialog direkt
+// beim Mount, URL wird danach aufgeraeumt. consumed-Guard verhindert
+// Doppel-Oeffnen bei Re-Render oder Browser-Back.
+useQueryTrigger({
+  queryKey: 'new',
+  onTrigger: openCreateTransactionDialog,
+})
+
 // === Inline-Edit (issue #15) ==========================================
 // Single-Edit-Pattern: editingTransactionId haelt die ID der Zeile im
 // Edit-Modus. Setzen einer neuen ID wechselt den Fokus automatisch.
