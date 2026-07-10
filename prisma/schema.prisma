@@ -156,6 +156,12 @@ model ExpenseTransaction {
   amount       Int               // Cent value
   description  String?
   date         DateTime
+  // Soft-Delete (issue #58): DELETE setzt `deletedAt = now()`, Queries
+  // filtern `deletedAt: null`. Audit-Trail bleibt in der DB erhalten,
+  // eine "Wiederherstellung" via POST /restore setzt den Wert zurueck.
+  // Variante A (soft-permanent) gewaehlt — kein Auto-Hard-Delete nach
+  // Timeout, da DB-Groesse bei privater App irrelevant ist.
+  deletedAt    DateTime?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -170,6 +176,14 @@ model ExpenseTransaction {
   // Sort, skaliert linear mit Household-Volumen.
   @@index([householdId, date(sort: Desc)])
   @@index([budgetId, date(sort: Desc)])
+  // Soft-Delete-Index: nach Soft-Delete wandert die ueberwiegende Mehrheit
+  // der Queries in `where: { householdId, deletedAt: null, ... }`. Mit dem
+  // existierenden `(householdId, date DESC)`-Index macht Postgres
+  // Bitmap-Index-Scan + Post-Filter auf deletedAt. Der zusaetzliche
+  // `(householdId, deletedAt)`-Index ist explizit dafuer gebaut, damit
+  // der Post-Filter billig wird — wichtig fuer Aggregate-Queries, die
+  // pro Monat ueber alle Transaktionen summieren.
+  @@index([householdId, deletedAt])
 }
 
 model IncomeTransaction {
@@ -179,6 +193,8 @@ model IncomeTransaction {
   amount       Int               // Cent value
   description  String?
   date         DateTime
+  // Soft-Delete (issue #58): siehe ExpenseTransaction. Gleiche Semantik.
+  deletedAt    DateTime?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
@@ -186,6 +202,8 @@ model IncomeTransaction {
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([householdId, date(sort: Desc)])
+  // Soft-Delete-Index: siehe ExpenseTransaction.
+  @@index([householdId, deletedAt])
 }
 
 model SavingsGoal {
