@@ -65,6 +65,28 @@ html.my-app-dark {
   --p-mask-background: var(--color-bg-backdrop);
   --p-mask-color: var(--color-text-primary);
 
+  /* Button: Text- und Outlined-Varianten. Aura-Light-Defaults (z. B.
+     {green.500} = #22c55e für success) sind im Dark-Mode zu dunkel und
+     verschwinden auf dem dunklen Background. Wir mappen auf die helleren
+     Accent-Text-Farben aus tokens.css. Ohne diese Overrides rendert
+     <Button severity="success" outlined text> ein Icon in text-muted,
+     das auf dem transparenten Button quasi unsichtbar ist. */
+  --p-button-text-primary-color: var(--color-accent-primary-text);
+  --p-button-text-secondary-color: var(--color-text-secondary);
+  --p-button-text-success-color: var(--color-accent-success-text);
+  --p-button-text-warn-color: var(--color-accent-warning-text);
+  --p-button-text-danger-color: var(--color-accent-danger-text);
+  --p-button-text-contrast-color: var(--color-text-primary);
+  --p-button-text-plain-color: var(--color-text-secondary);
+
+  --p-button-outlined-primary-color: var(--color-accent-primary-text);
+  --p-button-outlined-secondary-color: var(--color-text-secondary);
+  --p-button-outlined-success-color: var(--color-accent-success-text);
+  --p-button-outlined-warn-color: var(--color-accent-warning-text);
+  --p-button-outlined-danger-color: var(--color-accent-danger-text);
+  --p-button-outlined-contrast-color: var(--color-text-primary);
+  --p-button-outlined-plain-color: var(--color-text-secondary);
+
   /* ItemCard / ListPanel / DataTable — gemeinsame Design-Tokens für die
      kompakten List-Views. Werden in den jeweiligen Komponenten-Styles
      referenziert, sind aber hier zentral, damit Look-and-Feel-Anpassungen
@@ -227,25 +249,51 @@ html.my-app-dark .p-button {
   min-height: var(--touch-target-min);
 }
 
+/* Outlined Buttons: Severity-Farbe dauerhaft zeigen.
+ * PrimeVue 4 + Aura rendert outlined-Buttons im Default-Zustand mit
+ * neutralem Border + Icon in surface/text-Color, Severity-Color erst
+ * beim Hover. Für Haupt-Aktionen (z. B. Sparziel-Booking mit
+ * severity=success/danger outlined) ist das suboptimal — die Farbe
+ * kommuniziert die Aktion und sollte immer sichtbar sein.
+ * Specificity 0,3,0 (3 Klassen) gewinnt gegen Aura-Default. */
+html.my-app-dark .p-button.p-button-outlined.p-button-success,
+html.my-app-dark .p-button.p-button-outlined.p-button-success .p-button-icon {
+  color: var(--color-accent-success);
+  border-color: var(--color-accent-success);
+}
+html.my-app-dark .p-button.p-button-outlined.p-button-danger,
+html.my-app-dark .p-button.p-button-outlined.p-button-danger .p-button-icon {
+  color: var(--color-accent-danger);
+  border-color: var(--color-accent-danger);
+}
+html.my-app-dark .p-button.p-button-outlined.p-button-primary,
+html.my-app-dark .p-button.p-button-outlined.p-button-primary .p-button-icon {
+  color: var(--color-accent-primary);
+  border-color: var(--color-accent-primary);
+}
+
 /* ============================================================================
  * PrimeVue 4.5.5 + Aura-Theme Bug: Button-Icon-Glyph unsichtbar bei `label`
  *
  * Aura-Theme rendert <span class="p-button-icon pi pi-X" data-pc-section="icon">
- * mit `display: block` (statt inline-flex) und `color: text-muted`
- * (statt currentColor). Sobald der Button ein `label` hat, rutscht das
+ * mit `display: block` (statt inline-flex) und einer separaten text-muted
+ * color (statt currentColor). Sobald der Button ein `label` hat, rutscht das
  * Icon auf eine eigene Zeile unter den Text und verschwindet visuell
  * im geringen Kontrast. Icon-only-Buttons (Edit/Trash/History) sind
  * nicht betroffen, weil der data-p-Pfad dort isoliert ist.
  *
- * Specificity 0,3,0 (2 Klassen + 1 Attribut) gewinnt zuverlässig gegen
- * PrimeVue/Aura-Default 0,2,0 (.p-button .p-button-icon). Ohne den
- * Attribut-Selector wäre es ein Tie und Layer-Reihenfolge entscheidet.
+ * Specificity 0,3,0 (2 Klassen + 1 Attribut) gewinnt für display/flex
+ * zuverlässig gegen Aura-Default 0,2,0 (.p-button .p-button-icon).
+ * Für `color` braucht es `!important` — Aura hat da eine Rule mit
+ * gleicher/höherer Specificity, die text-muted erzwingt. Semantisch
+ * korrekt: Icon soll die Severity-Farbe vom Button erben (success=grün,
+ * danger=rot, primary=accent), nicht den generischen text-muted-Ton.
  * ============================================================================ */
 .p-button .p-button-icon[data-pc-section="icon"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: currentColor;
+  color: inherit !important;
 }
 
 html.my-app-dark .p-inputtext,
