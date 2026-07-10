@@ -392,7 +392,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               severity="danger"
               text
               size="small"
-              text
               aria-label="Sparziel löschen"
               :loading="actionLoadingKey === `savingsGoal:${goal.id}`"
               @click="deletePlanningItem(goal.id)"
