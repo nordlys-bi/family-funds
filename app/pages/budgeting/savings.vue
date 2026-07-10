@@ -362,7 +362,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
                  Edit/Delete bleiben daneben, leicht abgegraut. -->
             <Button
               icon="pi pi-arrow-down"
-              :label="`Einzahlen`"
               severity="success"
               size="small"
               :aria-label="`In Sparziel ${goal.name} einzahlen`"
@@ -370,7 +369,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             />
             <Button
               icon="pi pi-arrow-up"
-              :label="`Entnehmen`"
               severity="danger"
               outlined
               size="small"
