@@ -122,7 +122,11 @@ const overBudgetCount = computed(
           <i class="pi pi-question-circle" />
         </span>
         <div class="action-required__body">
-          <NuxtLink to="/transactions/expenses" class="action-required__link">
+          <!-- Issue #52: Deep-Link auf die Expenses-Page mit aktivem
+               unassigned-Filter. Die Page wertet ?unassigned=1 aus und
+               zeigt nur Buchungen ohne BudgetId, ohne dass der User
+               selbst nach "Sonstiges" filtern muss. -->
+          <NuxtLink to="/transactions/expenses?unassigned=1" class="action-required__link">
             <strong>{{ formatMoney(props.unassignedExpenses) }} ohne Budgetzuordnung diesen Monat</strong>
             <span class="action-required__detail">
               Ausgaben, die keinem Budget zugewiesen sind — entweder zuordnen oder als „Sonstiges" akzeptieren.
