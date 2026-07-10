@@ -130,33 +130,41 @@ describe('useUndoableDelete — deleteWithUndo', () => {
     expect(h.onRemoveLocal).not.toHaveBeenCalled()
   })
 
-  it('shows an info toast with the kind label and undo hint', async () => {
+  it('exposes the deleted item in the pending map (drives the <UndoSnackbar /> UI)', async () => {
     fetchMock.mockResolvedValue({ data: { kind: 'expense', deleted: true } })
     const h = makeHarness()
-    await h.deleteWithUndo(makeItem())
+    const item = makeItem({ description: 'Rewe Einkauf' })
 
-    expect(toastMock.add).toHaveBeenCalledWith(
-      expect.objectContaining({
-        severity: 'info',
-        summary: 'Ausgabe geloescht',
-        life: 5000,
-      }),
-    )
+    await h.deleteWithUndo(item)
+
+    // Page beobachtet `pending` und rendert daraus den Undo-Banner.
+    // Composable pusht KEINEN Info-Toast mehr (Toast wuerde nur Error- und
+    // Success-Faelle zeigen); die "geloescht"-Bestaetigung kommt vom Banner.
+    expect(toastMock.add).not.toHaveBeenCalled()
+    expect(h.pending.value.size).toBe(1)
+    const entry = h.pending.value.get(EXPENSE_ID)
+    // Vue's ref wickelt das item in reactive() -> Proxy, daher kein
+    // Referenz-Equal. Strukturell muss es passen, inkl. description.
+    expect(entry?.item).toEqual(item)
+    expect(entry?.kind).toBe('expense')
   })
 
-  it('does NOT set a group on the toast message (PrimeVue 4 <Toast /> would silently drop it)', async () => {
-    // Hintergrund: PrimeVue 4's <Toast /> checkt `if (this.group ==
-    // message.group)` in `onAdd`. Wenn die Component keine group hat
-    // (group === undefined) und die Message eine group hat, wird die
-    // Message still verworfen. useUndoableDelete setzt deshalb KEIN
-    // group, sondern nutzt `life` fuer Auto-Hide.
-    fetchMock.mockResolvedValue({ data: { kind: 'expense', deleted: true } })
-    const h = makeHarness()
+  it('clears the pending entry on undo() and removes it on undo window expiry', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ data: { kind: 'expense', deleted: true } })
+      .mockResolvedValueOnce({ data: { kind: 'expense', restored: true } })
+    const h = makeHarness({ undoWindowMs: 1000 })
     await h.deleteWithUndo(makeItem())
+    expect(h.pending.value.size).toBe(1)
 
-    const call = toastMock.add.mock.calls[0]?.[0] as Record<string, unknown>
-    expect(call).toBeDefined()
-    expect(call).not.toHaveProperty('group')
+    await h.undo(EXPENSE_ID)
+    expect(h.pending.value.size).toBe(0)
+
+    // Re-queue + auto-dismiss nach Ablauf des Fensters
+    await h.deleteWithUndo(makeItem())
+    expect(h.pending.value.size).toBe(1)
+    vi.advanceTimersByTime(1000)
+    expect(h.pending.value.size).toBe(0)
   })
 })
 
@@ -216,8 +224,11 @@ describe('useUndoableDelete — undo', () => {
     await h.deleteWithUndo(makeItem())
     await h.undo(EXPENSE_ID)
 
-    // Erwartet: zweiter toast.add-Aufruf (deleteWithUndo = info,
-    // undo success = success)
+    // Erwartet: einziger toast.add-Aufruf ist der Success-Toast vom
+    // undo(). deleteWithUndo ruft KEINEN info-Toast mehr auf (die
+    // Bestaetigung kommt vom <UndoSnackbar />-Template, das aus
+    // `pending` rendert).
+    expect(toastMock.add).toHaveBeenCalledTimes(1)
     expect(toastMock.add).toHaveBeenLastCalledWith(
       expect.objectContaining({ severity: 'success' }),
     )

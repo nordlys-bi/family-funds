@@ -248,6 +248,68 @@ const undoableDelete = useUndoableDelete<{ id: string; description?: string | nu
   onAfterChange: () => recomputeSummaryFromLocal(),
 })
 
+// pending + undo + dismiss aus dem Composable ziehen, damit das
+// <UndoSnackbar />-Template sie nutzen kann. pending ist eine
+// Map<id, PendingUndo>, latestPending ist der einzige (oder neueste)
+// Eintrag. Bei mehreren parallelen Deletes wuerden wir hier den
+// neuesten zeigen — fuer jetzt reicht der erste.
+const undoPending = undoableDelete.pending
+const undoLatest = computed(() => {
+  const entries = Array.from(undoPending.value.values())
+  return entries[entries.length - 1] ?? null
+})
+
+// Countdown-Anzeige: tickt jede Sekunde, damit der User sieht, wieviel
+// Zeit er noch hat. Wird im Template an <UndoSnackbar :remaining-seconds>
+// gebunden. Im Test (Vitest ohne echte Timer) ist das ein no-op, weil
+// der Tick nur bei import.meta.client laeuft.
+const undoRemaining = ref(0)
+let undoTickInterval: ReturnType<typeof setInterval> | null = null
+
+function startUndoTick() {
+  if (!import.meta.client) return
+  if (undoTickInterval) return
+  undoRemaining.value = 5
+  undoTickInterval = setInterval(() => {
+    if (undoRemaining.value > 0) undoRemaining.value -= 1
+  }, 1000)
+}
+
+function stopUndoTick() {
+  if (undoTickInterval) {
+    clearInterval(undoTickInterval)
+    undoTickInterval = null
+  }
+  undoRemaining.value = 0
+}
+
+// Wenn ein neuer pending-Eintrag dazukommt, Tick starten. Wenn der
+// letzte pending-Eintrag verschwindet (Undo oder Auto-Dismiss), Tick
+// stoppen.
+watch(
+  () => undoPending.value.size,
+  (size, prevSize) => {
+    if (size > 0 && prevSize === 0) startUndoTick()
+    if (size === 0) stopUndoTick()
+  },
+)
+
+onBeforeUnmount(() => {
+  if (import.meta.client) {
+    document.removeEventListener('keydown', onEscapeKey)
+  }
+  stopUndoTick()
+})
+
+const undoItem = computed(() => {
+  const entry = undoLatest.value
+  if (!entry) return null
+  return {
+    id: entry.item.id,
+    description: (entry.item as { description?: string | null }).description ?? null,
+  }
+})
+
 const deleteTransaction = async (transaction: { id: string; description?: string | null; [key: string]: unknown }) => {
   if (!activeHouseholdId.value) return
   // Loading-State bleibt auf dem Trash-Button, bis der DELETE-Call
@@ -281,11 +343,6 @@ onMounted(async () => {
   }
   await fetchHouseholds()
   await loadAll()
-})
-onBeforeUnmount(() => {
-  if (import.meta.client) {
-    document.removeEventListener('keydown', onEscapeKey)
-  }
 })
 watch(activeHouseholdId, async () => { await loadAll() })
 </script>
@@ -533,6 +590,19 @@ watch(activeHouseholdId, async () => { await loadAll() })
         <small class="form-field-helper">Voreinstellung: heute. Nur bei Bedarf ändern.</small>
       </FormFieldRow>
     </FormDialog>
+
+    <!-- Undo-Snackbar (issue #58): erscheint nach Soft-Delete am unteren
+         Bildschirmrand, bietet "Rueckgaengig"-Button. Verschwindet nach
+         5 Sek. oder bei Undo / manuellem Dismiss. -->
+    <UndoSnackbar
+      v-if="undoItem"
+      :item-id="undoItem.id"
+      kind-label="Ausgabe"
+      :item-description="undoItem.description"
+      :remaining-seconds="undoRemaining"
+      @undo="undoableDelete.undo"
+      @dismiss="undoableDelete.dismiss"
+    />
   </ListPageShell>
 </template>
 
