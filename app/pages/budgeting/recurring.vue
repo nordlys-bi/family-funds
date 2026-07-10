@@ -35,7 +35,7 @@ type PlanningHousehold = {
 import { isFirstRun } from '~/utils/household-age'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
-const confirm = useConfirm()
+const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const loading = ref(false)

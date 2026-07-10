@@ -1,5 +1,5 @@
 /*
- * useConfirm — Promise-basierter Confirm-Dialog (issue #51).
+ * useAskConfirm — Promise-basierter Confirm-Dialog (issue #51).
  *
  * Bisher hatte jede Page ihren eigenen pendingConfirm-Ref +
  * askConfirm-Funktion (siehe z.B. `app/pages/households/members.vue`
@@ -7,7 +7,7 @@
  * EINE globale Instanz des Dialogs (gerendert von
  * <ConfirmDialogRoot /> in `app/app.vue`), und jede Page kann mit
  *
- *     const confirm = useConfirm()
+ *     const confirm = useAskConfirm()
  *     const ok = await confirm.ask({
  *       title: 'Budget l\u00f6schen?',
  *       message: '\u201eLebensmittel\u201c wird entfernt. Bereits gebuchte Ausgaben
@@ -25,8 +25,15 @@
  * \u00fcberlebt Page-Wechsel (z. B. wenn der User w\u00e4hrend eines offenen
  * Dialogs woanders hin navigiert, schlie\u00dft sich der Dialog).
  *
- * Tests: `useConfirm.test.ts`. Mocking in Page-Tests via
- * `vi.mock('~/composables/useConfirm', ...)` — nicht zwingend, weil
+ * Naming: NICHT `useConfirm` — PrimeVue hat ein eigenes useConfirm
+ * (ConfirmationService-Pattern, braucht `ConfirmationService` als
+ * Provide), und der Name-Kollision fuehrt zu einem harten 500-Crash
+ * beim App-Mount, weil PrimeVue's useConfirm ohne Provide wirft.
+ * `useAskConfirm` ist eindeutig und beschreibt das Pattern: "Ask the
+ * user for confirmation, then do the thing".
+ *
+ * Tests: `useAskConfirm.test.ts`. Mocking in Page-Tests via
+ * `vi.mock('~/composables/useAskConfirm', ...)` — nicht zwingend, weil
  * `ask()` ohne pendingConfirm.resolve einfach h\u00e4ngt (wir testen die
  * Composables direkt).
  */
@@ -51,9 +58,9 @@ type PendingConfirm = {
   resolve: (ok: boolean) => void
 }
 
-export function useConfirm() {
+export function useAskConfirm() {
   // Globaler Pending-State. Null = kein Dialog offen. Wir teilen den
-  // State zwischen allen useConfirm()-Calls in der App via useState.
+  // State zwischen allen useAskConfirm()-Calls in der App via useState.
   const pending = useState<PendingConfirm | null>('confirm:pending', () => null)
 
   /**

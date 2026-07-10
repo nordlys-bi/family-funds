@@ -40,7 +40,7 @@ onBeforeMount(() => {
       <NuxtPage />
     </NuxtLayout>
 
-    <!-- Globaler Confirm-Dialog-Mount-Point (issue #51). useConfirm
+    <!-- Globaler Confirm-Dialog-Mount-Point (issue #51). useAskConfirm
          haelt den State, ConfirmDialogRoot hoert darauf und rendert
          den Dialog nur, wenn ein Request pending ist. -->
     <ConfirmDialogRoot />
