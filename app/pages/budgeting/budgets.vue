@@ -49,7 +49,7 @@ type PlanningHousehold = {
 }
 
 import { isFirstRun } from '~/utils/household-age'
-import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel } from '~/utils/month-filter'
+import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel, parseMonthRange } from '~/utils/month-filter'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
 const confirm = useAskConfirm()
@@ -112,6 +112,35 @@ const budgetEditId = ref<string | null>(null)
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
+
+// === Month-gefilterte Budget-Liste (issue #67) =========================
+// /api/households/current liefert ALLE Budgets eines Haushalts (monats-
+// unabhaengig, weil Namen/Versionen/Mengen selbst keinen Monats-Bezug
+// haben). Beim Blaettern im Month-Spinner sollen aber nur die Budgets
+// angezeigt werden, die in dem ausgewaehlten Monat bereits gaeltig
+// waren — sonst sieht der User ein Budget mit "gueltig ab 2026-08" in
+// der Juli-Liste, obwohl es in Juli noch keine Auslastung hatte.
+//
+// `versions[0]` ist per Prisma-Query (server/api/households/current.get.ts
+// Zeile 95) bereits nach `validFrom: 'desc'` sortiert, also die neueste
+// Version. Ein Budget gilt ab dem `validFrom` seiner neuesten Version
+// (aeltere Versionen wurden durch Updates ersetzt und sind nur fuer die
+// Historienansicht interessant). Filter: neueste Version.validFrom <=
+// Monatsende (= Anfang des naechsten Monats, exklusiv).
+const monthEnd = computed<Date | null>(() => {
+  const range = parseMonthRange(month.value)
+  return range ? range.end : null
+})
+
+const visibleBudgets = computed(() => {
+  const budgets = currentHousehold.value?.budgets ?? []
+  if (!monthEnd.value) return budgets
+  return budgets.filter((budget) => {
+    const latestVersion = budget.versions[0]
+    if (!latestVersion) return false
+    return new Date(latestVersion.validFrom) <= monthEnd.value!
+  })
+})
 
 // Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
 const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))
@@ -332,15 +361,23 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       headline="Keine Budgets"
       description="Lege ein Budget an, um Auswertungen pro Kategorie zu sehen."
     />
+    <EmptyState
+      v-else-if="!loading && activeHousehold && currentHousehold && visibleBudgets.length === 0"
+      variant="no-data"
+      icon="pi pi-calendar"
+      icon-tone="muted"
+      headline="Keine Budgets in diesem Monat"
+      :description="`Deine ${currentHousehold.budgets.length} Budgets sind erst ab einem späteren Zeitpunkt gültig. Blättere vorwärts oder lege ein neues Budget mit früherem \`validFrom\` an.`"
+    />
 
     <ListPanel
-      v-if="!loading && activeHousehold && currentHousehold && currentHousehold.budgets.length > 0"
+      v-if="!loading && activeHousehold && currentHousehold && visibleBudgets.length > 0"
       variant="primary"
       compact
-      :badge="`${currentHousehold.budgets.length} Einträge`"
+      :badge="`${visibleBudgets.length} Einträge`"
     >
       <ItemCard
-        v-for="budget in currentHousehold.budgets"
+        v-for="budget in visibleBudgets"
         :key="budget.id"
         variant="primary"
       >
