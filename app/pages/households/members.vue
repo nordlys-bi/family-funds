@@ -61,43 +61,12 @@ const closeInviteDialog = () => {
   inviteForm.value = { email: '', role: 'MEMBER' }
 }
 
-/**
- * Pending state für den ConfirmDialog. Statt window.confirm() wird ein eigener
- * Dialog gezeigt (ConfirmDialog.vue). Eine laufende Aktion hängt als Promise
- * an `pendingConfirm.resolve` — Bestätigen löst true aus, Abbrechen false.
- */
-const pendingConfirm = ref<{
-  title: string
-  message: string
-  tone: 'primary' | 'danger'
-  resolve: (ok: boolean) => void
-} | null>(null)
-const confirmOpen = computed(() => pendingConfirm.value !== null)
-
-function askConfirm(opts: {
-  title: string
-  message: string
-  tone?: 'primary' | 'danger'
-}): Promise<boolean> {
-  return new Promise((resolve) => {
-    pendingConfirm.value = {
-      title: opts.title,
-      message: opts.message,
-      tone: opts.tone ?? 'danger',
-      resolve,
-    }
-  })
-}
-
-function handleConfirmOk() {
-  pendingConfirm.value?.resolve(true)
-  pendingConfirm.value = null
-}
-
-function handleConfirmCancel() {
-  pendingConfirm.value?.resolve(false)
-  pendingConfirm.value = null
-}
+// ConfirmSheet (issue #51): Promise-basierter Sheet-State via useAskConfirm.
+// Globale <ConfirmSheetRoot />-Component in app/app.vue rendert den
+// eigentlichen Sheet automatisch, sobald `confirm.ask(...)` aufgerufen
+// wird. Wir halten hier KEINEN pendingConfirm-Ref mehr — useAskConfirm tut
+// das zentral via useState('confirm:pending').
+const confirm = useAskConfirm()
 
 const loadCurrentHousehold = async () => {
   currentLoading.value = true
@@ -132,7 +101,7 @@ const handleInviteMember = async () => {
 
 const removeMember = async (membershipId: string) => {
   if (!activeHouseholdId.value) return
-  const ok = await askConfirm({
+  const ok = await confirm.ask({
     title: 'Mitglied entfernen?',
     message: 'Diese Person verliert sofort den Zugriff auf den Haushalt.',
     tone: 'danger',
@@ -153,7 +122,7 @@ const removeMember = async (membershipId: string) => {
 
 const cancelInvitation = async (invitationId: string) => {
   if (!activeHouseholdId.value) return
-  const ok = await askConfirm({
+  const ok = await confirm.ask({
     title: 'Einladung löschen?',
     message: 'Die eingeladene Person kann diese Einladung danach nicht mehr annehmen.',
     tone: 'danger',
@@ -436,17 +405,6 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
         />
       </FormFieldRow>
     </FormDialog>
-
-    <ConfirmDialog
-      v-if="pendingConfirm"
-      :visible="confirmOpen"
-      :title="pendingConfirm.title"
-      :message="pendingConfirm.message"
-      :tone="pendingConfirm.tone"
-      @confirm="handleConfirmOk"
-      @cancel="handleConfirmCancel"
-      @update:visible="(v) => { if (!v) handleConfirmCancel() }"
-    />
   </ListPageShell>
 </template>
 

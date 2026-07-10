@@ -39,6 +39,11 @@ onBeforeMount(() => {
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
+
+    <!-- Globaler Confirm-Dialog-Mount-Point (issue #51). useAskConfirm
+         haelt den State, ConfirmSheetRoot hoert darauf und rendert
+         den Dialog nur, wenn ein Request pending ist. -->
+    <ConfirmSheetRoot />
   </div>
 </template>
 

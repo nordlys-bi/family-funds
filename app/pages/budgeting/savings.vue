@@ -36,6 +36,7 @@ type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const loading = ref(false)
@@ -170,12 +171,24 @@ const saveSavingsGoal = async () => {
   }
 }
 
-const deletePlanningItem = async (id: string) => {
+const deletePlanningItem = async (goal: { id: string; name: string }) => {
   if (!activeHouseholdId.value) return
-  actionLoadingKey.value = `savingsGoal:${id}`
+
+  // ConfirmSheet (issue #51): Sparziele haben kein Undo, der Sheet
+  // ist die einzige Sicherung. Confirm-Text nennt den konkreten Namen
+  // und weist auf die Konsequenz (History weg) hin.
+  const ok = await confirm.ask({
+    title: 'Sparziel löschen?',
+    message: `„${goal.name}" wird endgültig entfernt — inkl. aller Einzahlungen, Entnahmen und der Verlaufshistorie.`,
+    tone: 'danger',
+    confirmLabel: 'Endgültig löschen',
+  })
+  if (!ok) return
+
+  actionLoadingKey.value = `savingsGoal:${goal.id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/savings-goals/${id}`, {
+    await $fetch(`/api/households/${activeHouseholdId.value}/savings-goals/${goal.id}`, {
       method: 'DELETE',
     })
     await loadPlanning()
@@ -331,7 +344,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               size="small"
               aria-label="Sparziel löschen"
               :loading="actionLoadingKey === `savingsGoal:${goal.id}`"
-              @click="deletePlanningItem(goal.id)"
+              @click="deletePlanningItem(goal)"
             />
           </template>
         </ItemCard>

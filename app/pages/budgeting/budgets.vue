@@ -52,6 +52,7 @@ import { isFirstRun } from '~/utils/household-age'
 import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel } from '~/utils/month-filter'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
+const confirm = useAskConfirm()
 const route = useRoute()
 const router = useRouter()
 
@@ -223,12 +224,24 @@ const saveBudget = async () => {
   }
 }
 
-const deletePlanningItem = async (id: string) => {
+const deletePlanningItem = async (budget: { id: string; name: string }) => {
   if (!activeHouseholdId.value) return
-  actionLoadingKey.value = `budget:${id}`
+
+  // ConfirmSheet (issue #51): wir haben hier KEIN Undo (im Gegensatz zu
+  // Transaktionen via Soft-Delete), also ist der Sheet die einzige
+  // Sicherung gegen Fehlklicks. Confirm-Text nennt das konkrete Budget.
+  const ok = await confirm.ask({
+    title: 'Budget löschen?',
+    message: `„${budget.name}" wird endgültig entfernt. Bereits gebuchte Ausgaben behalten das Budget-Label, der Topf-Betrag wird zurückgerechnet.`,
+    tone: 'danger',
+    confirmLabel: 'Endgültig löschen',
+  })
+  if (!ok) return
+
+  actionLoadingKey.value = `budget:${budget.id}`
   notice.value = null
   try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/budgets/${id}`, {
+    await $fetch(`/api/households/${activeHouseholdId.value}/budgets/${budget.id}`, {
       method: 'DELETE',
     })
     await loadPlanning()
@@ -361,7 +374,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             text
             aria-label="Budget löschen"
             :loading="actionLoadingKey === `budget:${budget.id}`"
-            @click="deletePlanningItem(budget.id)"
+            @click="deletePlanningItem(budget)"
           />
         </template>
       </ItemCard>
