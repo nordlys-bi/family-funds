@@ -201,11 +201,11 @@ onBeforeUnmount(() => {
           </NuxtLink>
           <NuxtLink to="/budgeting/recurring" class="sub-nav-item" active-class="sub-nav-item-active">
             <i class="pi pi-sync"></i>
-            <span>Recurring</span>
+            <span>Wiederkehrend</span>
           </NuxtLink>
           <NuxtLink to="/budgeting/savings" class="sub-nav-item" active-class="sub-nav-item-active">
             <i class="pi pi-flag"></i>
-            <span>Savings</span>
+            <span>Sparziele</span>
           </NuxtLink>
         </NavSection>
 
@@ -609,8 +609,11 @@ onBeforeUnmount(() => {
   }
   .content {
     padding: 1rem;
-    /* Platz für FAB (60px) + Bottom-Nav (~64px) + Safe-Area-Inset */
-    padding-bottom: calc(8.5rem + env(safe-area-inset-bottom, 0px));
+    /* Platz für FAB (5.5rem Offset + 3.5rem Hoehe = 9rem) + Bottom-Nav
+       (~4.75rem) + Safe-Area-Inset. Issue #31 hat den FAB nach oben
+       gesetzt, daher muss der Scroll-Bereich hier nachziehen, sonst
+       scrollt der letzte Content unter den FAB. */
+    padding-bottom: calc(9.5rem + env(safe-area-inset-bottom, 0px));
   }
   .switcher-select {
     min-width: 0;
