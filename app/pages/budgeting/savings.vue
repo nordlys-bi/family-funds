@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
+import { isFirstRun } from '~/utils/household-age'
+import { useEmojiLookup } from '~/composables/useEmojiLookup'
+
+const { lookupEmoji } = useEmojiLookup()
+
 definePageMeta({ layout: 'default' })
 
 type Frequency = 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
@@ -24,8 +29,6 @@ type PlanningHousehold = {
 
 type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
-
-import { isFirstRun } from '~/utils/household-age'
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
 
@@ -230,6 +233,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)">
           <template #main>
             <span class="row-title">
+              <span class="row-emoji" aria-hidden="true">{{ lookupEmoji(goal.name) }}</span>
               {{ goal.name }}
               <span class="row-tag row-tag--green">{{ formatMoney(goal.monthlyRate) }}/Monat</span>
             </span>
@@ -343,5 +347,15 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   color: var(--color-text-muted);
   text-align: center;
   font-size: 0.85rem;
+}
+
+.row-emoji {
+  display: inline-block;
+  font-size: 1.1rem;
+  /* Emoji-Schriftarten-Fallback: native Emoji-Rendering bevorzugen,
+     sonst System-Fallback. */
+  font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji',
+    'Twemoji', sans-serif;
+  line-height: 1;
 }
 </style>
