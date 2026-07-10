@@ -210,6 +210,19 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
     <Message v-if="message" :severity="message.severity" variant="simple">{{ message.text }}</Message>
 
+    <!-- OWNER-only Erklärung (issue #35): MEMBER sehen einen sichtbaren
+         Hinweis, warum die Einladen-/Lösch-Aktionen disabled sind. Auf
+         der Settings-Seite gibt es dieses Muster schon — wir ziehen es
+         hier konsistent nach. OWNER sehen den Hinweis nicht, für sie
+         sind alle Aktionen verfügbar. -->
+    <Message
+      v-if="currentHousehold && !canManageHousehold"
+      severity="warn"
+      variant="simple"
+    >
+      Nur Owner können einladen, Rollen ändern und Mitglieder entfernen. Bitte an einen Haushalts-Owner wenden, wenn etwas geändert werden soll.
+    </Message>
+
     <EmptyState
       :loading="currentLoading"
       :no-household="!currentLoading && !currentHousehold"
@@ -264,13 +277,15 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
             <td class="muted">{{ formatMemberSince(member.createdAt) }}</td>
             <td class="actions">
               <Button
-                v-if="canManageHousehold && member.user.id !== user?.id"
+                v-if="member.user.id !== user?.id"
                 icon="pi pi-trash"
                 severity="danger"
                 outlined
                 size="small"
                 text
                 aria-label="Mitglied entfernen"
+                :disabled="!canManageHousehold"
+                :title="!canManageHousehold ? 'Nur Owner können Mitglieder entfernen' : undefined"
                 :loading="removeLoadingId === member.id"
                 @click="removeMember(member.id)"
               />
@@ -304,7 +319,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                 <span>·</span>
                 <span>Dabei seit {{ formatMemberSince(member.createdAt) }}</span>
               </div>
-              <div v-if="canManageHousehold && member.user.id !== user?.id" class="data-table__card-actions">
+              <div v-if="member.user.id !== user?.id" class="data-table__card-actions">
                 <Button
                   icon="pi pi-trash"
                   severity="danger"
@@ -312,6 +327,8 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                   size="small"
                   text
                   aria-label="Mitglied entfernen"
+                  :disabled="!canManageHousehold"
+                  :title="!canManageHousehold ? 'Nur Owner können Mitglieder entfernen' : undefined"
                   :loading="removeLoadingId === member.id"
                   @click="removeMember(member.id)"
                 />
@@ -338,13 +355,14 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
             <td class="muted">{{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</td>
             <td class="actions">
               <Button
-                v-if="canManageHousehold"
                 icon="pi pi-times"
                 severity="secondary"
                 outlined
                 size="small"
                 text
                 aria-label="Einladung zurückziehen"
+                :disabled="!canManageHousehold"
+                :title="!canManageHousehold ? 'Nur Owner können Einladungen zurückziehen' : undefined"
                 :loading="cancelInvitationLoadingId === invitation.id"
                 @click="cancelInvitation(invitation.id)"
               />
@@ -373,7 +391,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
               <div class="data-table__card-meta">
                 <span>Eingeladen von {{ invitation.invitedBy.displayName || invitation.invitedBy.email }}</span>
               </div>
-              <div v-if="canManageHousehold" class="data-table__card-actions">
+              <div class="data-table__card-actions">
                 <Button
                   icon="pi pi-times"
                   severity="secondary"
@@ -381,6 +399,8 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
                   size="small"
                   text
                   aria-label="Einladung zurückziehen"
+                  :disabled="!canManageHousehold"
+                  :title="!canManageHousehold ? 'Nur Owner können Einladungen zurückziehen' : undefined"
                   :loading="cancelInvitationLoadingId === invitation.id"
                   @click="cancelInvitation(invitation.id)"
                 />
