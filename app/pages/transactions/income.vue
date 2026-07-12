@@ -5,11 +5,27 @@ import { todayDateHelperText } from '~/utils/form-helpers'
 
 definePageMeta({ layout: 'default' })
 
+type BudgetItem = {
+  id: string
+  key: string
+  name: string
+}
+
+// Issue #55: Mitgliederliste fuer die Person-Filter-Select.
+// Server liefert { id, role, user: { id, email, displayName } },
+// wir flachen das auf { id, email, displayName }.
+type MemberItem = {
+  id: string
+  displayName: string | null
+  email: string
+}
+
 type PlanningHousehold = {
   id: string
   name: string
   currency: string
-  budgets: unknown[]
+  budgets: BudgetItem[]
+  members: MemberItem[]
 }
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
@@ -47,14 +63,21 @@ function formatDateInput(value: Date) {
 // des Arrays bekommen und mit "findIndex is not a function" sterben.
 const tx = useTransactionList({
   initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
+  // Issue #55: Person-Filter fuer Income-Listen (Budget-Filter nicht
+  // relevant, weil Einnahmen kein Budget haben — wird nicht angeboten).
+  initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
 })
 const month = tx.month
+const userIdFilter = tx.userIdFilter
+const hasLocalFilters = tx.hasLocalFilters
 const monthOptions = tx.monthOptions
 const monthLabel = tx.monthLabel
 const summary = tx.summary
 const txLoading = tx.loading
 const txError = tx.error
 const setMonth = tx.setMonth
+const setUserIdFilter = tx.setUserIdFilter
+const clearLocalFilters = tx.clearLocalFilters
 const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 const updateTransactionLocal = tx.updateTransactionLocal
@@ -78,21 +101,103 @@ const transactionForm = ref({
   date: new Date(),
 })
 
+// Issue #55: Option-Liste fuer die Person-Filter-Select.
+// value: null = "Alle Mitglieder" (kein Filter).
+const memberOptions = computed(() => currentHousehold.value?.members ?? [])
+const userFilterOptions = computed(() => [
+  { label: 'Alle Mitglieder', value: null as string | null },
+  ...memberOptions.value.map((member) => ({
+    label: member.displayName || member.email,
+    value: member.id as string | null,
+  })),
+])
+
 // Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
 async function onMonthChange(newMonth: string) {
   await setMonth(newMonth, activeHouseholdId.value)
   // query.month == aktueller Monat → Query loeschen, damit die Default-URL
   // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const query = newMonth === currentMonth ? {} : { month: newMonth }
+  // Issue #55: aktiven userId-Filter in der Query erhalten, damit ein
+  // Monats-Wechsel die anderen Filter nicht zuruecksetzt.
+  const query = buildRouteQuery({ monthOverride: newMonth })
   await router.replace({ query })
 }
+
+/**
+ * Baut den URL-Query aus dem aktuellen Filter-State (issue #55).
+ * Wird von allen Change-Handlern gemeinsam genutzt, damit die
+ * "Query-ist-sauber"-Regel an einer Stelle lebt.
+ *
+ * Default-URL-Konvention: nur aktive Filter und Non-Default-Werte
+ * landen im Query. So bleibt die Adressleiste lesbar.
+ *  - month: nur wenn nicht aktueller Monat
+ *  - userId: nur wenn gesetzt
+ */
+function buildRouteQuery(options: { monthOverride?: string } = {}): Record<string, string> {
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const monthValue = options.monthOverride ?? month.value
+  const query: Record<string, string> = {}
+  if (monthValue !== currentMonth) query.month = monthValue
+  if (userIdFilter.value) query.userId = userIdFilter.value
+  return query
+}
+
+// Issue #55: Person-Filter aendern. Schreibt in den lokalen Composable-
+// State (kein Reload noetig, weil der Server bereits alle Items geliefert
+// hat und der Filter nur die View zurechtschneidet) und synct die URL.
+async function onUserIdFilterChange(value: string | null) {
+  setUserIdFilter(value)
+  await router.replace({ query: buildRouteQuery() })
+}
+
+// Issue #55: Person-Filter auf einmal leeren. Praktisch fuer "Alle
+// anzeigen"-Buttons in der Empty-State.
+async function clearAllLocalFilters() {
+  clearLocalFilters()
+  await router.replace({ query: buildRouteQuery() })
+}
+
+/**
+ * Issue #55: Menschen-lesbares Etikett des aktiven Filters fuer die
+ * Empty-State-Headline ("Keine Einnahmen fuer {X} in {Monat}").
+ * Aktuell ist nur der Person-Filter aktiv; gibt "" wenn nichts
+ * gesetzt ist (Caller prueft hasLocalFilters).
+ */
+const activeFilterLabel = computed(() => {
+  if (!userIdFilter.value) return ''
+  const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
+  return member?.displayName || member?.email || 'diese Person'
+})
+
+// Issue #55: reaktive Sync, wenn der User per Browser-Back / -Forward
+// die URL aendert. KEIN load()-Call noetig, weil die Local-Filter
+// keinen Server-Roundtrip ausloesen.
+watch(
+  () => route.query.userId,
+  (newValue) => {
+    const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
+    if (next !== userIdFilter.value) setUserIdFilter(next)
+  },
+)
 
 // --- Daten laden ---
 async function loadCurrentHousehold() {
   try {
-    const current = await $fetch<{ household: PlanningHousehold | null }>('/api/households/current')
-    currentHousehold.value = current.household
+    // Server liefert pro Mitglied { id, role, user: { id, email, ... } }.
+    // Wir flachen das auf { id, email, displayName } fuer die Select-Options.
+    const current = await $fetch<{ household: (Omit<PlanningHousehold, 'members'> & { members: Array<{ id: string; user: { id: string; email: string; displayName: string | null } }> }) | null }>('/api/households/current')
+    if (!current.household) {
+      currentHousehold.value = null
+      return
+    }
+    currentHousehold.value = {
+      ...current.household,
+      members: current.household.members.map((membership) => ({
+        id: membership.user.id,
+        email: membership.user.email,
+        displayName: membership.user.displayName,
+      })),
+    }
   } catch (error) {
     currentHousehold.value = null
   }
@@ -333,6 +438,20 @@ watch(activeHouseholdId, async () => { await loadAll() })
           @update:model-value="onMonthChange"
         />
       </div>
+      <!-- Issue #55: Person-Filter (Single-Select). Budget-Filter ist
+           fuer Einnahmen nicht relevant, weil Income-Transaktionen kein
+           Budget haben. -->
+      <Select
+        :model-value="userIdFilter"
+        :options="userFilterOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Alle Mitglieder"
+        :loading="txLoading"
+        aria-label="Buchungen nach Person filtern"
+        class="toolbar-filter"
+        @update:model-value="onUserIdFilterChange"
+      />
       <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
     </template>
 
@@ -354,6 +473,18 @@ watch(activeHouseholdId, async () => { await loadAll() })
       headline="Noch keine Einnahmen"
       :description="`Erfasse deine erste Einnahme fuer ${monthLabel} — Gehalt, Bonus, Rueckerstattung.`"
       :cta="{ label: 'Einnahme anlegen', onClick: openCreateTransactionDialog, severity: 'success' }"
+    />
+    <!-- Issue #55: Empty-State fuer den Person-Filter. Wenn aktiv
+         und keine Treffer, ist "Keine Einnahmen fuer {X} in {Monat}"
+         informativer als das generische "Keine Einnahmen in <Monat>". -->
+    <EmptyState
+      v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0 && hasLocalFilters"
+      variant="no-results"
+      icon="pi pi-search"
+      icon-tone="muted"
+      :headline="`Keine Einnahmen fuer ${activeFilterLabel} in ${monthLabel}`"
+      :description="`Mit der aktuellen Filter-Auswahl gibt es in ${monthLabel} keine Treffer. Du kannst den Filter zuruecksetzen, um alle Buchungen zu sehen.`"
+      :cta="{ label: 'Alle Einnahmen anzeigen', onClick: clearAllLocalFilters, severity: 'secondary' }"
     />
     <EmptyState
       v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0"
@@ -565,8 +696,22 @@ watch(activeHouseholdId, async () => { await loadAll() })
   color: var(--text-muted, #94a3b8);
 }
 
+/* Issue #55: Filter-Select in der Toolbar. Kompakte Breite, passt
+   zu den Buttons daneben. min-width verhindert, dass PrimeVue die
+   Select auf Mobile zu schmal rendert. */
+.toolbar-filter {
+  min-width: 180px;
+  max-width: 240px;
+}
+
 @media (max-width: 480px) {
   .toolbar-month {
+    width: 100%;
+  }
+  /* Auf Mobile volle Breite, damit die Filter-Select umbrechen kann
+     statt horizontal gequetscht zu werden. */
+  .toolbar-filter {
+    min-width: 0;
     width: 100%;
   }
 }
