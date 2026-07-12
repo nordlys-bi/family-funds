@@ -24,6 +24,17 @@ type SavingsGoalItem = {
   // Cent, progressPercent als Zahl mit 1 Nachkommastelle (z. B. 25.5).
   currentAmount?: number
   progressPercent?: number
+  // Issue #56: monatliche Plan-vs-Ist-Breakdown, vom Backend
+  // aggregiert (3 Monate, neueste zuerst). Pro Eintrag:
+  //   { month: 'YYYY-MM', planned, actual, percentUsed }
+  // Bei monthlyRate <= 0 ist percentUsed immer 0 — das Frontend blendet
+  // die Prozent-Anzeige in dem Fall aus.
+  monthlyProgress?: Array<{
+    month: string
+    planned: number
+    actual: number
+    percentUsed: number
+  }>
 }
 
 type PlanningHousehold = {
@@ -122,6 +133,79 @@ const monthlySavingsRateTotal = computed(
 const goalCurrentAmount = (goal: SavingsGoalItem) => goal.currentAmount ?? 0
 const goalProgressPercent = (goal: SavingsGoalItem) => goal.progressPercent ?? 0
 const isGoalReached = (goal: SavingsGoalItem) => goalCurrentAmount(goal) >= goal.targetAmount && goal.targetAmount > 0
+
+// === Issue #56: monatliche Plan-vs-Ist-Anzeige =====================
+
+/**
+ * Severity-Mapping fuer den monthlyProgress-Tag. 100 % = Plan
+ * erreicht, drueber = Erfolg, knapp drunter = Warnung, weit drunter
+ * = Gefahr. Die Schwellen sind bewusst pragmatisch (50/100), nicht
+ * progressiv — der Tag soll den User nur grob einordnen, nicht
+ * micro-managen.
+ *   < 50 %  -> danger   ("Deutlich unter Plan")
+ *   50–99 % -> warning  ("Knapp unter Plan")
+ *   >= 100 % -> success  ("Plan erreicht / ueberzogen")
+ */
+function severityForPercent(percent: number): 'success' | 'warning' | 'danger' {
+  if (percent >= 100) return 'success'
+  if (percent >= 50) return 'warning'
+  return 'danger'
+}
+
+/**
+ * Liefert den deutschen Monatsnamen (kurz) fuer ein 'YYYY-MM'-Key.
+ * Beispiel: '2026-07' -> 'Juli'. Fallback auf den rohen Key, wenn
+ * das Format unerwartet ist (defensive — sollte nie passieren).
+ */
+function monthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split('-')
+  const monthIdx = Number(month) - 1
+  if (Number.isNaN(monthIdx) || monthIdx < 0 || monthIdx > 11) return monthKey
+  // Date-Format mit day=2 vermeidet Timezone-Drift (Monat faengt
+  // immer am 2. an, damit der UTC-Drift keine Rolle spielt).
+  return new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric', day: 'numeric', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(Number(year), monthIdx, 2)))
+}
+
+/**
+ * Aktuellster Monats-Eintrag fuer den prominenten Tag. Kann null
+ * sein, wenn das Backend (noch) keine Daten liefert — dann zeigen
+ * wir den Tag gar nicht erst.
+ */
+function currentMonthProgress(goal: SavingsGoalItem) {
+  return goal.monthlyProgress?.[0] ?? null
+}
+
+/**
+ * Plan-Vergleich ausblenden, wenn der Goal keine positive Rate hat
+ * (entweder kein Plan oder Entnahme-Plan). Die Page zeigt dann nur
+ * die Ist-Summe, weil eine Prozent-Zahl auf 0/negativer Basis
+ * semantisch sinnlos waere.
+ */
+function hasPositivePlan(goal: SavingsGoalItem): boolean {
+  return goal.monthlyRate > 0
+}
+
+/**
+ * "Plan-vs-Ist"-Block eines Goals auf-/zuklappbar. Pro Goal
+ * separat, damit mehrere Cards unabhaengig expandiert sein koennen.
+ * Set speichert nur Goal-IDs der aktuell geoeffneten Goals.
+ */
+const expandedGoals = ref<Set<string>>(new Set())
+function toggleGoalExpanded(goalId: string) {
+  // Reaktiv: neues Set statt Mutation, damit computed im Template
+  // das Update mitbekommt.
+  const next = new Set(expandedGoals.value)
+  if (next.has(goalId)) {
+    next.delete(goalId)
+  } else {
+    next.add(goalId)
+  }
+  expandedGoals.value = next
+}
+function isGoalExpanded(goalId: string): boolean {
+  return expandedGoals.value.has(goalId)
+}
 
 const resetSavingsForm = () => {
   savingsForm.value = { name: '', targetAmount: null, monthlyRate: null, startDate: new Date(), endDate: null }
@@ -291,12 +375,87 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               <span class="row-tag" :class="{ 'row-tag--green': isGoalReached(goal) }">
                 {{ goalProgressPercent(goal) }}% erreicht
               </span>
+              <!-- Issue #56: monatlicher Plan-vs-Ist-Tag (aktueller
+                   Monat). Wird nur gerendert, wenn das Backend einen
+                   Eintrag liefert. Severity je nach percentUsed.
+                   Bei monthlyRate <= 0 wird statt der Prozent nur die
+                   Ist-Summe gezeigt (Plan-Vergleich nicht sinnvoll). -->
+              <template v-if="currentMonthProgress(goal)">
+                <span
+                  v-if="hasPositivePlan(goal)"
+                  class="row-tag"
+                  :class="{
+                    'row-tag--green': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'success',
+                    'row-tag--warn': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'warning',
+                    'row-tag--danger': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'danger',
+                  }"
+                  :title="`Geplant ${formatMoney(currentMonthProgress(goal)!.planned)}, real ${formatMoney(currentMonthProgress(goal)!.actual)}`"
+                >
+                  {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ currentMonthProgress(goal)!.percentUsed.toFixed(0) }}%
+                </span>
+                <span
+                  v-else
+                  class="row-tag row-tag--muted"
+                  :title="`Ist-Buchungen diesen Monat`"
+                >
+                  {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ formatMoney(currentMonthProgress(goal)!.actual) }}
+                </span>
+              </template>
               <span>Ziel {{ formatMoney(goal.targetAmount) }}</span>
               <span>· {{ formatDate(goal.startDate) }} – {{ formatDate(goal.endDate) }}</span>
               <span v-if="goalCurrentAmount(goal) === 0" class="row-tag row-tag--muted">
                 Noch keine Sparbuchungen
               </span>
+              <!-- Issue #56: Toggle fuer den 3-Monats-Verlauf. Wird
+                   nur gerendert, wenn das Backend ueberhaupt Daten
+                   hat (sonst leerer Klapp-Block). Per Goal expandiert,
+                   damit mehrere Cards unabhaengig offen sein koennen. -->
+              <button
+                v-if="goal.monthlyProgress && goal.monthlyProgress.length > 0"
+                type="button"
+                class="row-history-toggle"
+                :aria-expanded="isGoalExpanded(goal.id)"
+                :aria-label="`Plan-vs-Ist-Verlauf fuer ${goal.name} ${isGoalExpanded(goal.id) ? 'ausblenden' : 'anzeigen'}`"
+                @click="toggleGoalExpanded(goal.id)"
+              >
+                <i
+                  :class="['pi', isGoalExpanded(goal.id) ? 'pi-chevron-up' : 'pi-chevron-down', 'row-history-toggle__icon']"
+                  aria-hidden="true"
+                />
+                {{ isGoalExpanded(goal.id) ? 'Verlauf ausblenden' : '3-Monats-Verlauf' }}
+              </button>
             </span>
+            <!-- Issue #56: Aufklappbarer 3-Monats-Verlauf. Bewusst
+                 ein einfacher Block ohne Tabelle — die 3 Zeilen
+                 passen gut als Text-Liste, das ist schneller zu
+                 scannen als eine Mini-Tabelle. -->
+            <ul v-if="isGoalExpanded(goal.id) && goal.monthlyProgress" class="row-history">
+              <li
+                v-for="entry in goal.monthlyProgress"
+                :key="entry.month"
+                class="row-history__entry"
+              >
+                <span class="row-history__month">{{ monthLabel(entry.month) }}</span>
+                <span class="row-history__values">
+                  <template v-if="hasPositivePlan(goal)">
+                    geplant {{ formatMoney(entry.planned) }} · real {{ formatMoney(entry.actual) }}
+                    <span
+                      class="row-history__pct"
+                      :class="{
+                        'row-history__pct--green': severityForPercent(entry.percentUsed) === 'success',
+                        'row-history__pct--warn': severityForPercent(entry.percentUsed) === 'warning',
+                        'row-history__pct--danger': severityForPercent(entry.percentUsed) === 'danger',
+                      }"
+                    >
+                      ({{ entry.percentUsed.toFixed(0) }}%)
+                    </span>
+                  </template>
+                  <template v-else>
+                    {{ formatMoney(entry.actual) }}
+                  </template>
+                </span>
+              </li>
+            </ul>
           </template>
           <template #aside>
             <div>
@@ -484,6 +643,104 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .row-tag--muted {
   background: rgba(148, 163, 184, 0.12);
   color: #94a3b8;
+}
+
+/* Issue #56: warn/danger-Severity fuer den monatlichen Plan-vs-Ist-Tag.
+   Nutzt die gleichen Background-Tones wie das restliche Design (siehe
+   Action-Required), damit der User die Schwere auf einen Blick
+   einordnen kann ohne neue Farbcodes zu lernen. */
+.row-tag--warn {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fbbf24;
+}
+
+.row-tag--danger {
+  background: rgba(248, 113, 113, 0.18);
+  color: #f87171;
+}
+
+/* Issue #56: Inline-Toggle fuer den 3-Monats-Verlauf. Bewusst als
+   <button> (nicht <a> oder <div>), damit er per Tastatur + Screenreader
+   korrekt funktioniert. Sieht aus wie ein Tag, verhaelt sich wie ein
+   Button. */
+.row-history-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  background: rgba(59, 130, 246, 0.10);
+  color: #93c5fd;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.row-history-toggle:hover {
+  background: rgba(59, 130, 246, 0.20);
+  border-color: rgba(96, 165, 250, 0.32);
+}
+
+.row-history-toggle__icon {
+  font-size: 0.65rem;
+}
+
+/* Issue #56: Aufklappbarer 3-Monats-Verlauf. Kompakte Liste,
+   eingerueckt unter dem Goal-Subtitle, damit der User den
+   Monats-Kontext nicht aus den Augen verliert. */
+.row-history {
+  list-style: none;
+  padding: 0.5rem 0 0;
+  margin: 0.4rem 0 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  flex-basis: 100%;
+}
+
+.row-history__entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #cbd5e1);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-history__month {
+  font-weight: 600;
+  color: var(--color-text-secondary, #cbd5e1);
+  white-space: nowrap;
+}
+
+.row-history__values {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.row-history__pct {
+  font-weight: 700;
+  margin-left: 0.3rem;
+}
+
+.row-history__pct--green {
+  color: #34d399;
+}
+
+.row-history__pct--warn {
+  color: #fbbf24;
+}
+
+.row-history__pct--danger {
+  color: #f87171;
 }
 
 .amount-secondary {
