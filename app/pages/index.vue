@@ -135,6 +135,19 @@ watch(() => activeHousehold.value?.id, loadDashboard)
         :format-money="formatMoney"
       />
 
+      <!-- Issue #57: Konsolidierte Liquiditaets-Zahl (Spartoepfe +
+           freies Restbudget) als eigene Karte zwischen Action-Required
+           und der Monatszeile. Beantwortet die Alltagsfrage "Wieviel
+           Geld liegt gerade da?" mit einem Blick, ohne dass der User
+           die Summe aus zwei Panels zusammensetzen muss. Wird
+           automatisch ausgeblendet, wenn weder Toepfe noch freies
+           Restbudget vorhanden sind. -->
+      <DashboardLiquidityCard
+        :savings-goals="savingsGoals"
+        :budget-alerts="budgetAlerts"
+        :format-money="formatMoney"
+      />
+
       <!-- Kompakte Monatszeile (issue #37): Einnahmen/Ausgaben/Saldo
            als eine Zeile statt 3 dominanter Cards. Bleibt sichtbar,
            aber in sekundaerer Gewichtung. Wraps auf Mobile. -->
