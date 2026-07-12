@@ -5,13 +5,15 @@
  * Kapselt:
  *  - month-Filter-State (YYYY-MM, Default = aktueller Monat)
  *  - unassignedOnly-Filter (issue #52) — boolean, Default false
+ *  - userIdFilter / budgetIdFilter (issue #55) — string|null, lokal angewendet
+ *    auf die bereits geladene Monats-Liste (kein API-Roundtrip)
  *  - Lade-Logik gegen `GET /api/households/:id/transactions`
  *  - Transactions-Liste + Summary
  *  - Ableitungen: monthOptions, monthLabel, monthStart, monthEnd
  *
  * Beide Pages binden den Monats-Spinner an `month` und rufen `load()` nach
- * `month`-Wechsel. URL-Sync (?month=YYYY-MM, ?unassigned=1) macht jede
- * Page selbst via useRoute/useRouter — Composable bleibt routing-agnostisch.
+ * `month`-Wechsel. URL-Sync (?month, ?unassigned, ?userId, ?budgetId) macht
+ * jede Page selbst via useRoute/useRouter — Composable bleibt routing-agnostisch.
  */
 import { computed, ref } from 'vue'
 import { currentMonthYYYYMM, lastNMonths, formatMonthLabel, parseMonthRange, isValidMonthYYYYMM } from '../utils/month-filter'
@@ -29,7 +31,7 @@ export type TransactionItem = {
   budgetId?: string | null
   budgetName?: string | null
   budgetKey?: string | null
-  user: { displayName: string | null; email: string }
+  user: { id: string; displayName: string | null; email: string }
 }
 
 export type TransactionSummary = {
@@ -57,6 +59,20 @@ export type UseTransactionListOptions = {
    * damit der Deep-Link ?unassigned=1 direkt greift.
    */
   initialUnassignedOnly?: boolean
+  /**
+   * Initialer Person-Filter (issue #55). User-ID des Haushalts-Mitglieds.
+   * Wird lokal auf die geladene Liste angewendet, kein API-Roundtrip.
+   * Default null = kein Filter.
+   */
+  initialUserIdFilter?: string | null
+  /**
+   * Initialer Budget-Filter (issue #55). Budget-ID des Haushalts.
+   * Wird lokal auf die geladene Liste angewendet, kein API-Roundtrip.
+   * Default null = kein Filter. Fuer Income-Listen nicht relevant
+   * (Income-Transaktionen haben kein Budget), wird aber ignoriert
+   * wenn keine Items ein passendes Budget haben.
+   */
+  initialBudgetIdFilter?: string | null
 }
 
 export type UseTransactionListReturn = ReturnType<typeof useTransactionList>
@@ -68,6 +84,13 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   // setup() jeder Page neu instanziiert wird.
   const month = ref<string>(options.initialMonth && isValidMonthYYYYMM(options.initialMonth) ? options.initialMonth : currentMonthYYYYMM())
   const unassignedOnly = ref<boolean>(Boolean(options.initialUnassignedOnly))
+  // Issue #55: Person- und Budget-Filter. string = aktive ID, null = aus.
+  // Werden LOKAL auf die bereits geladene Monats-Liste angewendet, kein
+  // erneuter API-Call. Begruendung: der Server liefert bereits alle
+  // Transaktionen des Haushalts fuer den Monat; die Filter sind eine
+  // View-Sache, die das Neuladen nicht rechtfertigt.
+  const userIdFilter = ref<string | null>(options.initialUserIdFilter ?? null)
+  const budgetIdFilter = ref<string | null>(options.initialBudgetIdFilter ?? null)
   const transactions = ref<TransactionItem[]>([])
   const summary = ref<TransactionSummary>({ ...EMPTY_SUMMARY })
   const loading = ref(false)
@@ -80,12 +103,29 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   const monthEnd = computed(() => monthRange.value?.end ?? null)
 
   /**
-   * Filtert die geladenen Transaktionen nach `kind`. Pages rufen das
+   * Filtert die geladenen Transaktionen nach `kind` plus den aktiven
+   * issue-#55-Filtern (userIdFilter, budgetIdFilter). Pages rufen das
    * auf, um nur die fuer ihre Liste relevanten Items zu zeigen
    * (expense-Page blendet income-Items aus, und umgekehrt).
+   *
+   * Filter-Reihenfolge:
+   *  1. kind (expense/income) — Page-spezifisch
+   *  2. userIdFilter — wenn gesetzt, nur Transaktionen dieses Users
+   *  3. budgetIdFilter — wenn gesetzt, nur Transaktionen mit diesem Budget.
+   *     Fuer Income-Listen bleibt der Filter typischerweise null
+   *     (Income-Transaktionen haben kein Budget, der Filter wuerde
+   *     immer alles aussortieren).
+   *
+   * Local-Filter, kein API-Call: der Server hat bereits alle Items
+   * fuer den Monat geliefert, wir schneiden nur die Sicht zurecht.
    */
   function transactionsByKind(kind: TransactionKind) {
-    return transactions.value.filter((transaction) => transaction.kind === kind)
+    return transactions.value.filter((transaction) => {
+      if (transaction.kind !== kind) return false
+      if (userIdFilter.value && transaction.user.id !== userIdFilter.value) return false
+      if (budgetIdFilter.value && transaction.budgetId !== budgetIdFilter.value) return false
+      return true
+    })
   }
 
   /**
@@ -155,6 +195,45 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   function setUnassignedOnly(value: boolean) {
     unassignedOnly.value = Boolean(value)
   }
+
+  /**
+   * Setzt den Person-Filter (issue #55). String = aktive User-ID,
+   * null = kein Filter. Wird lokal in `transactionsByKind` angewendet,
+   * triggert keinen Reload — die Page macht URL-Sync + visuelle
+   * Reaktion selbst. Konsistent mit `setUnassignedOnly`-Pattern.
+   */
+  function setUserIdFilter(value: string | null) {
+    userIdFilter.value = value && value.length > 0 ? value : null
+  }
+
+  /**
+   * Setzt den Budget-Filter (issue #55). String = aktive Budget-ID,
+   * null = kein Filter. Lokale Anwendung, kein Reload. Fuer Income-
+   * Pages typischerweise nie gesetzt (Income-Items haben kein Budget).
+   */
+  function setBudgetIdFilter(value: string | null) {
+    budgetIdFilter.value = value && value.length > 0 ? value : null
+  }
+
+  /**
+   * Leert ALLE issue-#55-Filter (Person + Budget) auf einmal.
+   * Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
+   * unassignedOnly wird bewusst NICHT mitgenommen — das ist
+   * semantisch ein separater Filter (issue #52), nicht ein #55-Filter.
+   */
+  function clearLocalFilters() {
+    userIdFilter.value = null
+    budgetIdFilter.value = null
+  }
+
+  /**
+   * True wenn mindestens einer der #55-Local-Filter aktiv ist.
+   * Praktisch fuer UI-Hints ("X von Y Buchungen werden angezeigt")
+   * und Empty-State-Text-Varianten.
+   */
+  const hasLocalFilters = computed(
+    () => userIdFilter.value !== null || budgetIdFilter.value !== null,
+  )
 
   /**
    * Optimistischer Update einer einzelnen Transaktion im lokalen State.
@@ -266,6 +345,9 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   return {
     month,
     unassignedOnly,
+    userIdFilter,
+    budgetIdFilter,
+    hasLocalFilters,
     monthOptions,
     monthLabel,
     monthStart,
@@ -277,6 +359,9 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     load,
     setMonth,
     setUnassignedOnly,
+    setUserIdFilter,
+    setBudgetIdFilter,
+    clearLocalFilters,
     transactionsByKind,
     updateTransactionLocal,
     restoreTransactionLocal,

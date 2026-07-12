@@ -11,11 +11,24 @@ type BudgetItem = {
   name: string
 }
 
+// Issue #55: Mitgliederliste aus /api/households/current fuer die
+// Person-Filter-Select. Der Endpoint liefert pro Mitglied die
+// Membership-Zeile (id/role/createdAt) plus den verschachtelten
+// User-Datensatz (id/email/displayName/oidcSubject). Wir mappen
+// das auf eine flache Struktur mit user.id als Schluessel, weil
+// die Transactions-API den User per user.id referenziert.
+type MemberItem = {
+  id: string
+  displayName: string | null
+  email: string
+}
+
 type PlanningHousehold = {
   id: string
   name: string
   currency: string
   budgets: BudgetItem[]
+  members: MemberItem[]
 }
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
@@ -57,9 +70,17 @@ const tx = useTransactionList({
   // in der URL. Die Page liest das hier und übergibt es als initial-Filter
   // an die Composable, damit der Deep-Link ohne Roundtrip greift.
   initialUnassignedOnly: route.query.unassigned === '1',
+  // Issue #55: Person- und Budget-Filter aus URL-Parametern uebernehmen.
+  // Leere Strings werden vom Composable als null behandelt, damit die
+  // Default-URL sauber bleibt (kein "?userId=" in der Adressleiste).
+  initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
+  initialBudgetIdFilter: typeof route.query.budgetId === 'string' && route.query.budgetId.length > 0 ? route.query.budgetId : null,
 })
 const month = tx.month
 const unassignedOnly = tx.unassignedOnly
+const userIdFilter = tx.userIdFilter
+const budgetIdFilter = tx.budgetIdFilter
+const hasLocalFilters = tx.hasLocalFilters
 const monthOptions = tx.monthOptions
 const monthLabel = tx.monthLabel
 const summary = tx.summary
@@ -67,6 +88,9 @@ const txLoading = tx.loading
 const txError = tx.error
 const setMonth = tx.setMonth
 const setUnassignedOnly = tx.setUnassignedOnly
+const setUserIdFilter = tx.setUserIdFilter
+const setBudgetIdFilter = tx.setBudgetIdFilter
+const clearLocalFilters = tx.clearLocalFilters
 const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
 const updateTransactionLocal = tx.updateTransactionLocal
@@ -92,6 +116,28 @@ const budgetSelectOptions = computed(() => [
   ...budgetOptions.value.map((budget) => ({ label: budget.name, value: budget.id })),
 ])
 
+// Issue #55: Option-Listen fuer die Filter-Selects in der Toolbar.
+// Bewusst getrennt von `budgetSelectOptions` (Dialog), weil:
+//  - Filter-Select hat "Alle …" als Default-Option (value null)
+//  - Dialog-Select hat "Sonstiges" (value '') als Default-Option
+// value: null ist noetig, damit PrimeVue-Select sauber zwischen "kein
+// Filter" und "Filter auf ID" unterscheiden kann.
+const memberOptions = computed(() => currentHousehold.value?.members ?? [])
+const userFilterOptions = computed(() => [
+  { label: 'Alle Mitglieder', value: null as string | null },
+  ...memberOptions.value.map((member) => ({
+    label: member.displayName || member.email,
+    value: member.id as string | null,
+  })),
+])
+const budgetFilterOptions = computed(() => [
+  { label: 'Alle Budgets', value: null as string | null },
+  ...budgetOptions.value.map((budget) => ({
+    label: budget.name,
+    value: budget.id as string | null,
+  })),
+])
+
 const budgetLabel = (transaction: { budgetName?: string | null }) => transaction.budgetName ?? 'Sonstiges'
 const isUnassigned = (transaction: { budgetId?: string | null }) => !transaction.budgetId
 
@@ -110,11 +156,41 @@ async function onMonthChange(newMonth: string) {
   // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
   // Issue #52: aktiven unassigned-Filter in der Query erhalten, damit der
   // Deep-Link ueber Browser-Back / -Forward bestehen bleibt.
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const query: Record<string, string> = {}
-  if (newMonth !== currentMonth) query.month = newMonth
-  if (unassignedOnly.value) query.unassigned = '1'
+  // Issue #55: zusaetzlich userId- und budgetId-Filter preserved, damit
+  // ein Monats-Wechsel die anderen Filter nicht zuruecksetzt.
+  const query = buildRouteQuery({ monthOverride: newMonth })
   await router.replace({ query })
+}
+
+/**
+ * Baut den URL-Query aus dem aktuellen Filter-State. Wird von allen
+ * Change-Handlern (onMonthChange, toggleUnassignedFilter,
+ * onUserIdFilterChange, onBudgetIdFilterChange) gemeinsam genutzt,
+ * damit die "Query-ist-sauber"-Regel an einer Stelle lebt.
+ *
+ * Default-URL-Konvention (issue #55 / #52): nur aktive Filter und
+ * Non-Default-Werte landen im Query. So bleibt die Adressleiste
+ * lesbar und Deep-Links zeigen nur die relevanten Abweichungen.
+ *
+ * - month: nur wenn nicht aktueller Monat
+ * - unassigned: nur wenn aktiv
+ * - userId: nur wenn gesetzt
+ * - budgetId: nur wenn gesetzt
+ *
+ * `monthOverride` ist ein Hack fuer `onMonthChange`: der neue Monat
+ * ist noch nicht in `month.value` committed, wenn die Query gebaut
+ * wird. Der Caller uebergibt ihn hier explizit, damit die Helper-
+ * Funktion den State nicht selbst kennen muss.
+ */
+function buildRouteQuery(options: { monthOverride?: string } = {}): Record<string, string> {
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const monthValue = options.monthOverride ?? month.value
+  const query: Record<string, string> = {}
+  if (monthValue !== currentMonth) query.month = monthValue
+  if (unassignedOnly.value) query.unassigned = '1'
+  if (userIdFilter.value) query.userId = userIdFilter.value
+  if (budgetIdFilter.value) query.budgetId = budgetIdFilter.value
+  return query
 }
 
 // Issue #52: Unassigned-Filter togglen. Schreibt in den URL-Query und
@@ -127,12 +203,52 @@ async function toggleUnassignedFilter() {
   await loadTransactions(activeHouseholdId.value)
   // Query aufbauen — month nur, wenn nicht Default. unassigned nur,
   // wenn aktiv. So bleibt die URL sauber (kein redundantes ?unassigned=0).
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const query: Record<string, string> = {}
-  if (month.value !== currentMonth) query.month = month.value
-  if (next) query.unassigned = '1'
+  const query = buildRouteQuery()
   await router.replace({ query })
 }
+
+// Issue #55: Person-Filter aendern. Schreibt in den lokalen Composable-
+// State (kein Reload noetig, weil der Server bereits alle Items geliefert
+// hat und der Filter nur die View zurechtschneidet) und synct die URL.
+async function onUserIdFilterChange(value: string | null) {
+  setUserIdFilter(value)
+  await router.replace({ query: buildRouteQuery() })
+}
+
+// Issue #55: Budget-Filter aendern. Gleiches Pattern wie Person-Filter.
+async function onBudgetIdFilterChange(value: string | null) {
+  setBudgetIdFilter(value)
+  await router.replace({ query: buildRouteQuery() })
+}
+
+// Issue #55: Beide Local-Filter (Person + Budget) auf einmal leeren.
+// Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
+async function clearAllLocalFilters() {
+  clearLocalFilters()
+  await router.replace({ query: buildRouteQuery() })
+}
+
+/**
+ * Issue #55: Menschen-lesbares Etikett der aktiven Filter-Kombination
+ * fuer die Empty-State-Headline ("Keine Ausgaben fuer {X} in {Monat}").
+ * Beispiele:
+ *  - nur Person aktiv: "Jan"
+ *  - nur Budget aktiv: "Rewe"
+ *  - beide aktiv:      "Jan im Rewe"
+ *  - keiner aktiv:     "" (Caller prueft hasLocalFilters)
+ */
+const activeFilterLabel = computed(() => {
+  const parts: string[] = []
+  if (userIdFilter.value) {
+    const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
+    parts.push(member?.displayName || member?.email || 'diese Person')
+  }
+  if (budgetIdFilter.value) {
+    const budget = budgetOptions.value.find((b) => b.id === budgetIdFilter.value)
+    parts.push(budget ? `im ${budget.name}` : 'dieses Budget')
+  }
+  return parts.join(' ')
+})
 
 // Issue #52: reaktive Sync, wenn der User per Browser-Back / -Forward
 // die URL aendert (z. B. von /transactions/expenses?unassigned=1 zurueck
@@ -149,11 +265,43 @@ watch(
   },
 )
 
+// Issue #55: gleicher Sync fuer die neuen Filter. Wenn die URL per
+// Browser-Back / -Forward / externer Link geaendert wird, muss der
+// Local-State nachziehen. KEIN load()-Call noetig, weil die
+// Local-Filter keinen Server-Roundtrip ausloesen.
+watch(
+  () => route.query.userId,
+  (newValue) => {
+    const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
+    if (next !== userIdFilter.value) setUserIdFilter(next)
+  },
+)
+watch(
+  () => route.query.budgetId,
+  (newValue) => {
+    const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
+    if (next !== budgetIdFilter.value) setBudgetIdFilter(next)
+  },
+)
+
 // --- Daten laden ---
 async function loadCurrentHousehold() {
   try {
-    const current = await $fetch<{ household: PlanningHousehold | null }>('/api/households/current')
-    currentHousehold.value = current.household
+    // Server liefert pro Mitglied { id, role, user: { id, email, ... } }.
+    // Wir flachen das auf { id, email, displayName } fuer die Select-Options.
+    const current = await $fetch<{ household: (Omit<PlanningHousehold, 'members'> & { members: Array<{ id: string; user: { id: string; email: string; displayName: string | null } }> }) | null }>('/api/households/current')
+    if (!current.household) {
+      currentHousehold.value = null
+      return
+    }
+    currentHousehold.value = {
+      ...current.household,
+      members: current.household.members.map((membership) => ({
+        id: membership.user.id,
+        email: membership.user.email,
+        displayName: membership.user.displayName,
+      })),
+    }
   } catch (error) {
     currentHousehold.value = null
   }
@@ -415,6 +563,33 @@ watch(activeHouseholdId, async () => { await loadAll() })
           @update:model-value="onMonthChange"
         />
       </div>
+      <!-- Issue #55: Person-Filter (Single-Select). Wert null bedeutet
+           "Alle Mitglieder" — PrimeVue-Select verträgt das ohne Custom-
+           Placeholder, wenn die erste Option den Wert null hat. -->
+      <Select
+        :model-value="userIdFilter"
+        :options="userFilterOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Alle Mitglieder"
+        :loading="txLoading"
+        aria-label="Buchungen nach Person filtern"
+        class="toolbar-filter"
+        @update:model-value="onUserIdFilterChange"
+      />
+      <!-- Issue #55: Budget-Filter (Single-Select). Gleiches Pattern
+           wie Person-Filter, mit "Alle Budgets" als Default. -->
+      <Select
+        :model-value="budgetIdFilter"
+        :options="budgetFilterOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Alle Budgets"
+        :loading="txLoading"
+        aria-label="Buchungen nach Budget filtern"
+        class="toolbar-filter"
+        @update:model-value="onBudgetIdFilterChange"
+      />
       <!-- Issue #52: Toggle-Button fuer den ?unassigned=1-Filter.
            Severity wechselt zwischen secondary (inaktiv) und warn (aktiv),
            damit der User auf einen Blick sieht, dass gefiltert wird. -->
@@ -461,6 +636,20 @@ watch(activeHouseholdId, async () => { await loadAll() })
       :headline="`Alle Ausgaben in ${monthLabel} haben ein Budget`"
       :description="`In ${monthLabel} ist keine Ausgabe ohne Budgetzuordnung offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
       :cta="{ label: 'Alle Ausgaben anzeigen', onClick: toggleUnassignedFilter, severity: 'secondary' }"
+    />
+    <!-- Issue #55: Empty-State fuer die Person/Budget-Filter. Wenn aktiv
+         und keine Treffer, ist "Keine Ausgaben für [Filter-Kombi] in
+         [Monat]" informativer als "Keine Ausgaben in <Monat>". CTA
+         setzt die Local-Filter zurueck, der Unassigned-Filter bleibt
+         unberuehrt (das ist semantisch ein separater Filter). -->
+    <EmptyState
+      v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0 && hasLocalFilters"
+      variant="no-results"
+      icon="pi pi-search"
+      icon-tone="muted"
+      :headline="`Keine Ausgaben fuer ${activeFilterLabel} in ${monthLabel}`"
+      :description="`Mit der aktuellen Filter-Auswahl gibt es in ${monthLabel} keine Treffer. Du kannst die Filter zuruecksetzen, um alle Buchungen zu sehen.`"
+      :cta="{ label: 'Alle Ausgaben anzeigen', onClick: clearAllLocalFilters, severity: 'secondary' }"
     />
     <EmptyState
       v-else-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length === 0"
@@ -703,6 +892,26 @@ watch(activeHouseholdId, async () => { await loadAll() })
   color: var(--text-muted, #94a3b8);
 }
 
+/* Issue #55: Filter-Selects in der Toolbar. Kompakte Hoehe, passt
+   zu den Buttons daneben. min-width verhindert, dass PrimeVue
+   die Selects auf Mobile zu schmal rendert. */
+.toolbar-filter {
+  min-width: 180px;
+  max-width: 240px;
+}
+
+@media (max-width: 480px) {
+  .toolbar-month {
+    width: 100%;
+  }
+  /* Auf Mobile volle Breite, damit die Filter-Selects umbrechen
+     koennen statt horizontal gequetscht zu werden. */
+  .toolbar-filter {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
 /* Issue #15: Inline-Edit-Cell (Desktop-Tabellen-Zeile) */
 .data-table__edit-cell {
   padding: 0 !important;
@@ -713,11 +922,5 @@ watch(activeHouseholdId, async () => { await loadAll() })
   background: rgba(59, 130, 246, 0.08);
   border-left: 3px solid #60a5fa;
   padding: 8px;
-}
-
-@media (max-width: 480px) {
-  .toolbar-month {
-    width: 100%;
-  }
 }
 </style>
