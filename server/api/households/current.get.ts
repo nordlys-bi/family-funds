@@ -2,6 +2,7 @@ import { defineEventHandler, createError, getCookie } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
 import { buildBudgetOverview, getMonthWindow } from '../../utils/budget-evaluation'
+import { buildSavingsMonthlyProgress } from '../../utils/savings-progress'
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuthenticatedUser(event)
@@ -119,6 +120,17 @@ export default defineEventHandler(async (event) => {
         orderBy: {
           createdAt: 'desc',
         },
+        // Issue #56: fuer die monatliche Plan-vs-Ist-Aggregation
+        // brauchen wir pro Execution `amount` + `date`. select statt
+        // include, damit wir nur die noetigen Felder laden.
+        include: {
+          executions: {
+            select: {
+              amount: true,
+              date: true,
+            },
+          },
+        },
       },
     },
   })
@@ -131,28 +143,12 @@ export default defineEventHandler(async (event) => {
   }
 
   // Aggregation: pro SavingsGoal die Summe aller Executions in Cent
-  // (issue #12). Eine groupBy-Query pro Household-Request, kein N+1.
-  const executionSums = await prisma.savingsGoalExecution.groupBy({
-    by: ['savingsGoalId'],
-    where: {
-      savingsGoal: {
-        householdId,
-      },
-    },
-    _sum: {
-      amount: true,
-    },
-  })
-  const currentAmountByGoalId = new Map(
-    executionSums.map((row) => [row.savingsGoalId, row._sum.amount ?? 0]),
-  )
-
-  // Pro Goal: currentAmount + progressPercent in die Response einrechnen.
-  // progressPercent = currentAmount / targetAmount * 100, gerundet auf 1
-  // Nachkommastelle, gedeckelt bei 999 (verhindert 'Infinity %' bei
-  // targetAmount=0). Goals ohne Execution bekommen currentAmount=0.
+  // (issue #12, erweitert in issue #56 um die monatliche
+  // Plan-vs-Ist-Breakdown). Die Execution-Daten kommen jetzt direkt
+  // aus dem Household-Query oben (kein separates groupBy mehr noetig),
+  // das spart einen Roundtrip und haelt die Logik an einer Stelle.
   const savingsGoals = household.savingsGoals.map((goal) => {
-    const currentAmount = currentAmountByGoalId.get(goal.id) ?? 0
+    const currentAmount = goal.executions.reduce((sum, exec) => sum + exec.amount, 0)
     const progressPercent =
       goal.targetAmount > 0
         ? Math.min(999, Math.round((currentAmount / goal.targetAmount) * 1000) / 10)
@@ -161,6 +157,14 @@ export default defineEventHandler(async (event) => {
       ...goal,
       currentAmount,
       progressPercent,
+      // Issue #56: monatliche Plan-vs-Ist-Breakdown fuer die Card.
+      // Default 3 Monate (current + 2 previous). Helper uebernimmt
+      // Month-Window-Berechnung und Edge-Cases (planned=0, negative
+      // rate, leere executions). Siehe savings-progress.ts.
+      monthlyProgress: buildSavingsMonthlyProgress(
+        { monthlyRate: goal.monthlyRate, executions: goal.executions },
+        3,
+      ),
     }
   })
 
