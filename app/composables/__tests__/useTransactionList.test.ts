@@ -251,3 +251,183 @@ describe('useTransactionList — unassignedOnly filter (issue #52)', () => {
     expect(list.unassignedOnly.value).toBe(false)
   })
 })
+
+/**
+ * Tests fuer die #55 Local-Filter (Person + Budget).
+ *
+ * Wichtige Eigenschaften:
+ *  - Local-Filter triggern KEINEN API-Roundtrip (die Monats-Liste ist
+ *    bereits geladen, wir schneiden nur die Sicht zurecht)
+ *  - `transactionsByKind` wendet kind + userId + budgetId in dieser
+ *    Reihenfolge an
+ *  - Leere Strings werden zu null normalisiert (kein "leerer Filter")
+ *  - `clearLocalFilters` leert nur die #55-Filter, nicht unassignedOnly
+ *  - `hasLocalFilters` ist true sobald mindestens einer der beiden
+ *    #55-Filter aktiv ist
+ */
+describe('useTransactionList — local filters (issue #55)', () => {
+  const sampleTransactions = [
+    { id: 'e-1', kind: 'expense' as const, amount: 100, description: 'A', date: '2026-05-10', budgetId: 'b-1', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+    { id: 'e-2', kind: 'expense' as const, amount: 200, description: 'B', date: '2026-05-08', budgetId: 'b-2', user: { id: 'u-2', displayName: 'Maria', email: 'm@x' } },
+    { id: 'e-3', kind: 'expense' as const, amount: 300, description: 'C', date: '2026-05-05', budgetId: null, user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+    { id: 'i-1', kind: 'income' as const, amount: 5000, description: 'Gehalt', date: '2026-05-01', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+  ]
+
+  it('defaults userIdFilter and budgetIdFilter to null', () => {
+    const list = useTransactionList()
+    expect(list.userIdFilter.value).toBeNull()
+    expect(list.budgetIdFilter.value).toBeNull()
+    expect(list.hasLocalFilters.value).toBe(false)
+  })
+
+  it('accepts initial values for both filters', () => {
+    const list = useTransactionList({
+      initialUserIdFilter: 'u-1',
+      initialBudgetIdFilter: 'b-1',
+    })
+    expect(list.userIdFilter.value).toBe('u-1')
+    expect(list.budgetIdFilter.value).toBe('b-1')
+    expect(list.hasLocalFilters.value).toBe(true)
+  })
+
+  it('does NOT add userId or budgetId to the fetch params (local-only filter)', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({
+      initialMonth: '2026-05',
+      initialUserIdFilter: 'u-1',
+      initialBudgetIdFilter: 'b-1',
+    })
+    await list.load('hh-1')
+    const call = fetchMock.mock.calls[0][1] as { params: Record<string, string> }
+    expect(call.params).toEqual({ month: '2026-05' })
+    expect(call.params.userId).toBeUndefined()
+    expect(call.params.budgetId).toBeUndefined()
+  })
+
+  it('filters transactionsByKind by userId when set', async () => {
+    fetchMock.mockResolvedValue({
+      transactions: sampleTransactions,
+      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+    })
+    const list = useTransactionList({ initialUserIdFilter: 'u-1' })
+    await list.load('hh-1')
+    const janExpenses = list.transactionsByKind('expense')
+    expect(janExpenses).toHaveLength(2)
+    expect(janExpenses.every((t) => t.user.id === 'u-1')).toBe(true)
+  })
+
+  it('filters transactionsByKind by budgetId when set', async () => {
+    fetchMock.mockResolvedValue({
+      transactions: sampleTransactions,
+      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+    })
+    const list = useTransactionList({ initialBudgetIdFilter: 'b-1' })
+    await list.load('hh-1')
+    // Nur die eine Transaktion mit budgetId=b-1. income-Items ohne
+    // budgetId werden durch den Filter ebenfalls ausgeschlossen
+    // (weil budgetId null !== 'b-1').
+    const matched = list.transactionsByKind('expense')
+    expect(matched).toHaveLength(1)
+    expect(matched[0].id).toBe('e-1')
+  })
+
+  it('combines userId and budgetId filters (AND)', async () => {
+    fetchMock.mockResolvedValue({
+      transactions: sampleTransactions,
+      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+    })
+    const list = useTransactionList({ initialUserIdFilter: 'u-1', initialBudgetIdFilter: 'b-1' })
+    await list.load('hh-1')
+    const matched = list.transactionsByKind('expense')
+    expect(matched).toHaveLength(1)
+    expect(matched[0].id).toBe('e-1')
+  })
+
+  it('returns empty list when userId does not match', async () => {
+    fetchMock.mockResolvedValue({
+      transactions: sampleTransactions,
+      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+    })
+    const list = useTransactionList({ initialUserIdFilter: 'u-99' })
+    await list.load('hh-1')
+    expect(list.transactionsByKind('expense')).toHaveLength(0)
+  })
+
+  it('setUserIdFilter / setBudgetIdFilter update state', () => {
+    const list = useTransactionList()
+    list.setUserIdFilter('u-1')
+    expect(list.userIdFilter.value).toBe('u-1')
+    expect(list.hasLocalFilters.value).toBe(true)
+
+    list.setBudgetIdFilter('b-1')
+    expect(list.budgetIdFilter.value).toBe('b-1')
+
+    list.setUserIdFilter(null)
+    expect(list.userIdFilter.value).toBeNull()
+    expect(list.hasLocalFilters.value).toBe(true) // budgetIdFilter ist noch aktiv
+
+    list.setBudgetIdFilter(null)
+    expect(list.budgetIdFilter.value).toBeNull()
+    expect(list.hasLocalFilters.value).toBe(false)
+  })
+
+  it('normalizes empty string to null in setters', () => {
+    const list = useTransactionList()
+    list.setUserIdFilter('')
+    expect(list.userIdFilter.value).toBeNull()
+    list.setBudgetIdFilter('')
+    expect(list.budgetIdFilter.value).toBeNull()
+  })
+
+  it('clearLocalFilters clears both #55 filters but NOT unassignedOnly', () => {
+    const list = useTransactionList({
+      initialUserIdFilter: 'u-1',
+      initialBudgetIdFilter: 'b-1',
+      initialUnassignedOnly: true,
+    })
+    expect(list.hasLocalFilters.value).toBe(true)
+    expect(list.unassignedOnly.value).toBe(true)
+
+    list.clearLocalFilters()
+
+    expect(list.userIdFilter.value).toBeNull()
+    expect(list.budgetIdFilter.value).toBeNull()
+    expect(list.hasLocalFilters.value).toBe(false)
+    // unassignedOnly ist semantisch ein separater Filter (issue #52),
+    // nicht ein #55-Filter — bleibt unberuehrt.
+    expect(list.unassignedOnly.value).toBe(true)
+  })
+
+  it('hasLocalFilters tracks both filters independently', () => {
+    const list = useTransactionList()
+    expect(list.hasLocalFilters.value).toBe(false)
+
+    list.setUserIdFilter('u-1')
+    expect(list.hasLocalFilters.value).toBe(true)
+
+    list.setUserIdFilter(null)
+    list.setBudgetIdFilter('b-1')
+    expect(list.hasLocalFilters.value).toBe(true)
+
+    list.setBudgetIdFilter(null)
+    expect(list.hasLocalFilters.value).toBe(false)
+  })
+
+  it('does not refetch when local filters change', async () => {
+    fetchMock.mockResolvedValue({
+      transactions: sampleTransactions,
+      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+    })
+    const list = useTransactionList()
+    await list.load('hh-1')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    list.setUserIdFilter('u-1')
+    list.setBudgetIdFilter('b-1')
+    // Kein weiterer API-Call, weil die Filter nur die View zurechtschneiden.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    // transactionsByKind sieht die gefilterte View, ohne dass load() noetig war.
+    expect(list.transactionsByKind('expense')).toHaveLength(1)
+  })
+})
