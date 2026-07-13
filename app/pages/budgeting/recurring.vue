@@ -483,7 +483,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${visiblePlans(currentHousehold.incomePlans).length} fällig${nonDueIncomeCount > 0 ? ` · ${nonDueIncomeCount} diesen Monat nicht relevant` : ''}`"
       >
-        <ItemCard v-for="plan in visiblePlans(currentHousehold.incomePlans)" :key="plan.id">
+        <ItemCard
+          v-for="plan in visiblePlans(currentHousehold.incomePlans)"
+          :key="plan.id"
+          :hover-actions="false"
+        >
           <template #main>
             <span class="row-title">
               {{ plan.name }}
@@ -551,7 +555,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${visiblePlans(currentHousehold.fixedCosts).length} fällig${nonDueFixedCount > 0 ? ` · ${nonDueFixedCount} diesen Monat nicht relevant` : ''}`"
       >
-        <ItemCard v-for="plan in visiblePlans(currentHousehold.fixedCosts)" :key="plan.id">
+        <ItemCard
+          v-for="plan in visiblePlans(currentHousehold.fixedCosts)"
+          :key="plan.id"
+          :hover-actions="false"
+        >
           <template #main>
             <span class="row-title">
               {{ plan.name }}
