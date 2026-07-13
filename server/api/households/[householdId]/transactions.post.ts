@@ -12,6 +12,12 @@ type TransactionCreateBody = {
   description?: string | null
   date?: string
   budgetId?: string | null
+  // Issue #59: optionaler FK auf einen Recurring-Plan, gesetzt wenn
+  // der User die Transaktion ueber den "Als bezahlt markieren"-Flow
+  // angelegt hat. Wird nur fuer die jeweilige Kind-Seite ausgewertet
+  // (fixedCostPlanId nur fuer 'expense', incomePlanId nur fuer 'income').
+  fixedCostPlanId?: string | null
+  incomePlanId?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -41,6 +47,7 @@ export default defineEventHandler(async (event) => {
 
   if (kind === 'expense') {
     const budgetId = body.budgetId?.trim() || null
+    const fixedCostPlanId = body.fixedCostPlanId?.trim() || null
 
     if (budgetId) {
       const budget = await prisma.budget.findFirst({
@@ -59,6 +66,23 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    if (fixedCostPlanId) {
+      const plan = await prisma.fixedCostPlan.findFirst({
+        where: {
+          id: fixedCostPlanId,
+          householdId,
+        },
+        select: { id: true },
+      })
+
+      if (!plan) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'Fixed cost plan not found.',
+        })
+      }
+    }
+
     const item = await prisma.expenseTransaction.create({
       data: {
         householdId,
@@ -67,10 +91,31 @@ export default defineEventHandler(async (event) => {
         description,
         date,
         budgetId,
+        fixedCostPlanId,
       },
     })
 
     return defineApiResponse({ kind, item })
+  }
+
+  // kind === 'income'
+  const incomePlanId = body.incomePlanId?.trim() || null
+
+  if (incomePlanId) {
+    const plan = await prisma.incomePlan.findFirst({
+      where: {
+        id: incomePlanId,
+        householdId,
+      },
+      select: { id: true },
+    })
+
+    if (!plan) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Income plan not found.',
+      })
+    }
   }
 
   const item = await prisma.incomeTransaction.create({
@@ -80,6 +125,7 @@ export default defineEventHandler(async (event) => {
       amount,
       description,
       date,
+      incomePlanId,
     },
   })
 

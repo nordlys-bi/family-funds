@@ -132,6 +132,12 @@ model IncomePlan {
   updatedAt    DateTime          @updatedAt
 
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  // Issue #59: Rueckwaerts-Pointer auf zugeordnete Buchungen, damit
+  // der monatliche Coverage-Status ("X von Y bezahlt") effizient
+  // aggregiert werden kann, ohne Heuristik-Matching. onDelete: SetNull
+  // — Plan loeschen hebt die Verknuepfung auf, Buchungen bleiben
+  // erhalten (analog zu `Budget`-Verhalten).
+  transactions IncomeTransaction[]
 }
 
 model FixedCostPlan {
@@ -146,6 +152,8 @@ model FixedCostPlan {
   updatedAt    DateTime          @updatedAt
 
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  // Issue #59: siehe IncomePlan. Rueckwaerts-Pointer fuer Coverage.
+  transactions ExpenseTransaction[]
 }
 
 model ExpenseTransaction {
@@ -167,6 +175,12 @@ model ExpenseTransaction {
 
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  // Issue #59: optionaler FK auf einen Fixkostenplan. Wird beim
+  // "Als bezahlt markieren"-Flow auf der Recurring-Page gesetzt.
+  // onDelete: SetNull, damit Plan-Loeschen die Verknuepfung aufhebt
+  // ohne Buchung zu verlieren (analog zu Budget).
+  fixedCostPlan FixedCostPlan?   @relation(fields: [fixedCostPlanId], references: [id], onDelete: SetNull)
+  fixedCostPlanId String?
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Composite-Indizes fuer Hot-Path-Queries (Dashboard-Month-Window +
@@ -176,6 +190,10 @@ model ExpenseTransaction {
   // Sort, skaliert linear mit Household-Volumen.
   @@index([householdId, date(sort: Desc)])
   @@index([budgetId, date(sort: Desc)])
+  // Issue #59: Index fuer Coverage-Queries ("wie viele Buchungen mit
+  // diesem fixedCostPlanId in Monat X?"). FK-Lookups ueber den Plan
+  // sind ohne Index Full-Table-Scan.
+  @@index([fixedCostPlanId, date(sort: Desc)])
   // Soft-Delete-Index: nach Soft-Delete wandert die ueberwiegende Mehrheit
   // der Queries in `where: { householdId, deletedAt: null, ... }`. Mit dem
   // existierenden `(householdId, date DESC)`-Index macht Postgres
@@ -199,11 +217,19 @@ model IncomeTransaction {
   updatedAt    DateTime          @updatedAt
 
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  // Issue #59: optionaler FK auf einen Einnahmenplan. Wird beim
+  // "Als erhalten markieren"-Flow auf der Recurring-Page gesetzt.
+  // onDelete: SetNull, damit Plan-Loeschen die Verknuepfung aufhebt
+  // ohne Buchung zu verlieren.
+  incomePlan   IncomePlan?       @relation(fields: [incomePlanId], references: [id], onDelete: SetNull)
+  incomePlanId String?
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([householdId, date(sort: Desc)])
   // Soft-Delete-Index: siehe ExpenseTransaction.
   @@index([householdId, deletedAt])
+  // Issue #59: Index fuer Coverage-Queries, siehe ExpenseTransaction.
+  @@index([incomePlanId, date(sort: Desc)])
 }
 
 model SavingsGoal {
