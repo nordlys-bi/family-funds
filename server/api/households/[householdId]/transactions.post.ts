@@ -46,8 +46,33 @@ export default defineEventHandler(async (event) => {
   const description = body.description?.trim() || null
 
   if (kind === 'expense') {
-    const budgetId = body.budgetId?.trim() || null
     const fixedCostPlanId = body.fixedCostPlanId?.trim() || null
+    let budgetId = body.budgetId?.trim() || null
+
+    if (fixedCostPlanId) {
+      const plan = await prisma.fixedCostPlan.findFirst({
+        where: {
+          id: fixedCostPlanId,
+          householdId,
+        },
+        select: { id: true, budgetId: true },
+      })
+
+      if (!plan) {
+        throw createError({
+          statusCode: 404,
+          statusMessage: 'Fixed cost plan not found.',
+        })
+      }
+
+      // Issue #59 polish (Option c, hart gekoppelt): wenn der Plan
+      // ein Default-Budget hat, erbt die Transaktion dieses Budget.
+      // Per-Transaction-Override ist nicht vorgesehen — wer das
+      // nachtraeglich aendern will, nutzt den Transaction-Row-Editor.
+      if (plan.budgetId && !budgetId) {
+        budgetId = plan.budgetId
+      }
+    }
 
     if (budgetId) {
       const budget = await prisma.budget.findFirst({
@@ -62,23 +87,6 @@ export default defineEventHandler(async (event) => {
         throw createError({
           statusCode: 404,
           statusMessage: 'Budget not found.',
-        })
-      }
-    }
-
-    if (fixedCostPlanId) {
-      const plan = await prisma.fixedCostPlan.findFirst({
-        where: {
-          id: fixedCostPlanId,
-          householdId,
-        },
-        select: { id: true },
-      })
-
-      if (!plan) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Fixed cost plan not found.',
         })
       }
     }
@@ -100,6 +108,7 @@ export default defineEventHandler(async (event) => {
 
   // kind === 'income'
   const incomePlanId = body.incomePlanId?.trim() || null
+  let budgetId = body.budgetId?.trim() || null
 
   if (incomePlanId) {
     const plan = await prisma.incomePlan.findFirst({
@@ -107,13 +116,36 @@ export default defineEventHandler(async (event) => {
         id: incomePlanId,
         householdId,
       },
-      select: { id: true },
+      select: { id: true, budgetId: true },
     })
 
     if (!plan) {
       throw createError({
         statusCode: 404,
         statusMessage: 'Income plan not found.',
+      })
+    }
+
+    // Issue #59 polish: siehe oben — hart gekoppelte Vererbung
+    // vom Plan-Budget, kein Override im Mark-Dialog.
+    if (plan.budgetId && !budgetId) {
+      budgetId = plan.budgetId
+    }
+  }
+
+  if (budgetId) {
+    const budget = await prisma.budget.findFirst({
+      where: {
+        id: budgetId,
+        householdId,
+      },
+      select: { id: true },
+    })
+
+    if (!budget) {
+      throw createError({
+        statusCode: 404,
+        statusMessage: 'Budget not found.',
       })
     }
   }
@@ -125,6 +157,7 @@ export default defineEventHandler(async (event) => {
       amount,
       description,
       date,
+      budgetId,
       incomePlanId,
     },
   })
