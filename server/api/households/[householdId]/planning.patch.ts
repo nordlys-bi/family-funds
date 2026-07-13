@@ -23,6 +23,11 @@ type PlanningUpdateBody = {
   monthlyRate?: string | number
   startDate?: string
   endDate?: string | null
+  // Issue #59 polish: optionales Budget fuer Income-/FixedCost-Plan.
+  // null = explizit kein Budget (vs. nicht-gesetzt = aktueller Wert
+  // bleibt). Beim "Als bezahlt/erhalten markieren"-Flow erbt die
+  // neue Transaktion dieses Budget.
+  budgetId?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -132,6 +137,25 @@ export default defineEventHandler(async (event) => {
         })
       }
 
+      // Budget-Validierung: wenn explizit gesetzt, muss es zum
+      // Haushalt gehoeren. null = explizit kein Budget (Plan
+      // bekommt budgetId=null).
+      if (body.budgetId !== undefined && body.budgetId !== null) {
+        const budgetId = body.budgetId.trim()
+        if (budgetId) {
+          const budget = await prisma.budget.findFirst({
+            where: { id: budgetId, householdId },
+            select: { id: true },
+          })
+          if (!budget) {
+            throw createError({
+              statusCode: 404,
+              statusMessage: 'Budget not found.',
+            })
+          }
+        }
+      }
+
       const item = await prisma.incomePlan.update({
         where: { id: body.id },
         data: {
@@ -140,6 +164,11 @@ export default defineEventHandler(async (event) => {
           ...(body.frequency ? { frequency: assertFrequency(body.frequency) } : {}),
           ...(body.startDate ? { startDate: parseDateInput(body.startDate, 'Start date') } : {}),
           ...(body.endDate !== undefined ? { endDate: parseOptionalDateInput(body.endDate) } : {}),
+          // budgetId === undefined: nicht aendern. null: explizit
+          // entfernen. Sonst: neuen Wert setzen.
+          ...(body.budgetId !== undefined
+            ? { budgetId: body.budgetId?.trim() || null }
+            : {}),
         },
       })
 
@@ -160,6 +189,22 @@ export default defineEventHandler(async (event) => {
         })
       }
 
+      if (body.budgetId !== undefined && body.budgetId !== null) {
+        const budgetId = body.budgetId.trim()
+        if (budgetId) {
+          const budget = await prisma.budget.findFirst({
+            where: { id: budgetId, householdId },
+            select: { id: true },
+          })
+          if (!budget) {
+            throw createError({
+              statusCode: 404,
+              statusMessage: 'Budget not found.',
+            })
+          }
+        }
+      }
+
       const item = await prisma.fixedCostPlan.update({
         where: { id: body.id },
         data: {
@@ -168,6 +213,9 @@ export default defineEventHandler(async (event) => {
           ...(body.frequency ? { frequency: assertFrequency(body.frequency) } : {}),
           ...(body.startDate ? { startDate: parseDateInput(body.startDate, 'Start date') } : {}),
           ...(body.endDate !== undefined ? { endDate: parseOptionalDateInput(body.endDate) } : {}),
+          ...(body.budgetId !== undefined
+            ? { budgetId: body.budgetId?.trim() || null }
+            : {}),
         },
       })
 
