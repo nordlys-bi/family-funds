@@ -99,6 +99,12 @@ model Budget {
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   versions     BudgetVersion[]
   expenses     ExpenseTransaction[]
+  // Issue #59 polish: Rueckwaerts-Pointer auf Recurring-Plaene, die
+  // dieses Budget als Default verwenden. Budget-Loeschen hebt die
+  // Verknuepfung auf den Plaenen auf (setzt budgetId=null), die Plaene
+  // bleiben aber aktiv.
+  fixedCostPlans FixedCostPlan[]
+  incomePlans   IncomePlan[]
 
   @@unique([householdId, key])
   @@index([householdId, key])
@@ -138,6 +144,16 @@ model IncomePlan {
   // — Plan loeschen hebt die Verknuepfung auf, Buchungen bleiben
   // erhalten (analog zu `Budget`-Verhalten).
   transactions IncomeTransaction[]
+  // Issue #59 polish: Default-Budget fuer Transaktionen aus diesem
+  // Plan. Beim "Als erhalten markieren"-Flow erbt die neue
+  // Transaktion dieses Budget, ohne dass der User pro Monat das
+  // Dropdown bedienen muss. Optional, weil Recurring und Budget
+  // bewusst orthogonale Konzepte sind — manche Recurrings haben
+  // kein passendes Budget (z. B. Miete mit schwankendem Betrag
+  // und bewusst keinem "Wohnen"-Bucket zugeordnet). onDelete: SetNull
+  // aus gleichem Grund wie der Rueckwaerts-Pointer oben.
+  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  budgetId     String?
 }
 
 model FixedCostPlan {
@@ -154,6 +170,12 @@ model FixedCostPlan {
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
   // Issue #59: siehe IncomePlan. Rueckwaerts-Pointer fuer Coverage.
   transactions ExpenseTransaction[]
+  // Issue #59 polish: siehe IncomePlan — Default-Budget fuer
+  // Transaktionen aus diesem Plan. Hart gekoppelt (kein per-
+  // Transaction-Override im Mark-Dialog), aber nachtraegliche
+  // Aenderung im Transaction-Row-Editor bleibt moeglich.
+  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  budgetId     String?
 }
 
 model ExpenseTransaction {

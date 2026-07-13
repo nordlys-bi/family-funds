@@ -21,6 +21,10 @@ type IncomePlanItem = {
   startDate: string
   endDate: string | null
   createdAt: string
+  // Issue #59 polish: optionales Default-Budget fuer Transaktionen
+  // aus diesem Plan. Backend erbt das Budget beim "Als erhalten
+  // markieren"-Flow automatisch (Option c, hart gekoppelt).
+  budgetId: string | null
   coverage: PlanCoverage
   nextDueDate: string | null
 }
@@ -33,6 +37,7 @@ type FixedCostPlanItem = {
   startDate: string
   endDate: string | null
   createdAt: string
+  budgetId: string | null
   coverage: PlanCoverage
   nextDueDate: string | null
 }
@@ -73,6 +78,9 @@ const incomeForm = ref({
   frequency: 'MONTHLY' as Frequency,
   startDate: new Date() as Date | null,
   endDate: null as Date | null,
+  // Issue #59 polish: optionales Default-Budget. null = kein Budget,
+  // die Transaktion erbt dann kein Budget.
+  budgetId: null as string | null,
 })
 const incomeEditId = ref<string | null>(null)
 
@@ -82,6 +90,7 @@ const fixedCostForm = ref({
   frequency: 'MONTHLY' as Frequency,
   startDate: new Date() as Date | null,
   endDate: null as Date | null,
+  budgetId: null as string | null,
 })
 const fixedCostEditId = ref<string | null>(null)
 
@@ -197,7 +206,6 @@ const markForm = ref({
   amount: null as number | null,
   date: new Date() as Date | null,
   description: '',
-  budgetId: '' as string, // nur fuer fixedCost
 })
 
 const markPlan = computed(() => {
@@ -220,13 +228,6 @@ const markSubmitLabel = computed(() => {
 const markSubmitSeverity = computed<'success' | 'primary'>(() =>
   markKind.value === 'fixedCost' ? 'primary' : 'success',
 )
-const markBudgetOptions = computed(() => {
-  const list = currentHousehold.value?.budgets ?? []
-  return [
-    { label: 'Sonstiges', value: '' },
-    ...list.map((b) => ({ label: b.name, value: b.id })),
-  ]
-})
 
 function openMarkDialog(kind: MarkKind, planId: string) {
   const plan = kind === 'fixedCost'
@@ -238,8 +239,10 @@ function openMarkDialog(kind: MarkKind, planId: string) {
   markForm.value = {
     amount: plan.amount / 100,
     date: new Date(),
-    description: '',
-    budgetId: '',
+    // Issue #59 polish: Notiz mit dem Plannamen vorbelegen, damit
+    // die spaetere Buchung in der Transaktions-Liste sofort
+    // wiedererkennbar ist. User kann editieren (z. B. "+ Nebenkosten").
+    description: plan.name,
   }
   markError.value = null
   markDialogOpen.value = true
@@ -249,7 +252,7 @@ function closeMarkDialog() {
   markDialogOpen.value = false
   markPlanId.value = null
   markError.value = null
-  markForm.value = { amount: null, date: new Date(), description: '', budgetId: '' }
+  markForm.value = { amount: null, date: new Date(), description: '' }
 }
 
 async function submitMarkDialog() {
@@ -271,9 +274,14 @@ async function submitMarkDialog() {
       date: markForm.value.date ? formatDateToInputString(markForm.value.date) : formatDateToInputString(new Date()),
       description: markForm.value.description.trim() || null,
     }
+    // Issue #59 polish (Option c, hart gekoppelt): kein budgetId
+    // im Payload. Der Server erbt das Plan-Default-Budget
+    // automatisch, sobald der Plan-FK gesetzt ist. Per-Transaction-
+    // Override ist hier explizit nicht vorgesehen — wer das
+    // nachtraeglich braucht, editiert die Transaktion im
+    // Transaction-Row-Editor.
     if (isExpense) {
       payload.fixedCostPlanId = markPlanId.value
-      payload.budgetId = markForm.value.budgetId || null
     } else {
       payload.incomePlanId = markPlanId.value
     }
@@ -296,23 +304,37 @@ async function submitMarkDialog() {
 }
 
 const resetIncomeForm = () => {
-  incomeForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null }
+  incomeForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null, budgetId: null }
   incomeEditId.value = null
 }
 const resetFixedCostForm = () => {
-  fixedCostForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null }
+  fixedCostForm.value = { name: '', amount: null, frequency: 'MONTHLY', startDate: new Date(), endDate: null, budgetId: null }
   fixedCostEditId.value = null
 }
 
 const editIncomePlan = (plan: IncomePlanItem) => {
   incomeEditId.value = plan.id
-  incomeForm.value = { name: plan.name, amount: plan.amount / 100, frequency: plan.frequency, startDate: new Date(plan.startDate), endDate: parseDateInputString(plan.endDate) }
+  incomeForm.value = {
+    name: plan.name,
+    amount: plan.amount / 100,
+    frequency: plan.frequency,
+    startDate: new Date(plan.startDate),
+    endDate: parseDateInputString(plan.endDate),
+    budgetId: plan.budgetId,
+  }
   incomeDialogOpen.value = true
 }
 
 const editFixedCostPlan = (plan: FixedCostPlanItem) => {
   fixedCostEditId.value = plan.id
-  fixedCostForm.value = { name: plan.name, amount: plan.amount / 100, frequency: plan.frequency, startDate: new Date(plan.startDate), endDate: parseDateInputString(plan.endDate) }
+  fixedCostForm.value = {
+    name: plan.name,
+    amount: plan.amount / 100,
+    frequency: plan.frequency,
+    startDate: new Date(plan.startDate),
+    endDate: parseDateInputString(plan.endDate),
+    budgetId: plan.budgetId,
+  }
   fixedCostDialogOpen.value = true
 }
 
@@ -346,6 +368,13 @@ async function savePlan(
         frequency: form.frequency,
         startDate: form.startDate ? formatDateToInputString(form.startDate) : undefined,
         endDate: form.endDate ? formatDateToInputString(form.endDate) : null,
+        // Issue #59 polish: Default-Budget fuer Transaktionen aus
+        // diesem Plan. null = kein Default, leerer String = explizit
+        // kein Budget (POST: einfach weglassen, PATCH: explizit
+        // uebergeben, damit der Server den Wert loescht).
+        ...(kind === 'incomePlan' || kind === 'fixedCostPlan'
+          ? { budgetId: form.budgetId || null }
+          : {}),
       },
     })
     await loadPlanning()
@@ -607,6 +636,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         v-model="incomeForm"
         id-prefix="income"
         :currency="currencyCode"
+        :budgets="currentHousehold?.budgets ?? []"
         name-placeholder="z. B. Gehalt"
       />
     </FormDialog>
@@ -623,6 +653,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         v-model="fixedCostForm"
         id-prefix="fixed"
         :currency="currencyCode"
+        :budgets="currentHousehold?.budgets ?? []"
         name-placeholder="z. B. Miete"
       />
     </FormDialog>
@@ -667,22 +698,15 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText
           id="mark-note"
           v-model="markForm.description"
-          placeholder="z. B. Miete Juni"
+          placeholder="z. B. Miete + Nebenkosten"
           maxlength="500"
         />
       </FormFieldRow>
-      <!-- Budget-Dropdown nur fuer Fixkosten. Einnahmen haben kein
-           Budget, das Feld wuerde nur verwirren. -->
-      <FormFieldRow v-if="markKind === 'fixedCost'" label="Budget" html-for="mark-budget">
-        <Select
-          id="mark-budget"
-          v-model="markForm.budgetId"
-          :options="markBudgetOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Budget wählen"
-        />
-      </FormFieldRow>
+      <!-- Issue #59 polish (Option c): kein Budget-Dropdown im
+           Mark-Dialog. Das Budget erbt die Transaktion vom Plan
+           (siehe POST /transactions). Nachtraegliche Aenderung im
+           Transaction-Row-Editor bleibt moeglich, der Mark-Flow
+           selbst ist bewusst minimal. -->
     </FormDialog>
   </ListPageShell>
 </template>

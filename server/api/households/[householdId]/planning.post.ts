@@ -23,6 +23,11 @@ type PlanningCreateBody = {
   monthlyRate?: string | number
   startDate?: string
   endDate?: string | null
+  // Issue #59 polish: optionales Budget fuer Income-/FixedCost-Plan.
+  // Beim "Als bezahlt/erhalten markieren"-Flow erbt die neue
+  // Transaktion dieses Budget. null = kein Default, Transaktion
+  // wird mit budgetId=null angelegt.
+  budgetId?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -70,6 +75,20 @@ export default defineEventHandler(async (event) => {
       const frequency = assertFrequency(body.frequency)
       const startDate = parseDateInput(body.startDate, 'Start date')
       const endDate = parseOptionalDateInput(body.endDate)
+      const budgetId = body.budgetId?.trim() || null
+
+      if (budgetId) {
+        const budget = await prisma.budget.findFirst({
+          where: { id: budgetId, householdId },
+          select: { id: true },
+        })
+        if (!budget) {
+          throw createError({
+            statusCode: 404,
+            statusMessage: 'Budget not found.',
+          })
+        }
+      }
 
       const item = await prisma.incomePlan.create({
         data: {
@@ -79,6 +98,7 @@ export default defineEventHandler(async (event) => {
           frequency,
           startDate,
           endDate,
+          budgetId,
         },
       })
 
@@ -89,6 +109,20 @@ export default defineEventHandler(async (event) => {
       const frequency = assertFrequency(body.frequency)
       const startDate = parseDateInput(body.startDate, 'Start date')
       const endDate = parseOptionalDateInput(body.endDate)
+      const budgetId = body.budgetId?.trim() || null
+
+      if (budgetId) {
+        const budget = await prisma.budget.findFirst({
+          where: { id: budgetId, householdId },
+          select: { id: true },
+        })
+        if (!budget) {
+          throw createError({
+            statusCode: 404,
+            statusMessage: 'Budget not found.',
+          })
+        }
+      }
 
       const item = await prisma.fixedCostPlan.create({
         data: {
@@ -98,6 +132,7 @@ export default defineEventHandler(async (event) => {
           frequency,
           startDate,
           endDate,
+          budgetId,
         },
       })
 

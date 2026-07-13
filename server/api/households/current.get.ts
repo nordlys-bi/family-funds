@@ -115,10 +115,33 @@ export default defineEventHandler(async (event) => {
         orderBy: {
           createdAt: 'desc',
         },
+        // Issue #59 polish: budgetId wird im Frontend fuer das
+        // Plan-Edit-Dropdown gebraucht. select statt include, damit
+        // nur das noetige Feld geladen wird.
+        select: {
+          id: true,
+          name: true,
+          amount: true,
+          frequency: true,
+          startDate: true,
+          endDate: true,
+          createdAt: true,
+          budgetId: true,
+        },
       },
       fixedCosts: {
         orderBy: {
           createdAt: 'desc',
+        },
+        select: {
+          id: true,
+          name: true,
+          amount: true,
+          frequency: true,
+          startDate: true,
+          endDate: true,
+          createdAt: true,
+          budgetId: true,
         },
       },
       savingsGoals: {
