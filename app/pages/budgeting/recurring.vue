@@ -37,20 +37,12 @@ type FixedCostPlanItem = {
   nextDueDate: string | null
 }
 
-type BudgetItem = {
-  id: string
-  name: string
-}
-
 type PlanningHousehold = {
   id: string
   name: string
   currency: string
   incomePlans: IncomePlanItem[]
   fixedCosts: FixedCostPlanItem[]
-  // Issue #59: Budget-Liste fuer das Dropdown im "Als bezahlt markieren"-
-  // FormDialog. Server liefert sie schon im household-Query.
-  budgets: BudgetItem[]
 }
 
 import { isFirstRun } from '~/utils/household-age'
@@ -197,7 +189,6 @@ const markForm = ref({
   amount: null as number | null,
   date: new Date() as Date | null,
   description: '',
-  budgetId: '' as string, // nur fuer fixedCost
 })
 
 const markPlan = computed(() => {
@@ -220,13 +211,6 @@ const markSubmitLabel = computed(() => {
 const markSubmitSeverity = computed<'success' | 'primary'>(() =>
   markKind.value === 'fixedCost' ? 'primary' : 'success',
 )
-const markBudgetOptions = computed(() => {
-  const list = currentHousehold.value?.budgets ?? []
-  return [
-    { label: 'Sonstiges', value: '' },
-    ...list.map((b) => ({ label: b.name, value: b.id })),
-  ]
-})
 
 function openMarkDialog(kind: MarkKind, planId: string) {
   const plan = kind === 'fixedCost'
@@ -238,8 +222,12 @@ function openMarkDialog(kind: MarkKind, planId: string) {
   markForm.value = {
     amount: plan.amount / 100,
     date: new Date(),
-    description: '',
-    budgetId: '',
+    // Issue #59 polish: Notiz mit dem Plannamen vorbelegen. Macht
+    // die spaetere Buchung in der Transaktionsliste sofort
+    // wiedererkennbar ("Miete" statt "Ausgabe"). User kann
+    // editieren (z. B. "Miete + Nebenkosten"), Default ist der
+    // Planname pur.
+    description: plan.name,
   }
   markError.value = null
   markDialogOpen.value = true
@@ -249,7 +237,7 @@ function closeMarkDialog() {
   markDialogOpen.value = false
   markPlanId.value = null
   markError.value = null
-  markForm.value = { amount: null, date: new Date(), description: '', budgetId: '' }
+  markForm.value = { amount: null, date: new Date(), description: '' }
 }
 
 async function submitMarkDialog() {
@@ -271,9 +259,13 @@ async function submitMarkDialog() {
       date: markForm.value.date ? formatDateToInputString(markForm.value.date) : formatDateToInputString(new Date()),
       description: markForm.value.description.trim() || null,
     }
+    // Issue #59 polish: kein Budget-Override im Mark-Dialog mehr.
+    // Die Transaktion wird mit budgetId=null angelegt. Falls der User
+    // doch ein Budget zuordnen will, macht er das im Transaction-Row-
+    // Editor auf der Expenses-Liste. Recurring und Budget sind
+    // bewusst orthogonale Konzepte.
     if (isExpense) {
       payload.fixedCostPlanId = markPlanId.value
-      payload.budgetId = markForm.value.budgetId || null
     } else {
       payload.incomePlanId = markPlanId.value
     }
@@ -667,20 +659,8 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <InputText
           id="mark-note"
           v-model="markForm.description"
-          placeholder="z. B. Miete Juni"
+          placeholder="z. B. Miete + Nebenkosten"
           maxlength="500"
-        />
-      </FormFieldRow>
-      <!-- Budget-Dropdown nur fuer Fixkosten. Einnahmen haben kein
-           Budget, das Feld wuerde nur verwirren. -->
-      <FormFieldRow v-if="markKind === 'fixedCost'" label="Budget" html-for="mark-budget">
-        <Select
-          id="mark-budget"
-          v-model="markForm.budgetId"
-          :options="markBudgetOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Budget wählen"
         />
       </FormFieldRow>
     </FormDialog>
