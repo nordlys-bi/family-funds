@@ -14,6 +14,12 @@ const householdOptions = computed(() =>
   })),
 )
 
+// Issue #94: Der Haushaltswechsler belegt den prominentesten Slot im
+// Header. Fuer die grosse Mehrheit mit genau EINEM Haushalt ist das
+// breite <Select> ohne Funktion — dann zeigen wir nur ein statisches
+// Label. Das Dropdown erscheint erst ab zwei Haushalten.
+const hasMultipleHouseholds = computed(() => households.value.length > 1)
+
 const handleHouseholdChange = (value: string | null) => {
   if (value) {
     setActiveHousehold(value)
@@ -254,14 +260,17 @@ onBeforeUnmount(() => {
             @click="toggleDesktopSidebar"
           />
 
-          <!-- Household Switcher in Header -->
+          <!-- Household Switcher in Header. Issue #94: <Select> nur bei
+               mehreren Haushalten, sonst statisches Label. -->
           <div
             v-if="households.length > 0"
             class="household-switcher"
+            :class="{ 'household-switcher--static': !hasMultipleHouseholds }"
             :title="activeHousehold ? `${activeHousehold.name} (${activeHousehold.currency})` : undefined"
           >
             <i class="pi pi-home switcher-icon"></i>
             <Select
+              v-if="hasMultipleHouseholds"
               :modelValue="activeHousehold?.id ?? null"
               :options="householdOptions"
               optionLabel="label"
@@ -269,6 +278,10 @@ onBeforeUnmount(() => {
               class="switcher-select"
               @update:modelValue="handleHouseholdChange"
             />
+            <span v-else class="switcher-static">
+              <span class="switcher-static__name">{{ activeHousehold?.name ?? '' }}</span>
+              <span v-if="activeHousehold" class="switcher-static__currency">{{ activeHousehold.currency }}</span>
+            </span>
           </div>
         </div>
 
@@ -556,6 +569,37 @@ onBeforeUnmount(() => {
   min-width: 240px;
 }
 
+/* Issue #94: Statik-Variante (genau ein Haushalt) — kein Dropdown-Chrome,
+   nur Icon + Name + Waehrung. Ruhiger und gibt Header-Platz frei. */
+.household-switcher--static {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0.25rem;
+}
+
+.switcher-static {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.switcher-static__name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #f8fafc;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+
+.switcher-static__currency {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: #94a3b8;
+}
+
 :deep(.switcher-select.p-select) {
   background: transparent;
   border: none;
@@ -624,6 +668,9 @@ onBeforeUnmount(() => {
   .switcher-select {
     min-width: 0;
     max-width: 180px;
+  }
+  .switcher-static__name {
+    max-width: 46vw;
   }
 }
 </style>
