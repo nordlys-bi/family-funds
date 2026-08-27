@@ -443,11 +443,8 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       compact
       :badge="`${visibleBudgets.length} Einträge`"
     >
-      <ItemCard
-        v-for="budget in visibleBudgets"
-        :key="budget.id"
-        variant="primary"
-      >
+      <template v-for="budget in visibleBudgets" :key="budget.id">
+      <ItemCard variant="primary">
         <template #main>
           <span class="row-title">{{ budget.name }}</span>
           <span class="row-sub">
@@ -485,7 +482,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
       <!-- Issue #82: Wochen-Detail fuer WEEKLY-Budgets auf der Detail-Seite.
            Anders als auf dem Dashboard hier IMMER aufgeklappt — Detail-Kontext,
-           Whitespace ist hier ok. Kein Toggle noetig. -->
+           Whitespace ist hier ok. Kein Toggle noetig.
+           Wichtig: muss INNERHALB des v-for-Blocks sein, weil `budget.id` sonst
+           nicht im Scope ist (Vue 3 v-for-Scoping: Variable nur in direkten
+           Children sichtbar, nicht in Siblings). User-Report 2026-08-27 hat das
+           aufgedeckt. -->
       <ul
         v-if="getBudgetOverviewItem(budget.id).currentFrequency === 'WEEKLY' && getBudgetOverviewItem(budget.id).periods.length > 0"
         class="weekly-breakdown"
@@ -508,6 +509,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           />
         </li>
       </ul>
+      </template>
 
       <ItemCard v-if="budgetOverview" variant="muted">
         <template #main>
