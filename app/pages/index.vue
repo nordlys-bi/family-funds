@@ -34,6 +34,17 @@ type DashboardData = {
       percentUsed: number
       severity: 'ok' | 'warning' | 'over'
     }>
+    // Issue #60 / ADR 0003: Forecast auf Monatsende. Linear extrapoliert,
+    // serverseitig berechnet. Frontend rendert es zwischen Ist-Row und
+    // Wochen-Toggle.
+    forecast?: {
+      forecastTotal: number
+      forecastRemaining: number
+      severity: 'on-track' | 'warning' | 'over'
+      basisDays: number
+      basisAmount: number
+      computedAt: string
+    }
   }>
   recentActivity: Array<{
     id: string
@@ -52,6 +63,15 @@ type DashboardData = {
     monthlyRate: number
     percentToTarget: number
   }>
+  // Issue #60 / ADR 0003: Aggregierter Forecast für den month-strip.
+  // 4. Zelle „Voraussicht" (Variante 1, entschieden 2026-08-27).
+  monthForecast?: {
+    forecastTotal: number
+    plannedTotal: number
+    delta: number
+    severity: 'on-track' | 'warning' | 'over'
+    computedAt: string
+  }
 }
 
 const { activeHousehold } = useHousehold()
@@ -72,6 +92,16 @@ const monthLabel = computed(() =>
 )
 
 const summary = computed(() => snapshot.value?.monthSummary ?? null)
+// Issue #60 / ADR 0003: aggregierter Forecast für die 4. Zelle.
+const monthForecast = computed(() => snapshot.value?.monthForecast ?? null)
+
+function forecastSeverityLabel(severity: 'on-track' | 'warning' | 'over'): string {
+  switch (severity) {
+    case 'on-track': return 'im Plan'
+    case 'warning': return 'knapp über Plan'
+    case 'over': return 'über Plan'
+  }
+}
 const savingsGoals = computed(() => snapshot.value?.savingsGoals ?? [])
 const budgetAlerts = computed(() => snapshot.value?.budgetAlerts ?? [])
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
@@ -179,6 +209,28 @@ watch(() => activeHousehold.value?.id, loadDashboard)
           <span class="month-strip__label">Saldo</span>
           <span class="month-strip__value">{{ formatMoney(summary?.balance) }}</span>
         </div>
+        <!-- Issue #60 / ADR 0003: 4. Zelle „Voraussicht" (Variante 1).
+             Nur sichtbar wenn monthForecast vom Server geliefert wurde. -->
+        <div
+          v-if="monthForecast"
+          class="month-strip__divider"
+          aria-hidden="true"
+        />
+        <div
+          v-if="monthForecast"
+          class="month-strip__cell month-strip__cell--forecast"
+          :class="`month-strip__cell--forecast--${monthForecast.severity}`"
+        >
+          <span class="month-strip__label">Voraussicht</span>
+          <span
+            class="month-strip__value"
+            :class="`month-strip__value--forecast--${monthForecast.severity}`"
+          >{{ formatMoney(monthForecast.forecastTotal) }}</span>
+          <span
+            class="month-strip__forecast-tag"
+            :class="`month-strip__forecast-tag--${monthForecast.severity}`"
+          >{{ forecastSeverityLabel(monthForecast.severity) }}</span>
+        </div>
         <span class="month-strip__month">{{ monthLabel }}</span>
       </div>
 
@@ -282,6 +334,50 @@ watch(() => activeHousehold.value?.id, loadDashboard)
 
 .month-strip--danger .month-strip__cell--balance .month-strip__value {
   color: var(--color-accent-danger-text, #f87171);
+}
+
+/* Issue #60 / ADR 0003: 4. Zelle „Voraussicht" (Variante 1). */
+.month-strip__cell--forecast {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.month-strip__value--forecast--on-track {
+  color: #34d399;
+}
+
+.month-strip__value--forecast--warning {
+  color: #fbbf24;
+}
+
+.month-strip__value--forecast--over {
+  color: #f87171;
+}
+
+.month-strip__forecast-tag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  align-self: flex-start;
+}
+
+.month-strip__forecast-tag--on-track {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+}
+
+.month-strip__forecast-tag--warning {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+}
+
+.month-strip__forecast-tag--over {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
 }
 
 .month-strip__divider {

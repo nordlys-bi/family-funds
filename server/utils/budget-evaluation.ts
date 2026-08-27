@@ -1,4 +1,5 @@
 import type { Frequency, BudgetVersion } from '@prisma/client'
+import { buildBudgetForecast, type BudgetForecast } from './forecast'
 
 /**
  * Per-Period-Detail für ein Budget. Wird aktuell nur für WEEKLY-Budgets
@@ -39,6 +40,12 @@ export type BudgetOverviewItem = {
    * oder iterieren einfach über `periods.length`.
    */
   periods: PeriodOverview[]
+  /**
+   * Forecast auf Monatsende (issue #60 / ADR 0003). Linear extrapoliert
+   * aus `dailyRate = spent / daysSinceStart` über `daysRemaining`.
+   * Siehe `server/utils/forecast.ts` für die Formel und Edge cases.
+   */
+  forecast: BudgetForecast
 }
 
 export type BudgetOverview = {
@@ -350,6 +357,10 @@ export function buildBudgetOverview(budgets: BudgetWithVersions[], expenses: Exp
       periodCount: periodCountTotal,
       versionCount: versions.length,
       periods,
+      // Issue #60: Forecast auf Monatsende. Pure function, O(1) pro
+      // Budget, keine zusätzliche DB-Query nötig — alle Eingaben sind
+      // bereits im `BudgetOverviewItem`-State.
+      forecast: buildBudgetForecast(plannedAmount, spentAmount, monthStart, monthEnd, baseDate),
     }
   })
 

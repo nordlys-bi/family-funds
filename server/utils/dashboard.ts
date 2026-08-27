@@ -10,6 +10,7 @@
  * "buildBudgetOverview wiederverwenden, nicht neu schreiben").
  */
 import type { BudgetOverview } from './budget-evaluation'
+import { buildAggregatedForecast, type AggregatedForecast } from './forecast'
 
 // ---------------------------------------------------------------------------
 // Types — die Response-Shape, die der Dashboard-Endpoint liefert.
@@ -44,6 +45,19 @@ export type DashboardBudgetAlert = {
     percentUsed: number
     severity: 'ok' | 'warning' | 'over'
   }>
+  /**
+   * Issue #60 / ADR 0003: Forecast auf Monatsende. Linear extrapoliert
+   * aus `dailyRate = spent / daysSinceStart`. Siehe `forecast.ts` für
+   * die Formel und Edge cases.
+   */
+  forecast: {
+    forecastTotal: number
+    forecastRemaining: number
+    severity: 'on-track' | 'warning' | 'over'
+    basisDays: number
+    basisAmount: number
+    computedAt: string
+  }
 }
 
 export type DashboardRecentActivity = {
@@ -82,6 +96,12 @@ export type DashboardData = {
   budgetAlerts: DashboardBudgetAlert[]
   recentActivity: DashboardRecentActivity[]
   savingsGoals: DashboardSavingsGoal[]
+  /**
+   * Issue #60 / ADR 0003: Aggregierter Forecast für den month-strip.
+   * Summe der `forecastTotal` aller Budgets vs. `plannedTotal`,
+   * Severity = max severity wins.
+   */
+  monthForecast: AggregatedForecast
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +150,9 @@ export function buildBudgetAlerts(budgetOverview: BudgetOverview): DashboardBudg
         // das Frontend Wochen-Detail rendern kann.
         currentFrequency: budget.currentFrequency,
         periods: budget.periods,
+        // Issue #60: Forecast-Felder durchreichen für month-strip
+        // und Budget-Liste.
+        forecast: budget.forecast,
       }
     })
     .sort((left, right) => {
