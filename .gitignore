@@ -1,6 +1,13 @@
 # Environment files
 .env
 .env.*
+.envrc
+# Catch stray copies that dodge the patterns above (env-copy, env.bak, prod.env, ...)
+env
+env.*
+env-*
+*.env
+# Keep the checked-in template
 !.env.example
 
 # Dependencies
