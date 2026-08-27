@@ -7,6 +7,7 @@ import {
   buildRecentActivity,
   buildSavingsGoalsProgress,
 } from '../../../utils/dashboard'
+import { buildAggregatedForecast } from '../../../utils/forecast'
 import { parseUuidParam } from '../../../utils/validation'
 
 /**
@@ -152,5 +153,12 @@ export default defineEventHandler(async (event) => {
     budgetAlerts: buildBudgetAlerts(budgetOverview),
     recentActivity: buildRecentActivity(recentExpenses, recentIncomes, now),
     savingsGoals: buildSavingsGoalsProgress(savingsGoals),
+    // Issue #60 / ADR 0003: aggregierter Forecast für den month-strip.
+    // Wird aus den per-Budget-Forecasts in `budgetOverview` aggregiert;
+    // keine zusätzliche DB-Query nötig.
+    monthForecast: buildAggregatedForecast(
+      budgetOverview.budgets.map((b) => b.forecast),
+      budgetOverview.plannedTotal,
+    ),
   }
 })
