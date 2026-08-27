@@ -69,7 +69,13 @@ const router = useRouter()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const budgetOverview = ref<BudgetOverview | null>(null)
-const loading = ref(false)
+// SSR-Initial-Render-Fix: `loading` startet auf `true`, damit EmptyState
+// beim ersten Render den Spinner zeigt, BEVOR `loadHousehold` in onMounted
+// die Daten geladen hat. Vorher startete `loading` auf `false`, was im
+// SSR zu einem leeren EmptyState-Render fuehrte (keine loading/noHousehold/
+// variant/slot-Bedingung griff → leere Kommentare), und der User sah
+// eine leere Page bis zur Client-Hydration.
+const loading = ref(true)
 const notice = ref<Notice | null>(null)
 const budgetLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
