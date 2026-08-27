@@ -11,11 +11,18 @@
   Issue #82: WEEKLY-Budgets kriegen einen Toggle, der die Wochen-Aufschlüsselung
   ein-/ausblendet. Default collapsed (kompaktes Dashboard), Klick aufs Item
   öffnet. Andere Frequenzen zeigen weiterhin nur die Monats-Zeile.
+
+  Issue #60: Forecast-Block pro Budget (linear extrapoliert auf Monatsende,
+  ADR 0003). Server liefert `forecast.forecastTotal/forecastRemaining/
+  severity` pro Budget. Wir zeigen den Block zwischen Monats-Row und
+  Wochen-Toggle (wenn WEEKLY), damit User in einem Blick sieht: aktueller
+  Stand + was am Monatsende sein wird.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
 type PeriodSeverity = 'ok' | 'warning' | 'over'
+type ForecastSeverity = 'on-track' | 'warning' | 'over'
 
 type Period = {
   start: string | Date
@@ -25,6 +32,15 @@ type Period = {
   remainingAmount: number
   percentUsed: number
   severity: PeriodSeverity
+}
+
+type Forecast = {
+  forecastTotal: number
+  forecastRemaining: number
+  severity: ForecastSeverity
+  basisDays: number
+  basisAmount: number
+  computedAt: string
 }
 
 type Alert = {
@@ -37,6 +53,7 @@ type Alert = {
   severity: 'ok' | 'warning' | 'over'
   currentFrequency?: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE' | null
   periods?: Period[]
+  forecast?: Forecast
 }
 
 const props = defineProps<{
@@ -115,6 +132,15 @@ function periodLabel(period: Period): string {
 }
 
 void formatWeekday
+
+// === Issue #60: Forecast-Severity-Label =================================
+function forecastSeverityLabel(severity: ForecastSeverity): string {
+  switch (severity) {
+    case 'on-track': return 'im Plan'
+    case 'warning': return 'knapp über Plan'
+    case 'over': return 'über Plan'
+  }
+}
 </script>
 
 <template>
@@ -146,6 +172,26 @@ void formatWeekday
       <div class="meta">
         {{ formatMoney(alert.spentAmount) }} von {{ formatMoney(alert.plannedAmount) }}
         · noch {{ formatMoney(alert.remainingAmount) }}
+      </div>
+
+      <!-- Issue #60 / ADR 0003: Forecast auf Monatsende. Wird zwischen
+           Ist-Row und Wochen-Toggle (wenn WEEKLY) platziert, damit der
+           User "wo stehe ich → wo werde ich landen" als Block liest.
+           Nur sichtbar wenn der Server `forecast` geliefert hat. -->
+      <div v-if="alert.forecast" class="forecast" :class="`forecast--${alert.forecast.severity}`">
+        <div class="forecast__head">
+          <span class="forecast__label">Voraussichtlich am Monatsende</span>
+          <span class="sev-tag" :class="`sev-tag--${alert.forecast.severity}`">
+            {{ forecastSeverityLabel(alert.forecast.severity) }}
+          </span>
+        </div>
+        <div class="forecast__numbers">
+          <span class="forecast__total">{{ formatMoney(alert.forecast.forecastTotal) }}</span>
+          <span class="forecast__of">von {{ formatMoney(alert.plannedAmount) }} geplant</span>
+          <span class="forecast__remaining">
+            · noch {{ formatMoney(alert.forecast.forecastRemaining) }}
+          </span>
+        </div>
       </div>
 
       <!-- Issue #82: Wochen-Aufschlüsselung (nur WEEKLY-Budgets). -->
@@ -312,5 +358,90 @@ void formatWeekday
   color: var(--color-text-muted);
   text-align: center;
   font-style: italic;
+}
+
+/* Issue #60 / ADR 0003: Forecast-Block pro Budget. */
+.forecast {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.55rem 0.7rem;
+  margin-top: 0.35rem;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.forecast--warning {
+  background: rgba(251, 191, 36, 0.06);
+  border-color: rgba(251, 191, 36, 0.22);
+}
+
+.forecast--over {
+  background: rgba(248, 113, 113, 0.06);
+  border-color: rgba(248, 113, 113, 0.24);
+}
+
+.forecast__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.forecast__label {
+  font-size: 0.74rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.forecast__numbers {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.forecast__total {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.forecast--on-track .forecast__total { color: #34d399; }
+.forecast--warning .forecast__total { color: #fbbf24; }
+.forecast--over .forecast__total { color: #f87171; }
+
+.forecast__of,
+.forecast__remaining {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sev-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.sev-tag--on-track {
+  background: rgba(52, 211, 153, 0.12);
+  color: #34d399;
+}
+
+.sev-tag--warning {
+  background: rgba(251, 191, 36, 0.14);
+  color: #fbbf24;
+}
+
+.sev-tag--over {
+  background: rgba(248, 113, 113, 0.14);
+  color: #f87171;
 }
 </style>
