@@ -27,7 +27,12 @@ const createHouseholdLoading = ref(false)
 const createDialogOpen = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
-const createForm = ref({ name: '', currency: 'EUR' })
+// Issue #81: Währung fest auf EUR. Multi-Currency-Support ist Over-Engineering
+// für die aktuelle Phase (primär deutschsprachige Familien). Statt Select +
+// ISO-Validierung wird die Währung hart im Payload gesetzt; im Form-Dialog
+// wird sie als nicht-editierbarer Hinweis angezeigt.
+const createForm = ref({ name: '' })
+const FIXED_CURRENCY = 'EUR'
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const canManageHousehold = computed(() => {
@@ -36,12 +41,12 @@ const canManageHousehold = computed(() => {
 })
 
 const openCreateHouseholdDialog = () => {
-  createForm.value = { name: '', currency: 'EUR' }
+  createForm.value = { name: '' }
   createDialogOpen.value = true
 }
 const closeCreateHouseholdDialog = () => {
   createDialogOpen.value = false
-  createForm.value = { name: '', currency: 'EUR' }
+  createForm.value = { name: '' }
 }
 
 const loadCurrentHousehold = async () => {
@@ -62,7 +67,8 @@ const handleCreateHousehold = async () => {
   try {
     const data = await $fetch<{ household: HouseholdInfo }>('/api/households', {
       method: 'POST',
-      body: createForm.value,
+      // Issue #81: Währung fest auf EUR — siehe FIXED_CURRENCY.
+      body: { name: createForm.value.name, currency: FIXED_CURRENCY },
     })
     await fetchHouseholds()
     if (data.household?.id) {
@@ -171,8 +177,12 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       <FormFieldRow label="Name" html-for="household-create-name" wide>
         <InputText id="household-create-name" v-model="createForm.name" placeholder="z. B. Gemeinsamer Haushalt" />
       </FormFieldRow>
-      <FormFieldRow label="Währung" html-for="household-create-currency" wide>
-        <InputText id="household-create-currency" v-model="createForm.currency" placeholder="EUR" />
+      <FormFieldRow label="Währung" wide>
+        <!-- Issue #81: Währung fest auf EUR, nicht editierbar. Multi-Currency
+             ist Over-Engineering für die aktuelle Phase (hauptsächlich
+             deutschsprachige Familien). User sieht hier explizit, dass
+             das hart gesetzt ist, damit keine Verwirrung aufkommt. -->
+        <Tag :value="`${FIXED_CURRENCY} (fest)`" severity="info" />
       </FormFieldRow>
     </FormDialog>
   </ListPageShell>
