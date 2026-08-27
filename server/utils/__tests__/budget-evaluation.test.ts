@@ -3,6 +3,7 @@ import type { BudgetVersion, Frequency } from '@prisma/client'
 import {
   addPeriod,
   buildBudgetOverview,
+  buildWeeklyPeriods,
   getMonthWindow,
   startOfPeriod,
 } from '../budget-evaluation'
@@ -357,5 +358,248 @@ describe('addPeriod', () => {
     const result = addPeriod(baseDate, 'ONCE')
     expect(result.getTime()).toBeNaN()
     expect(isNaN(result.getTime())).toBe(true)
+  })
+})
+
+// === Issue #82: buildWeeklyPeriods ======================================
+//
+// Tests für die Period-Detail-Liste, die pro WEEKLY-Budget zusätzlich zur
+// Monats-Summe geliefert wird. Konzept: Wochen, die im aktuellen Monat
+// STARTEN, werden gelistet. Pro Woche: planned (= currentAmount), spent
+// (Summe der Transaktionen in [start, start+7d)), remaining, percentUsed,
+// severity (Schwellwerte identisch zur Monats-Logik).
+describe('buildWeeklyPeriods', () => {
+  const PLANNED_WEEKLY_CENTS = 25_000 // 250€
+
+  // Juni 2026: monthStart = 1.6., monthEnd = 1.7.
+  const monthStart = new Date(2026, 5, 1, 12, 0, 0, 0)
+  const monthEnd = new Date(2026, 6, 1, 12, 0, 0, 0)
+  // currentValidFrom: lange vor dem Monat, damit es nicht begrenzt.
+  const currentValidFrom = new Date(2025, 0, 1)
+
+  it('liefert 5 Wochen für Juni 2026 (Mo 1.6. – So 5.7., letzte Woche startet Mo 29.6.)', () => {
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      null,
+      [],
+      monthStart,
+      monthEnd,
+    )
+    expect(result).toHaveLength(5)
+    // Erste Woche startet am 1.6. (Montag)
+    expect(result[0].start.getMonth()).toBe(5)
+    expect(result[0].start.getDate()).toBe(1)
+    // Letzte Woche startet am 29.6. (Montag)
+    expect(result[4].start.getMonth()).toBe(5)
+    expect(result[4].start.getDate()).toBe(29)
+    // Jede Woche hat planned = 250€ und spent = 0
+    for (const period of result) {
+      expect(period.plannedAmount).toBe(PLANNED_WEEKLY_CENTS)
+      expect(period.spentAmount).toBe(0)
+      expect(period.remainingAmount).toBe(PLANNED_WEEKLY_CENTS)
+      expect(period.percentUsed).toBe(0)
+      expect(period.severity).toBe('ok')
+    }
+  })
+
+  it('aggregiert Transaktionen in die korrekte Woche', () => {
+    // Transaktion am 10.6. (Mittwoch) → gehört zur Woche 8.6. – 14.6.
+    // Transaktion am 22.6. (Montag) → gehört zur Woche 22.6. – 28.6.
+    const expenses = [
+      { amount: 8_000, date: new Date(2026, 5, 10, 14, 0), budgetId: 'budget-1' },
+      { amount: 12_000, date: new Date(2026, 5, 22, 9, 30), budgetId: 'budget-1' },
+    ]
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      null,
+      expenses,
+      monthStart,
+      monthEnd,
+    )
+    expect(result).toHaveLength(5)
+    // Index 1 = Woche 8.6. – 14.6. (Mo 8., Di 9., Mi 10., ...)
+    expect(result[1].spentAmount).toBe(8_000)
+    expect(result[1].percentUsed).toBe(32) // 8000 / 25000 * 100
+    expect(result[1].severity).toBe('ok')
+    // Index 3 = Woche 22.6. – 28.6.
+    expect(result[3].spentAmount).toBe(12_000)
+    expect(result[3].percentUsed).toBe(48)
+    expect(result[3].severity).toBe('ok')
+  })
+
+  it('klassifiziert severity konsistent zur Monats-Logik (>100% = over, >=80% = warning, sonst ok)', () => {
+    const expenses = [
+      // 230€ in einer Woche = 92% → warning
+      { amount: 23_000, date: new Date(2026, 5, 3, 10, 0), budgetId: 'budget-1' },
+    ]
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      null,
+      expenses,
+      monthStart,
+      monthEnd,
+    )
+    expect(result[0].severity).toBe('warning')
+    expect(result[0].percentUsed).toBe(92)
+  })
+
+  it('klassifiziert >100% als over', () => {
+    const expenses = [
+      { amount: 30_000, date: new Date(2026, 5, 3, 10, 0), budgetId: 'budget-1' },
+    ]
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      null,
+      expenses,
+      monthStart,
+      monthEnd,
+    )
+    expect(result[0].severity).toBe('over')
+    expect(result[0].percentUsed).toBe(120)
+  })
+
+  it('ignoriert Transaktionen anderer Budgets', () => {
+    const expenses = [
+      { amount: 50_000, date: new Date(2026, 5, 3, 10, 0), budgetId: 'budget-OTHER' },
+    ]
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      null,
+      expenses,
+      monthStart,
+      monthEnd,
+    )
+    // Keine Buchung für budget-1 → alle Wochen spent = 0
+    for (const period of result) {
+      expect(period.spentAmount).toBe(0)
+    }
+  })
+
+  it('respektiert currentValidTo (Version endet mitten im Monat)', () => {
+    // Version endet am 15.6. → nur Wochen bis einschließlich 8.6. – 14.6.
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      currentValidFrom,
+      new Date(2026, 5, 15, 12, 0, 0, 0),
+      [],
+      monthStart,
+      monthEnd,
+    )
+    // Wochen: 1.6. (Mo), 8.6. (Mo). Die nächste (15.6.) startet exakt auf
+    // validTo, also wird sie ausgeschlossen.
+    expect(result).toHaveLength(2)
+    expect(result[1].start.getDate()).toBe(8)
+  })
+
+  it('liefert leeres Array wenn currentValidFrom >= monthEnd', () => {
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      new Date(2026, 6, 15, 12, 0, 0, 0), // 15. Juli (nach monthEnd)
+      null,
+      [],
+      monthStart,
+      monthEnd,
+    )
+    expect(result).toEqual([])
+  })
+
+  it('liefert nur Wochen ab currentValidFrom wenn das im Monat liegt', () => {
+    // currentValidFrom = 15.6. → erste anzeigbare Woche ist 15.6. (Mo)
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      PLANNED_WEEKLY_CENTS,
+      new Date(2026, 5, 15, 12, 0, 0, 0),
+      null,
+      [],
+      monthStart,
+      monthEnd,
+    )
+    // Wochen: 15.6., 22.6., 29.6. → 3 Wochen
+    expect(result).toHaveLength(3)
+    expect(result[0].start.getDate()).toBe(15)
+  })
+
+  it('planned = 0 → percentUsed = 0, severity = ok (harmlosester Default)', () => {
+    // Edge case: ein WEEKLY-Budget mit amount = 0 (z.B. kurz vor Update)
+    // Transaktion am 10.6. (Mi) → gehört zur Woche 8.6. – 14.6. (Index 1).
+    const result = buildWeeklyPeriods(
+      'budget-1',
+      0,
+      currentValidFrom,
+      null,
+      [{ amount: 5_000, date: new Date(2026, 5, 10, 10, 0), budgetId: 'budget-1' }],
+      monthStart,
+      monthEnd,
+    )
+    // Alle Wochen: planned = 0
+    for (const period of result) {
+      expect(period.plannedAmount).toBe(0)
+    }
+    // Woche 8.6. – 14.6. (Index 1) hat die Transaktion aggregiert
+    expect(result[1].spentAmount).toBe(5_000)
+    // percentUsed = 0 (Division-by-zero-Schutz), severity = ok
+    expect(percentUsedIsZero(result[1].percentUsed)).toBe(true)
+    expect(result[1].severity).toBe('ok')
+  })
+})
+
+function percentUsedIsZero(value: number): boolean {
+  return Math.abs(value) < Number.EPSILON
+}
+
+describe('buildBudgetOverview — periods-Feld (issue #82)', () => {
+  it('WEEKLY-Budget hat eine periods-Liste mit korrekt gefüllten Wochen', () => {
+    const budget = makeBudget('budget-1', 'GROCERIES', 'Lebensmittel', [
+      makeVersion({
+        amount: 25_000,
+        frequency: 'WEEKLY',
+        validFrom: new Date(2025, 0, 1),
+      }),
+    ])
+    const expenses = [
+      { amount: 8_000, date: new Date(2026, 5, 10, 14, 0), budgetId: 'budget-1' },
+    ]
+    const result = buildBudgetOverview([budget], expenses, new Date(2026, 5, 17))
+    // June 2026 hat 5 Wochen → periods.length === 5
+    expect(result.budgets[0].periods).toHaveLength(5)
+    // Eine davon hat spent = 8000
+    const weekWithExpense = result.budgets[0].periods.find((p) => p.spentAmount > 0)
+    expect(weekWithExpense?.spentAmount).toBe(8_000)
+  })
+
+  it('MONTHLY-Budget hat periods: [] (kein Sub-Detail)', () => {
+    const budget = makeBudget('budget-1', 'RENT', 'Miete', [
+      makeVersion({
+        amount: 100_000,
+        frequency: 'MONTHLY',
+        validFrom: new Date(2025, 0, 1),
+      }),
+    ])
+    const result = buildBudgetOverview([budget], [], new Date(2026, 5, 17))
+    expect(result.budgets[0].periods).toEqual([])
+  })
+
+  it('QUARTERLY-Budget hat periods: []', () => {
+    const budget = makeBudget('budget-1', 'INSURANCE', 'Versicherung', [
+      makeVersion({
+        amount: 300_000,
+        frequency: 'QUARTERLY',
+        validFrom: new Date(2025, 0, 1),
+      }),
+    ])
+    const result = buildBudgetOverview([budget], [], new Date(2026, 5, 17))
+    expect(result.budgets[0].periods).toEqual([])
   })
 })
