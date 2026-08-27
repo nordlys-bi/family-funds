@@ -603,7 +603,9 @@ watch(activeHouseholdId, async () => { await loadAll() })
         aria-label="Nach Buchungen ohne Budgetzuordnung filtern"
         @click="toggleUnassignedFilter"
       />
-      <Button label="Ausgabe anlegen" icon="pi pi-plus" severity="success" @click="openCreateTransactionDialog" />
+      <!-- Issue #92: Auf Mobile (< 640px) verdeckt der FAB Speed-Dial
+           diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
+      <Button label="Ausgabe anlegen" icon="pi pi-plus" severity="success" class="toolbar-create-btn" @click="openCreateTransactionDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
@@ -922,5 +924,14 @@ watch(activeHouseholdId, async () => { await loadAll() })
   background: rgba(59, 130, 246, 0.08);
   border-left: 3px solid #60a5fa;
   padding: 8px;
+}
+
+/* Issue #92: Toolbar-"Ausgabe anlegen" auf Mobile ausblenden — der
+   FAB Speed-Dial (< 640px) uebernimmt die Aktion und wuerde den
+   Button sonst ueberlagern. Ab 640px (kein FAB) bleibt er sichtbar. */
+@media (max-width: 639px) {
+  .toolbar-create-btn {
+    display: none;
+  }
 }
 </style>
