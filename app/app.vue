@@ -44,6 +44,12 @@ onBeforeMount(() => {
          haelt den State, ConfirmSheetRoot hoert darauf und rendert
          den Dialog nur, wenn ein Request pending ist. -->
     <ConfirmSheetRoot />
+
+    <!-- Globaler Erfassen-Dialog (issue #91). useQuickCapture haelt den
+         State, QuickCaptureRoot rendert den Dialog + macht den POST.
+         Getriggert vom Header-Button, dem Tastenkuerzel "e" und dem
+         Mobile-FAB — von jeder Seite aus, ohne Navigation. -->
+    <QuickCaptureRoot />
   </div>
 </template>
 
