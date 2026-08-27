@@ -302,7 +302,28 @@ const deletePlanningItem = async (budget: { id: string; name: string }) => {
 const budgetOverviewMap = computed(
   () => new Map(budgetOverview.value?.budgets.map((item) => [item.budgetId, item] as const) ?? []),
 )
-const getBudgetOverviewItem = (budgetId: string) => budgetOverviewMap.value.get(budgetId) ?? null
+// Issue #82-Regression-Fix (User-Report 2026-08-27): liefert einen
+// leeren Default-Wert statt null, damit der Template-Code keine
+// Non-Null-Assertions ("!") braucht. Vorher warf "!.x" einen
+// TypeError sobald budgetOverview noch nicht geladen war, was die
+// ganze Page unrenderable machte.
+const EMPTY_OVERVIEW_ITEM: BudgetOverviewItem = {
+  budgetId: '',
+  key: '',
+  name: '',
+  currentAmount: null,
+  currentFrequency: null,
+  currentValidFrom: null,
+  plannedAmount: 0,
+  spentAmount: 0,
+  remainingAmount: 0,
+  periodCount: 0,
+  versionCount: 0,
+  periods: [],
+}
+
+const getBudgetOverviewItem = (budgetId: string): BudgetOverviewItem =>
+  budgetOverviewMap.value.get(budgetId) ?? EMPTY_OVERVIEW_ITEM
 
 // === Issue #82: Wochen-Label ============================================
 // "KW 34 (18.–24. Aug)" — ISO-Kalenderwoche + Datums-Range. Konsistent
@@ -430,21 +451,21 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         <template #main>
           <span class="row-title">{{ budget.name }}</span>
           <span class="row-sub">
-            <span v-if="getBudgetOverviewItem(budget.id)?.currentFrequency" class="row-tag">
-              {{ frequencyLabel(getBudgetOverviewItem(budget.id)!.currentFrequency!) }}
+            <span v-if="getBudgetOverviewItem(budget.id).currentFrequency" class="row-tag">
+              {{ frequencyLabel(getBudgetOverviewItem(budget.id).currentFrequency!) }}
             </span>
-            <span>gültig ab {{ formatDate(getBudgetOverviewItem(budget.id)?.currentValidFrom ?? null) }}</span>
+            <span>gültig ab {{ formatDate(getBudgetOverviewItem(budget.id).currentValidFrom) }}</span>
             <span>·</span>
-            <span>{{ getBudgetOverviewItem(budget.id)?.periodCount ?? 0 }} Perioden</span>
+            <span>{{ getBudgetOverviewItem(budget.id).periodCount }} Perioden</span>
           </span>
         </template>
         <template #progress>
           <ListProgressBar
-            :percent="getBudgetOverviewItem(budget.id)?.plannedAmount
-              ? (getBudgetOverviewItem(budget.id)!.spentAmount / getBudgetOverviewItem(budget.id)!.plannedAmount) * 100
+            :percent="getBudgetOverviewItem(budget.id).plannedAmount
+              ? (getBudgetOverviewItem(budget.id).spentAmount / getBudgetOverviewItem(budget.id).plannedAmount) * 100
               : 0"
             tone="auto"
-            :label="`${formatMoney(getBudgetOverviewItem(budget.id)?.spentAmount ?? 0)} / ${formatMoney(getBudgetOverviewItem(budget.id)?.plannedAmount ?? 0)}`"
+            :label="`${formatMoney(getBudgetOverviewItem(budget.id).spentAmount)} / ${formatMoney(getBudgetOverviewItem(budget.id).plannedAmount)}`"
           />
         </template>
         <template #actions>
@@ -466,11 +487,11 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
            Anders als auf dem Dashboard hier IMMER aufgeklappt — Detail-Kontext,
            Whitespace ist hier ok. Kein Toggle noetig. -->
       <ul
-        v-if="getBudgetOverviewItem(budget.id)?.currentFrequency === 'WEEKLY' && (getBudgetOverviewItem(budget.id)?.periods?.length ?? 0) > 0"
+        v-if="getBudgetOverviewItem(budget.id).currentFrequency === 'WEEKLY' && getBudgetOverviewItem(budget.id).periods.length > 0"
         class="weekly-breakdown"
       >
         <li
-          v-for="(period, periodIndex) in getBudgetOverviewItem(budget.id)!.periods"
+          v-for="(period, periodIndex) in getBudgetOverviewItem(budget.id).periods"
           :key="`${budget.id}-period-${periodIndex}`"
           class="weekly-breakdown__item"
         >
