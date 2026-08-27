@@ -21,6 +21,19 @@ type DashboardData = {
     remainingAmount: number
     percentUsed: number
     severity: 'ok' | 'warning' | 'over'
+    // Issue #82: Wochen-Detail ist im Frontend optional, daher hier
+    // ebenfalls optional. Frontend prueft `currentFrequency === 'WEEKLY'`,
+    // bevor es `periods` rendert.
+    currentFrequency?: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE' | null
+    periods?: Array<{
+      start: string
+      end: string
+      plannedAmount: number
+      spentAmount: number
+      remainingAmount: number
+      percentUsed: number
+      severity: 'ok' | 'warning' | 'over'
+    }>
   }>
   recentActivity: Array<{
     id: string

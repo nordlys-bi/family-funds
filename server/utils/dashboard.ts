@@ -24,6 +24,26 @@ export type DashboardBudgetAlert = {
   remainingAmount: number
   percentUsed: number
   severity: 'ok' | 'warning' | 'over'
+  /**
+   * Issue #82: Aktuelle Frequenz der gueltigen Version, damit das
+   * Frontend weiss, ob `periods` zu rendern ist. Konsumenten pruefen
+   * `currentFrequency === 'WEEKLY'`, bevor sie `periods` iterieren.
+   */
+  currentFrequency: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE' | null
+  /**
+   * Issue #82: Sub-Period-Detail. Aktuell nur fuer WEEKLY gefuellt
+   * (siehe `buildWeeklyPeriods` in `budget-evaluation.ts`). Fuer alle
+   * anderen Frequenzen ist das Feld `[]` und wird vom Frontend ignoriert.
+   */
+  periods: Array<{
+    start: Date
+    end: Date
+    plannedAmount: number
+    spentAmount: number
+    remainingAmount: number
+    percentUsed: number
+    severity: 'ok' | 'warning' | 'over'
+  }>
 }
 
 export type DashboardRecentActivity = {
@@ -106,6 +126,10 @@ export function buildBudgetAlerts(budgetOverview: BudgetOverview): DashboardBudg
         remainingAmount: budget.remainingAmount,
         percentUsed,
         severity: classifySeverity(percentUsed),
+        // Issue #82: currentFrequency + periods durchreichen, damit
+        // das Frontend Wochen-Detail rendern kann.
+        currentFrequency: budget.currentFrequency,
+        periods: budget.periods,
       }
     })
     .sort((left, right) => {

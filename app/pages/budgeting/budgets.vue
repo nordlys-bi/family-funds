@@ -30,6 +30,17 @@ type BudgetOverviewItem = {
   remainingAmount: number
   periodCount: number
   versionCount: number
+  // Issue #82: Wochen-Detail, nur fuer WEEKLY-Budgets befuellt.
+  // Wire-Format: start/end sind ISO-Strings (JSON-Date-Serialisierung).
+  periods: Array<{
+    start: string
+    end: string
+    plannedAmount: number
+    spentAmount: number
+    remainingAmount: number
+    percentUsed: number
+    severity: 'ok' | 'warning' | 'over'
+  }>
 }
 
 type BudgetOverview = {
@@ -287,6 +298,35 @@ const budgetOverviewMap = computed(
 )
 const getBudgetOverviewItem = (budgetId: string) => budgetOverviewMap.value.get(budgetId) ?? null
 
+// === Issue #82: Wochen-Label ============================================
+// "KW 34 (18.–24. Aug)" — ISO-Kalenderwoche + Datums-Range. Konsistent
+// mit der Dashboard-Variante, dupliziert gehalten (Komponenten-Extraktion
+// waere overkill fuer 12 Zeilen Logik).
+const weekDayFormatter = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' })
+
+function isoWeekNumber(date: Date): number {
+  const target = new Date(date)
+  target.setHours(0, 0, 0, 0)
+  const dayNum = (target.getDay() + 6) % 7
+  target.setDate(target.getDate() - dayNum + 3)
+  const firstThursday = new Date(target.getFullYear(), 0, 4)
+  const firstDayNum = (firstThursday.getDay() + 6) % 7
+  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3)
+  const diff = target.getTime() - firstThursday.getTime()
+  return 1 + Math.round(diff / (7 * 24 * 60 * 60 * 1000))
+}
+
+function periodLabel(period: { start: string; end: string }): string {
+  const start = new Date(period.start)
+  // end ist exklusiv (start + 7d) — fuer die Anzeige einen Tag abziehen.
+  const endDisplay = new Date(period.end)
+  endDisplay.setDate(endDisplay.getDate() - 1)
+  const kw = isoWeekNumber(start)
+  const startStr = weekDayFormatter.format(start).replace(/\./g, '').trim()
+  const endStr = weekDayFormatter.format(endDisplay).replace(/\./g, '').trim()
+  return `KW ${kw} (${startStr}–${endStr})`
+}
+
 onMounted(async () => {
   await fetchHouseholds()
   await loadPlanning()
@@ -416,6 +456,32 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         </template>
       </ItemCard>
 
+      <!-- Issue #82: Wochen-Detail fuer WEEKLY-Budgets auf der Detail-Seite.
+           Anders als auf dem Dashboard hier IMMER aufgeklappt — Detail-Kontext,
+           Whitespace ist hier ok. Kein Toggle noetig. -->
+      <ul
+        v-if="getBudgetOverviewItem(budget.id)?.currentFrequency === 'WEEKLY' && (getBudgetOverviewItem(budget.id)?.periods?.length ?? 0) > 0"
+        class="weekly-breakdown"
+      >
+        <li
+          v-for="(period, periodIndex) in getBudgetOverviewItem(budget.id)!.periods"
+          :key="`${budget.id}-period-${periodIndex}`"
+          class="weekly-breakdown__item"
+        >
+          <div class="weekly-breakdown__head">
+            <span class="weekly-breakdown__label">{{ periodLabel(period) }}</span>
+            <span class="weekly-breakdown__pct" :class="`severity--${period.severity}`">
+              {{ period.percentUsed.toFixed(0) }}%
+            </span>
+          </div>
+          <ListProgressBar
+            :percent="period.percentUsed"
+            :tone="period.severity"
+            :label="`${formatMoney(period.spentAmount)} / ${formatMoney(period.plannedAmount)}`"
+          />
+        </li>
+      </ul>
+
       <ItemCard v-if="budgetOverview" variant="muted">
         <template #main>
           <span class="row-title">Sonstiges <span class="row-tag-muted">Auto-Bucket</span></span>
@@ -538,5 +604,51 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .month-switcher__badge {
   font-size: 0.65rem !important;
   padding: 1px 6px !important;
+}
+
+/* Issue #82: Wochen-Breakdown-Liste unter dem ItemCard. */
+.weekly-breakdown {
+  list-style: none;
+  padding: 0.6rem 0 0.6rem 1.25rem;
+  margin: 0.4rem 0 0.8rem;
+  border-left: 2px solid rgba(148, 163, 184, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.weekly-breakdown__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.weekly-breakdown__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.weekly-breakdown__label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #cbd5e1;
+}
+
+.weekly-breakdown__pct {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.severity--ok {
+  color: var(--color-text-secondary);
+}
+
+.severity--warning {
+  color: var(--color-accent-warning-text);
+}
+
+.severity--over {
+  color: var(--color-accent-danger-text);
 }
 </style>
