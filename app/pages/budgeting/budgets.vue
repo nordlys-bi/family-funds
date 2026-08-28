@@ -94,16 +94,8 @@ const month = ref<string>(
     : currentMonthYYYYMM(),
 )
 const monthLabel = computed(() => formatMonthLabel(month.value))
-const isCurrentMonth = computed(() => month.value === currentMonthYYYYMM())
 
-// Prev/Next-Monats-Berechnung. Reines Date-Arithmetic, kein useState noetig.
-function shiftMonth(delta: number): string {
-  const [yearStr, monthStr] = month.value.split('-')
-  const shifted = new Date(Number(yearStr), Number(monthStr) - 1 + delta, 1)
-  return currentMonthYYYYMM(shifted)
-}
-const prevMonth = computed(() => shiftMonth(-1))
-const nextMonth = computed(() => shiftMonth(1))
+// Prev/Next-Stepper + „Jetzt"-Badge leben jetzt in <MonthSwitcher> (issue #96).
 
 // URL-Sync + Reload. Wie in useTransactionList: aktueller Monat -> Query
 // loeschen (saubere Default-URL), andere Monate -> ?month=YYYY-MM.
@@ -373,32 +365,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     </template>
 
     <template #toolbar>
-      <!-- Monatswechsler (issue #34): Prev / Label / Next, deep-linkbar
-           via ?month=YYYY-MM, aktueller Monat mit grünem 'Jetzt'-Badge. -->
-      <div class="month-switcher" role="group" aria-label="Monatsauswahl">
-        <Button
-          icon="pi pi-chevron-left"
-          severity="secondary"
-          text
-          rounded
-          :aria-label="`Vorheriger Monat (${formatMonthLabel(prevMonth)})`"
-          :title="formatMonthLabel(prevMonth)"
-          @click="onMonthChange(prevMonth)"
-        />
-        <div class="month-switcher__center">
-          <span class="month-switcher__label">{{ monthLabel }}</span>
-          <Tag v-if="isCurrentMonth" severity="success" value="Jetzt" class="month-switcher__badge" />
-        </div>
-        <Button
-          icon="pi pi-chevron-right"
-          severity="secondary"
-          text
-          rounded
-          :aria-label="`Nächster Monat (${formatMonthLabel(nextMonth)})`"
-          :title="formatMonthLabel(nextMonth)"
-          @click="onMonthChange(nextMonth)"
-        />
-      </div>
+      <!-- Monatswechsler (issue #34 / #96): deep-linkbar via ?month=YYYY-MM,
+           aktueller Monat mit grünem 'Jetzt'-Badge. -->
+      <MonthSwitcher :model-value="month" :loading="budgetLoading" @update:model-value="onMonthChange" />
       <Button label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
     </template>
 
@@ -601,38 +570,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   color: var(--color-text-muted);
   text-align: center;
   font-size: 0.85rem;
-}
-
-/* === Monatswechsler (issue #34) === */
-.month-switcher {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.5);
-  border: 1px solid rgba(148, 163, 184, 0.16);
-}
-
-.month-switcher__center {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  min-width: 8rem;
-  padding: 0 8px;
-}
-
-.month-switcher__label {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--color-text-primary, #f1f5f9);
-  white-space: nowrap;
-}
-
-.month-switcher__badge {
-  font-size: 0.65rem !important;
-  padding: 1px 6px !important;
 }
 
 /* Issue #82: Wochen-Breakdown-Liste unter dem ItemCard. */
