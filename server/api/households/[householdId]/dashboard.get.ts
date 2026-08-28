@@ -8,6 +8,7 @@ import {
   buildSavingsGoalsProgress,
 } from '../../../utils/dashboard'
 import { buildAggregatedForecast } from '../../../utils/forecast'
+import { countOpenPlans } from '../../../utils/recurring-coverage'
 import { parseUuidParam } from '../../../utils/validation'
 
 /**
@@ -49,6 +50,10 @@ export default defineEventHandler(async (event) => {
     recentExpenses,
     recentIncomes,
     savingsGoals,
+    fixedCostPlans,
+    incomePlans,
+    fixedCostPlanTx,
+    incomePlanTx,
   ] = await Promise.all([
     prisma.budget.findMany({
       where: { householdId },
@@ -133,12 +138,54 @@ export default defineEventHandler(async (event) => {
         executions: { select: { amount: true } },
       },
     }),
+    // Issue #98: Recurring-Coverage fuer den „Handlungsbedarf"-Block.
+    // Nur die Felder, die countOpenPlans braucht.
+    prisma.fixedCostPlan.findMany({
+      where: { householdId },
+      select: { id: true, startDate: true, endDate: true, frequency: true },
+    }),
+    prisma.incomePlan.findMany({
+      where: { householdId },
+      select: { id: true, startDate: true, endDate: true, frequency: true },
+    }),
+    prisma.expenseTransaction.findMany({
+      where: {
+        householdId,
+        date: { gte: monthStart, lt: monthEnd },
+        fixedCostPlanId: { not: null },
+        deletedAt: null,
+      },
+      select: { date: true, fixedCostPlanId: true },
+    }),
+    prisma.incomeTransaction.findMany({
+      where: {
+        householdId,
+        date: { gte: monthStart, lt: monthEnd },
+        incomePlanId: { not: null },
+        deletedAt: null,
+      },
+      select: { date: true, incomePlanId: true },
+    }),
   ])
 
   const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart)
 
   const incomeTotal = monthIncomeTotal._sum.amount ?? 0
   const expensesTotal = monthExpenses.reduce((sum, transaction) => sum + transaction.amount, 0)
+
+  // Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne.
+  const fixedCostDue = countOpenPlans(
+    fixedCostPlans,
+    fixedCostPlanTx.map((tx) => ({ planId: tx.fixedCostPlanId!, date: tx.date })),
+    monthStart,
+    monthEnd,
+  )
+  const incomeDue = countOpenPlans(
+    incomePlans,
+    incomePlanTx.map((tx) => ({ planId: tx.incomePlanId!, date: tx.date })),
+    monthStart,
+    monthEnd,
+  )
 
   return {
     householdId,
@@ -153,6 +200,14 @@ export default defineEventHandler(async (event) => {
     budgetAlerts: buildBudgetAlerts(budgetOverview),
     recentActivity: buildRecentActivity(recentExpenses, recentIncomes, now),
     savingsGoals: buildSavingsGoalsProgress(savingsGoals),
+    // Issue #98: Zähler für den „Handlungsbedarf"-Block. `open` =
+    // fällig diesen Monat, aber < 100 % gedeckt.
+    recurringDue: {
+      fixedCostsOpen: fixedCostDue.open,
+      fixedCostsDue: fixedCostDue.due,
+      incomeOpen: incomeDue.open,
+      incomeDue: incomeDue.due,
+    },
     // Issue #60 / ADR 0003: aggregierter Forecast für den month-strip.
     // Wird aus den per-Budget-Forecasts in `budgetOverview` aggregiert;
     // keine zusätzliche DB-Query nötig.

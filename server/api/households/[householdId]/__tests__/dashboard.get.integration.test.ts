@@ -21,6 +21,9 @@ const prismaMocks = vi.hoisted(() => ({
   expenseTransaction: { findMany: vi.fn() },
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
+  // Issue #98: Recurring-Coverage-Queries fuer den Handlungsbedarf-Block.
+  fixedCostPlan: { findMany: vi.fn() },
+  incomePlan: { findMany: vi.fn() },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -76,6 +79,12 @@ function resetDbMocks() {
   // wenn ein Test das aggregate-Mock nicht explizit setzt.
   prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockReset()
+  // Issue #98: Default = keine Recurring-Pläne. Tests, die den
+  // Handlungsbedarf-Zähler prüfen, überschreiben das gezielt.
+  prismaMocks.fixedCostPlan.findMany.mockReset()
+  prismaMocks.incomePlan.findMany.mockReset()
+  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
+  prismaMocks.incomePlan.findMany.mockResolvedValue([])
 }
 
 function mockEmptyHousehold() {
@@ -88,6 +97,8 @@ function mockEmptyHousehold() {
   // income-aggregate liefert fuer leere Haushalte { _sum: { amount: null } }.
   prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockResolvedValue([])
+  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
+  prismaMocks.incomePlan.findMany.mockResolvedValue([])
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +253,48 @@ describe('GET /api/households/:id/dashboard — Empty State', () => {
     expect(response.budgetAlerts).toEqual([])
     expect(response.recentActivity).toEqual([])
     expect(response.savingsGoals).toEqual([])
+    expect(response.recurringDue).toEqual({
+      fixedCostsOpen: 0,
+      fixedCostsDue: 0,
+      incomeOpen: 0,
+      incomeDue: 0,
+    })
+  })
+})
+
+describe('GET /api/households/:id/dashboard — recurringDue (issue #98)', () => {
+  it('zaehlt faellige, ungedeckte Fixkosten- und Einnahmen-Plaene', async () => {
+    mockAuthSuccess()
+    mockEmptyHousehold()
+
+    // Zwei monatliche Fixkosten-Plaene, aktiv seit letztem Monat.
+    const lastMonth = new Date()
+    lastMonth.setMonth(lastMonth.getMonth() - 1)
+    prismaMocks.fixedCostPlan.findMany.mockResolvedValue([
+      { id: 'fc-1', startDate: lastMonth, endDate: null, frequency: 'MONTHLY' },
+      { id: 'fc-2', startDate: lastMonth, endDate: null, frequency: 'MONTHLY' },
+    ])
+    prismaMocks.incomePlan.findMany.mockResolvedValue([
+      { id: 'ip-1', startDate: lastMonth, endDate: null, frequency: 'MONTHLY' },
+    ])
+    // fc-1 hat diesen Monat schon eine Buchung (= gedeckt), fc-2 nicht.
+    prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
+      if (args?.where?.fixedCostPlanId) {
+        return [{ date: new Date(), fixedCostPlanId: 'fc-1' }]
+      }
+      return []
+    })
+    // ip-1 ist offen (keine Buchung).
+    prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
+
+    const response = await handler(makeEvent(HH_ID))
+
+    expect(response.recurringDue).toEqual({
+      fixedCostsOpen: 1,
+      fixedCostsDue: 2,
+      incomeOpen: 1,
+      incomeDue: 1,
+    })
   })
 })
 
