@@ -659,11 +659,12 @@ onBeforeUnmount(() => {
   }
   .content {
     padding: 1rem;
-    /* Platz für FAB (5.5rem Offset + 3.5rem Hoehe = 9rem) + Bottom-Nav
+    /* Platz für FAB (6.5rem Offset + 3.5rem Hoehe = 10rem) + Bottom-Nav
        (~4.75rem) + Safe-Area-Inset. Issue #31 hat den FAB nach oben
-       gesetzt, daher muss der Scroll-Bereich hier nachziehen, sonst
-       scrollt der letzte Content unter den FAB. */
-    padding-bottom: calc(9.5rem + env(safe-area-inset-bottom, 0px));
+       gesetzt, Issue #92 nochmal (--mobile-nav-bottom-offset), daher
+       muss der Scroll-Bereich hier nachziehen, sonst scrollt der letzte
+       Content unter den FAB. */
+    padding-bottom: calc(10.5rem + env(safe-area-inset-bottom, 0px));
   }
   .switcher-select {
     min-width: 0;

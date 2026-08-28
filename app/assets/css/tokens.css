@@ -79,7 +79,7 @@
      Elemente (FAB Speed-Dial). FAB-`bottom`-Position referenziert
      diesen Token — wenn die Nav-Hoehe sich mal aendert, nur hier
      anpassen, nicht an mehreren Stellen. */
-  --mobile-nav-bottom-offset: 5.5rem;
+  --mobile-nav-bottom-offset: 6.5rem;
 
   /* Form-Field-Sizing (uniform für InputText/Select/DatePicker/InputNumber)
      Werden von PrimeVue als Default für `padding: var(--p-form-field-padding-y) var(--p-form-field-padding-x)`

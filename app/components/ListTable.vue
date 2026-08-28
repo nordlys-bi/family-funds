@@ -276,9 +276,12 @@ defineProps<{
   color: var(--text);
   font-size: 0.92rem;
 }
+/* Issue #92: linksbuendig statt flex-end — der Mobile-FAB Speed-Dial
+   sitzt fixiert unten rechts und wuerde rechtsbuendige Zeilen-Aktionen
+   (Bearbeiten/Loeschen) bei kurzer Liste verdecken. */
 .data-table-mobile :deep(.data-table__card-actions) {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 4px;
   margin-top: 4px;
   border-top: 1px solid var(--border-subtle);
