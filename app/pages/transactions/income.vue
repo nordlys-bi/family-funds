@@ -155,6 +155,11 @@ async function clearAllLocalFilters() {
   await router.replace({ query: buildRouteQuery() })
 }
 
+// Issue #95: Filter-Leiste hinter einem Toggle. Initial offen, wenn per
+// Deep-Link (?userId) schon gefiltert wird.
+const filtersOpen = ref(hasLocalFilters.value)
+const activeFilterCount = computed(() => (userIdFilter.value ? 1 : 0))
+
 /**
  * Issue #55: Menschen-lesbares Etikett des aktiven Filters fuer die
  * Empty-State-Headline ("Keine Einnahmen fuer {X} in {Monat}").
@@ -433,9 +438,16 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       <div class="toolbar-month">
         <MonthSwitcher :model-value="month" :loading="txLoading" @update:model-value="onMonthChange" />
       </div>
-      <!-- Issue #55: Person-Filter (Single-Select). Budget-Filter ist
-           fuer Einnahmen nicht relevant, weil Income-Transaktionen kein
-           Budget haben. -->
+      <!-- Issue #95: Person-Filter hinter dem Toggle — gleiche Optik
+           wie /transactions/expenses. Budget-Filter gibt es hier nicht
+           (Einnahmen haben kein Budget). -->
+      <FilterDisclosure v-model:open="filtersOpen" :active-count="activeFilterCount" />
+      <!-- Issue #92: Auf Mobile (< 640px) verdeckt der FAB Speed-Dial
+           diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
+      <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" class="toolbar-create-btn" @click="openCreateTransactionDialog" />
+    </template>
+
+    <div v-if="filtersOpen" class="filter-panel" role="group" aria-label="Filter">
       <Select
         :model-value="userIdFilter"
         :options="userFilterOptions"
@@ -447,10 +459,16 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         class="toolbar-filter"
         @update:model-value="onUserIdFilterChange"
       />
-      <!-- Issue #92: Auf Mobile (< 640px) verdeckt der FAB Speed-Dial
-           diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
-      <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" class="toolbar-create-btn" @click="openCreateTransactionDialog" />
-    </template>
+      <Button
+        v-if="activeFilterCount > 0"
+        label="Zuruecksetzen"
+        icon="pi pi-times"
+        severity="secondary"
+        text
+        size="small"
+        @click="clearAllLocalFilters"
+      />
+    </div>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
@@ -688,12 +706,23 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   margin-right: auto;
 }
 
-/* Issue #55: Filter-Select in der Toolbar. Kompakte Breite, passt
-   zu den Buttons daneben. min-width verhindert, dass PrimeVue die
-   Select auf Mobile zu schmal rendert. */
+/* Issue #55: Filter-Select. Kompakte Breite; min-width verhindert,
+   dass PrimeVue die Select auf Mobile zu schmal rendert. */
 .toolbar-filter {
   min-width: 180px;
   max-width: 240px;
+}
+
+/* Issue #95: aufklappbare Filter-Leiste unter der Toolbar. */
+.filter-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: rgba(15, 23, 42, 0.4);
 }
 
 @media (max-width: 480px) {
@@ -705,6 +734,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   .toolbar-filter {
     min-width: 0;
     width: 100%;
+  }
+  .filter-panel {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
