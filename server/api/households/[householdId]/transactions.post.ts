@@ -107,8 +107,14 @@ export default defineEventHandler(async (event) => {
   }
 
   // kind === 'income'
+  //
+  // Einnahmen tragen KEIN Budget (issue #105). Budgets sind laut
+  // CONTEXT.md periodische Maximalbetraege fuer Ausgaben-Kategorien;
+  // `IncomeTransaction` hat entsprechend kein `budgetId`-Feld im Schema.
+  // Ein frueherer #59-Stand hat `budgetId` hier durchgereicht — das lief
+  // in einen Prisma-Validierungsfehler und hat jede Einnahme-Erfassung
+  // blockiert. `body.budgetId` wird jetzt bewusst ignoriert.
   const incomePlanId = body.incomePlanId?.trim() || null
-  let budgetId = body.budgetId?.trim() || null
 
   if (incomePlanId) {
     const plan = await prisma.incomePlan.findFirst({
@@ -116,36 +122,13 @@ export default defineEventHandler(async (event) => {
         id: incomePlanId,
         householdId,
       },
-      select: { id: true, budgetId: true },
+      select: { id: true },
     })
 
     if (!plan) {
       throw createError({
         statusCode: 404,
         statusMessage: 'Income plan not found.',
-      })
-    }
-
-    // Issue #59 polish: siehe oben — hart gekoppelte Vererbung
-    // vom Plan-Budget, kein Override im Mark-Dialog.
-    if (plan.budgetId && !budgetId) {
-      budgetId = plan.budgetId
-    }
-  }
-
-  if (budgetId) {
-    const budget = await prisma.budget.findFirst({
-      where: {
-        id: budgetId,
-        householdId,
-      },
-      select: { id: true },
-    })
-
-    if (!budget) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Budget not found.',
       })
     }
   }
@@ -157,7 +140,6 @@ export default defineEventHandler(async (event) => {
       amount,
       description,
       date,
-      budgetId,
       incomePlanId,
     },
   })
