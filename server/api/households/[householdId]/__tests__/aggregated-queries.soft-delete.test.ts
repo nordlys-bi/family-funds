@@ -40,6 +40,9 @@ const prismaMocks = vi.hoisted(() => ({
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
   householdMember: { count: vi.fn() },
+  // Issue #98: dashboard.get lädt jetzt auch Recurring-Pläne.
+  fixedCostPlan: { findMany: vi.fn() },
+  incomePlan: { findMany: vi.fn() },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -96,6 +99,8 @@ beforeEach(() => {
   prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockResolvedValue([])
   prismaMocks.householdMember.count.mockResolvedValue(0)
+  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
+  prismaMocks.incomePlan.findMany.mockResolvedValue([])
   prismaMocks.expenseTransaction.count.mockResolvedValue(0)
 })
 
@@ -123,12 +128,14 @@ describe('GET /budget-overview — soft-delete filter (issue #65)', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /dashboard — soft-delete filter (issue #65)', () => {
-  it('applies deletedAt: null to ALL expense and income queries (4 Stellen)', async () => {
+  it('applies deletedAt: null to ALL expense and income queries', async () => {
     await dashboardHandler(makeEvent(HH_ID))
 
     // 1× expenseTransaction.findMany (monthExpenses)
     // 1× expenseTransaction.findMany (recentExpenses)
+    // 1× expenseTransaction.findMany (fixedCostPlanTx, issue #98)
     // 1× incomeTransaction.findMany (recentIncomes)
+    // 1× incomeTransaction.findMany (incomePlanTx, issue #98)
     // 1× incomeTransaction.aggregate (monthIncomeTotal)
     const expenseCalls = prismaMocks.expenseTransaction.findMany.mock.calls
     expect(expenseCalls.length).toBeGreaterThanOrEqual(2)

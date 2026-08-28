@@ -3,11 +3,7 @@ import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
 import { buildBudgetOverview, getMonthWindow } from '../../utils/budget-evaluation'
 import { buildSavingsMonthlyProgress } from '../../utils/savings-progress'
-import {
-  computeCoveragePercent,
-  getRecurringPeriodsInMonth,
-  isDateInBucket,
-} from '../../utils/recurring-periods'
+import { computePlanCoverage, indexPaidBuckets } from '../../utils/recurring-coverage'
 
 export default defineEventHandler(async (event) => {
   const user = await requireAuthenticatedUser(event)
@@ -277,38 +273,10 @@ export default defineEventHandler(async (event) => {
 })
 
 /**
- * Issue #59: baut fuer jede Plan-ID eine Set<bucketKey> der bereits
- * bezahlten Buckets. Transaktionen, die in keinen Bucket des Plans
- * im aktuellen Monat fallen, werden ignoriert (Edge Case: z. B.
- * Transaktionen mit Datum vor plan.startDate durch kaputte Daten).
- */
-function indexPaidBuckets(
-  plans: Array<{ id: string; startDate: Date; endDate: Date | null; frequency: string }>,
-  transactions: Array<{ planId: string; date: Date }>,
-  monthStart: Date,
-  monthEnd: Date,
-): Map<string, Set<string>> {
-  const result = new Map<string, Set<string>>()
-  for (const plan of plans) {
-    const { buckets } = getRecurringPeriodsInMonth(plan, monthStart.getFullYear(), monthStart.getMonth())
-    const paidKeys = new Set<string>()
-    for (const bucket of buckets) {
-      for (const tx of transactions) {
-        if (tx.planId !== plan.id) continue
-        if (isDateInBucket(tx.date, bucket)) {
-          paidKeys.add(bucket.key)
-          break
-        }
-      }
-    }
-    result.set(plan.id, paidKeys)
-  }
-  return result
-}
-
-/**
  * Issue #59: packt `coverage` und `nextDueDate` an den Plan dran.
- * Wird sowohl fuer Fixed- als auch Income-Plaene aufgerufen.
+ * Wird sowohl fuer Fixed- als auch Income-Plaene aufgerufen. Die
+ * Bucket-Matching-Logik liegt in `utils/recurring-coverage`
+ * (geteilt mit dem Dashboard, issue #98).
  */
 function attachPlanCoverage(
   plan: {
@@ -321,21 +289,15 @@ function attachPlanCoverage(
   monthStart: Date,
   monthEnd: Date,
 ) {
-  const { buckets, nextDueDate } = getRecurringPeriodsInMonth(
+  const { due, paid, percent, nextDueDate } = computePlanCoverage(
     plan,
-    monthStart.getFullYear(),
-    monthStart.getMonth(),
+    paidByPlan,
+    monthStart,
+    monthEnd,
   )
-  const paidKeys = paidByPlan.get(plan.id) ?? new Set<string>()
-  const due = buckets.length
-  const paid = paidKeys.size
   return {
     ...plan,
-    coverage: {
-      due,
-      paid,
-      percent: computeCoveragePercent(paid, due),
-    },
-    nextDueDate: nextDueDate ? nextDueDate.toISOString() : null,
+    coverage: { due, paid, percent },
+    nextDueDate,
   }
 }
