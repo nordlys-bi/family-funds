@@ -536,6 +536,12 @@ onMounted(async () => {
   await loadAll()
 })
 watch(activeHouseholdId, async () => { await loadAll() })
+
+// Issue #91: der globale Erfassen-Dialog kann von hier aus (oder von
+// jeder anderen Seite) eine Ausgabe anlegen. savedTick steigt nach
+// jedem erfolgreichen POST — dann die sichtbare Liste neu laden.
+const { savedTick: quickCaptureSavedTick } = useQuickCapture()
+watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
 <template>

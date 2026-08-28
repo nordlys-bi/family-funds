@@ -4,8 +4,24 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 const { user, logout } = useAppAuth()
 const { households, activeHousehold, setActiveHousehold } = useHousehold()
 const onboarding = useOnboarding()
+const quickCapture = useQuickCapture()
+// Top-Level-Ref fuers Template (auto-unwrap) — steuert u. a. das
+// Ausblenden des FAB, solange der Erfassen-Dialog offen ist.
+const quickCaptureDialogOpen = quickCapture.isOpen
 const config = useRuntimeConfig()
 const isClerkMode = config.public.authMode === 'clerk'
+
+// Issue #91: globales Erfassen von jeder Seite aus. Nur moeglich, wenn
+// ein aktiver Haushalt gewaehlt ist (sonst fehlt das POST-Ziel).
+const canQuickCapture = computed(() => Boolean(activeHousehold.value))
+const openQuickCapture = (kind: 'expense' | 'income' = 'expense') => {
+  if (!canQuickCapture.value) return
+  quickCapture.open(kind)
+}
+
+// Tastenkuerzel "e" (Desktop): neue Ausgabe erfassen. Der Helper feuert
+// nur bei physischer Tastatur und ignoriert Eingabefelder.
+useDesktopShortcut('e', () => openQuickCapture('expense'))
 
 const householdOptions = computed(() =>
   households.value.map((household) => ({
@@ -51,12 +67,13 @@ const toggleDesktopSidebar = () => {
 }
 
 // === FAB-Aktionen ================================================
-// Mobile-only. Auf Desktop übernimmt der Split-Button im Page-Toolbar.
-// Quick-Add (issue #29): "Ausgabe" und "Einnahme" navigieren mit
-// ?new=1, die jeweilige Page öffnet den Create-Dialog dann page-lokal
-// via useQueryTrigger({ queryKey: 'new', onTrigger: openCreateDialog })
-// und putzt die URL sofort wieder. Pattern bleibt page-lokal, kein
-// globaler Event-Bus.
+// Mobile-only. Das Desktop-Pendant ist der "Erfassen"-Button im Header.
+//
+// Issue #91: "Ausgabe" und "Einnahme" oeffnen jetzt den globalen
+// Erfassen-Dialog (useQuickCapture / <QuickCaptureRoot>) statt zu
+// /transactions/*?new=1 zu navigieren — Buchen ohne Kontextwechsel.
+// Der page-lokale ?new=1-Trigger (useQueryTrigger) bleibt fuer
+// Deep-Links bestehen.
 //
 // "Sparziel" bleibt bewusst Navigation-only: die Savings-Seite hat drei
 // verschiedene Dialoge (Sparziel anlegen / History pro Goal / Booking
@@ -69,14 +86,14 @@ const fabActions = [
     label: 'Ausgabe',
     icon: 'pi pi-arrow-up-right',
     tone: 'danger',
-    onSelect: () => navigateTo({ path: '/transactions/expenses', query: { new: '1' } }),
+    onSelect: () => openQuickCapture('expense'),
   },
   {
     key: 'income',
     label: 'Einnahme',
     icon: 'pi pi-arrow-down-left',
     tone: 'success',
-    onSelect: () => navigateTo({ path: '/transactions/income', query: { new: '1' } }),
+    onSelect: () => openQuickCapture('income'),
   },
   {
     key: 'savings',
@@ -286,6 +303,18 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="header-right">
+          <!-- Issue #91: globales Erfassen. Sichtbar ab 640px — darunter
+               uebernimmt der FAB Speed-Dial (komplementaerer Breakpoint,
+               jede Viewport-Groesse hat genau eine Erfassen-Aktion).
+               Tastenkuerzel "e" macht dasselbe auf Desktop. -->
+          <Button
+            v-if="canQuickCapture"
+            class="header-capture-btn"
+            label="Erfassen"
+            icon="pi pi-plus"
+            severity="success"
+            @click="openQuickCapture('expense')"
+          />
           <!-- Mock-Mode-Badge: nur sichtbar, solange Clerk-Keys nicht gesetzt sind.
                In Production (Clerk-Mode) für End-User ausgeblendet — der Hinweis
                ist ein Dev-Marker und gehört nicht in die User-Facing-UI. -->
@@ -306,8 +335,10 @@ onBeforeUnmount(() => {
          via @media auf Desktop. Logout lebt jetzt hier, im Mehr-Bottom-Sheet. -->
     <MobileBottomNav />
 
-    <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop) -->
-    <FabSpeedDial :actions="fabActions" />
+    <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop).
+         Issue #91: waehrend der globale Erfassen-Dialog offen ist, ausblenden —
+         sonst pokt der FAB durch die Dialog-Maske. -->
+    <FabSpeedDial v-show="!quickCaptureDialogOpen" :actions="fabActions" />
 
     <!-- Onboarding-Tour (issue #16): 4-Step-Modal, auto-getriggert fuer
          neue User mit leerem Haushalt. Persistiert pro User, ueberlebt
@@ -626,6 +657,19 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+/* Issue #91: "Erfassen"-Button. Komplementaerer Breakpoint zum FAB
+   Speed-Dial (der ab 640px verschwindet) — unter 640px ausblenden,
+   damit nicht beide Affordances gleichzeitig existieren. */
+.header-capture-btn {
+  flex-shrink: 0;
+}
+
+@media (max-width: 639px) {
+  .header-capture-btn {
+    display: none;
+  }
 }
 
 .header-user-button {

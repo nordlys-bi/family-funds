@@ -412,6 +412,12 @@ onBeforeUnmount(() => {
   stopUndoTick()
 })
 watch(activeHouseholdId, async () => { await loadAll() })
+
+// Issue #91: globaler Erfassen-Dialog kann von ueberall eine Einnahme
+// anlegen. savedTick steigt nach jedem erfolgreichen POST — dann die
+// sichtbare Liste neu laden.
+const { savedTick: quickCaptureSavedTick } = useQuickCapture()
+watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
 <template>

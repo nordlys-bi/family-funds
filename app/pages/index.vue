@@ -140,6 +140,11 @@ async function loadDashboard() {
 
 onMounted(loadDashboard)
 watch(() => activeHousehold.value?.id, loadDashboard)
+
+// Issue #91: der globale Erfassen-Dialog kann von hier aus eine Buchung
+// anlegen — dann die Dashboard-Kennzahlen neu holen.
+const { savedTick: quickCaptureSavedTick } = useQuickCapture()
+watch(quickCaptureSavedTick, loadDashboard)
 </script>
 
 <template>
