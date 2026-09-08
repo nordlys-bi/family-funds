@@ -38,6 +38,12 @@ defineProps<{
 </template>
 
 <style scoped>
+/*
+ * Issue #93 Folgearbeit: Der Seiten-Header ist ein schlanker Titel-Balken,
+ * keine Hero-Karte mehr. Die Navigation sagt bereits, wo man ist — der
+ * Header muss das nicht mit 3rem-Headline, Verlauf und Schatten wiederholen.
+ * Spart ~90px (Desktop) / ~140px (Mobile) auf jeder Listenseite.
+ */
 .list-page-shell {
   display: flex;
   flex-direction: column;
@@ -47,45 +53,40 @@ defineProps<{
 .list-page-shell__header {
   display: flex;
   justify-content: space-between;
-  gap: 1rem;
-  align-items: flex-start;
-  padding: 1.3rem 1.35rem;
-  border-radius: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background:
-    linear-gradient(135deg, rgba(15, 23, 42, 0.97), rgba(17, 24, 39, 0.9)),
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 32%);
-  box-shadow:
-    0 26px 70px rgba(2, 6, 23, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  gap: 0.5rem 1.5rem;
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding: 0.15rem 0.1rem 0;
 }
 
 .list-page-shell__copy {
-  max-width: 58ch;
+  max-width: 70ch;
+  min-width: 0;
 }
 
 .list-page-shell__title {
   margin: 0;
-  font-size: clamp(2rem, 4vw, 3.15rem);
-  line-height: 0.98;
-  letter-spacing: -0.05em;
+  font-size: 1.4rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  font-weight: 700;
 }
 
 .list-page-shell__description {
-  margin: 0.8rem 0 0;
-  color: #94a3b8;
-  font-size: 0.98rem;
-  line-height: 1.55;
-  max-width: 65ch;
+  margin: 0.3rem 0 0;
+  color: var(--color-text-muted, #94a3b8);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  max-width: 70ch;
 }
 
 .list-page-shell__summary {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.6rem;
-  min-width: min(26rem, 100%);
+  min-width: 0;
 }
 
 .list-page-shell__toolbar {
@@ -107,22 +108,20 @@ defineProps<{
 @media (max-width: 639px) {
   .list-page-shell__header {
     flex-direction: column;
-    padding: 1rem 1rem 1.1rem;
-    gap: 0.85rem;
+    padding: 0;
+    gap: 0.5rem;
   }
 
-  /* Mobile: kleinerer Titel, dichter — Desktop hat 3rem-Headline, Mobile
-     reichen 1.5rem (immer noch groesser als Standard-Text). Spart ~50px. */
   .list-page-shell__title {
-    font-size: 1.5rem;
-    line-height: 1.05;
-    letter-spacing: -0.03em;
+    font-size: 1.2rem;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
   }
 
   .list-page-shell__description {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     line-height: 1.45;
-    margin-top: 0.5rem;
+    margin-top: 0.35rem;
   }
 
   .list-page-shell__summary {

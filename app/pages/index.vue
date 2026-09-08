@@ -3,8 +3,6 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 definePageMeta({ layout: 'default' })
 
-const { user } = useAppAuth()
-
 type DashboardData = {
   householdId: string
   monthSummary: {
@@ -163,11 +161,13 @@ watch(quickCaptureSavedTick, loadDashboard)
 </script>
 
 <template>
-  <ListPageShell
-    eyebrow="Dashboard"
-    :title="`Hallo, ${user?.displayName || 'Gast'} \u{1F44B}`"
-    :description="`Dein finanzieller Überblick für ${monthLabel}.`"
-  >
+  <section class="dashboard-page">
+    <!-- Kein sichtbarer Seitentitel mehr: die Navigation benennt die Seite,
+         und die Begrueßung ("Hallo, Jan") plus der Erklaersatz kosteten ~300px
+         toten Raum ueber dem ersten handlungsrelevanten Element. Die <h1>
+         bleibt fuer Screenreader / Dokumentstruktur erhalten. -->
+    <h1 class="sr-only">Dashboard — finanzieller Überblick für {{ monthLabel }}</h1>
+
     <EmptyState
       v-if="!activeHousehold"
       :no-household="true"
@@ -187,11 +187,6 @@ watch(quickCaptureSavedTick, loadDashboard)
     </Message>
 
     <template v-else-if="snapshot">
-      <!-- Aktiver-Haushalt-Banner (issue #6 AC):
-           Name, Waehrung, Rolle sind hier prominent sichtbar —
-           nicht nur ueber den Header-Switcher. -->
-      <DashboardHouseholdBanner :household="activeHousehold" />
-
       <!-- Handlungsbedarf (issue #37): steht jetzt ganz oben, weil die
            Alltagsfrage "Was muss ich mir ansehen?" wichtiger ist als
            "Wie hoch waren meine Einnahmen?". Issue #97: zeigt nur echten
@@ -218,50 +213,41 @@ watch(quickCaptureSavedTick, loadDashboard)
         :format-money="formatMoney"
       />
 
-      <!-- Kompakte Monatszeile (issue #37): Einnahmen/Ausgaben/Saldo
-           als eine Zeile statt 3 dominanter Cards. Bleibt sichtbar,
-           aber in sekundaerer Gewichtung. Wraps auf Mobile. -->
-      <div class="month-strip" :class="`month-strip--${balanceTone}`" role="group" aria-label="Monatsuebersicht">
-        <div class="month-strip__cell month-strip__cell--income">
-          <span class="month-strip__label">Einnahmen</span>
-          <span class="month-strip__value">{{ formatMoney(summary?.income) }}</span>
+      <!-- Kompakte Monatszeile (issue #37): Der Saldo ist die Leitzahl,
+           Einnahmen/Ausgaben stehen sekundaer daneben. Die "Voraussicht"
+           erscheint nur, wenn sie vom Plan abweicht — "im Plan" ist keine
+           Information, die eine eigene Zelle verdient. -->
+      <div class="month-strip" :class="`month-strip--${balanceTone}`" role="group" aria-label="Monatsübersicht">
+        <div class="month-strip__primary">
+          <span class="month-strip__label">Saldo · {{ monthLabel }}</span>
+          <span class="month-strip__balance">{{ formatMoney(summary?.balance) }}</span>
         </div>
-        <div class="month-strip__divider" aria-hidden="true" />
-        <div class="month-strip__cell month-strip__cell--expense">
-          <span class="month-strip__label">Ausgaben</span>
-          <span class="month-strip__value">{{ formatMoney(summary?.expenses) }}</span>
-        </div>
-        <div class="month-strip__divider" aria-hidden="true" />
-        <div class="month-strip__cell month-strip__cell--balance">
-          <span class="month-strip__label">Saldo</span>
-          <span class="month-strip__value">{{ formatMoney(summary?.balance) }}</span>
-        </div>
-        <!-- Issue #60 / ADR 0003: 4. Zelle „Voraussicht" (Variante 1).
-             Nur sichtbar wenn monthForecast vom Server geliefert wurde. -->
-        <div
-          v-if="monthForecast"
-          class="month-strip__divider"
-          aria-hidden="true"
-        />
-        <div
-          v-if="monthForecast"
-          class="month-strip__cell month-strip__cell--forecast"
-          :class="`month-strip__cell--forecast--${monthForecast.severity}`"
-        >
-          <span class="month-strip__label">Voraussicht</span>
-          <span
-            class="month-strip__value"
-            :class="`month-strip__value--forecast--${monthForecast.severity}`"
-          >{{ formatMoney(monthForecast.forecastTotal) }}</span>
-          <span
-            class="month-strip__forecast-tag"
-            :class="`month-strip__forecast-tag--${monthForecast.severity}`"
-          >{{ forecastSeverityLabel(monthForecast.severity) }}</span>
-        </div>
-        <span class="month-strip__month">{{ monthLabel }}</span>
+        <dl class="month-strip__aside">
+          <div class="month-strip__pair">
+            <dt>Einnahmen</dt>
+            <dd class="month-strip__pos">{{ formatMoney(summary?.income) }}</dd>
+          </div>
+          <div class="month-strip__pair">
+            <dt>Ausgaben</dt>
+            <dd class="month-strip__neg">{{ formatMoney(summary?.expenses) }}</dd>
+          </div>
+          <!-- Issue #60 / ADR 0003: Voraussicht auf Monatsende — nur bei
+               Abweichung vom Plan (warning/over), nicht im Normalfall. -->
+          <div
+            v-if="monthForecast && monthForecast.severity !== 'on-track'"
+            class="month-strip__pair"
+            :class="`month-strip__pair--forecast--${monthForecast.severity}`"
+          >
+            <dt>Voraussicht</dt>
+            <dd>
+              {{ formatMoney(monthForecast.forecastTotal) }}
+              <span class="month-strip__tag">{{ forecastSeverityLabel(monthForecast.severity) }}</span>
+            </dd>
+          </div>
+        </dl>
       </div>
 
-      <ListPanel kicker="Budget" title="Budget-Auslastung" :compact="true">
+      <ListPanel title="Budget-Auslastung" :compact="true">
         <template #actions>
           <NuxtLink to="/budgeting/budgets">
             <Button label="Budget anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
@@ -280,7 +266,7 @@ watch(quickCaptureSavedTick, loadDashboard)
         <DashboardBudgetList :alerts="budgetAlerts" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
       </ListPanel>
 
-      <ListPanel kicker="Aktivität" title="Letzte Buchungen" :compact="true">
+      <ListPanel title="Letzte Buchungen" :compact="true">
         <template v-if="latestEntry" #subtitle>
           <NuxtLink to="/transactions/expenses" class="panel-quicklink">
             Zuletzt: {{ latestEntry.description || (latestEntry.kind === 'income' ? 'Einnahme' : 'Ausgabe') }}
@@ -315,7 +301,7 @@ watch(quickCaptureSavedTick, loadDashboard)
       <!-- Sparziele mit Fortschrittsbalken (issue #6 AC):
            pro Sparziel eigene Zeile mit Progressbar und
            currentAmount / targetAmount + monthlyRate. -->
-      <ListPanel kicker="Sparen" title="Sparziele" :compact="true">
+      <ListPanel title="Sparziele" :compact="true">
         <template #actions>
           <NuxtLink to="/budgeting/savings">
             <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
@@ -334,10 +320,18 @@ watch(quickCaptureSavedTick, loadDashboard)
         <DashboardSavingsList :goals="savingsGoals" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
       </ListPanel>
     </template>
-  </ListPageShell>
+  </section>
 </template>
 
 <style scoped>
+/* Vertikaler Rhythmus der Dashboard-Sektionen — ersetzt das
+   list-page-shell__content-Layout, das der Dashboard-Wrapper vorher lieferte. */
+.dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 /* Issue #97: Schnellzugriff auf die letzte Buchung im Panel-Header. */
 .panel-quicklink {
   display: inline-flex;
@@ -362,8 +356,10 @@ watch(quickCaptureSavedTick, loadDashboard)
 .month-strip {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 1.1rem;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1.1rem;
   margin-bottom: 1.25rem;
   background: rgba(15, 23, 42, 0.55);
   border: 1px solid rgba(148, 163, 184, 0.12);
@@ -371,15 +367,8 @@ watch(quickCaptureSavedTick, loadDashboard)
   font-variant-numeric: tabular-nums;
 }
 
-.month-strip__cell {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
 .month-strip__label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -387,100 +376,102 @@ watch(quickCaptureSavedTick, loadDashboard)
   white-space: nowrap;
 }
 
-.month-strip__value {
-  font-size: 1rem;
-  font-weight: 700;
+.month-strip__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.month-strip__balance {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
   color: var(--color-text-primary, #f1f5f9);
-  white-space: nowrap;
 }
 
-.month-strip__cell--income .month-strip__value {
-  color: var(--color-accent-success-text, #34d399);
-}
-
-.month-strip__cell--expense .month-strip__value {
-  color: var(--color-accent-danger-text, #f87171);
-}
-
-.month-strip--primary .month-strip__cell--balance .month-strip__value {
+.month-strip--primary .month-strip__balance {
   color: var(--color-accent-primary-text, #60a5fa);
 }
 
-.month-strip--danger .month-strip__cell--balance .month-strip__value {
+.month-strip--danger .month-strip__balance {
   color: var(--color-accent-danger-text, #f87171);
 }
 
-/* Issue #60 / ADR 0003: 4. Zelle „Voraussicht" (Variante 1). */
-.month-strip__cell--forecast {
+.month-strip__aside {
+  display: flex;
+  align-items: baseline;
+  gap: 1.25rem;
+  margin: 0;
+  flex-wrap: wrap;
+}
+
+.month-strip__pair {
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.05rem;
 }
 
-.month-strip__value--forecast--on-track {
-  color: #34d399;
+.month-strip__pair dt {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #94a3b8);
 }
 
-.month-strip__value--forecast--warning {
+.month-strip__pair dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text-secondary, #cbd5e1);
+  white-space: nowrap;
+}
+
+.month-strip__aside dd.month-strip__pos {
+  color: var(--color-accent-success-text, #34d399);
+}
+
+.month-strip__aside dd.month-strip__neg {
+  color: var(--color-accent-danger-text, #f87171);
+}
+
+/* Issue #60 / ADR 0003: Voraussicht nur bei Abweichung vom Plan. */
+.month-strip__aside .month-strip__pair--forecast--warning dd {
   color: #fbbf24;
 }
 
-.month-strip__value--forecast--over {
+.month-strip__aside .month-strip__pair--forecast--over dd {
   color: #f87171;
 }
 
-.month-strip__forecast-tag {
+.month-strip__tag {
   display: inline-block;
-  font-size: 0.65rem;
+  margin-left: 0.3rem;
+  font-size: 0.6rem;
   font-weight: 600;
   padding: 1px 6px;
   border-radius: 999px;
   letter-spacing: 0.02em;
-  align-self: flex-start;
-}
-
-.month-strip__forecast-tag--on-track {
-  background: rgba(52, 211, 153, 0.12);
-  color: #34d399;
-}
-
-.month-strip__forecast-tag--warning {
+  vertical-align: middle;
   background: rgba(251, 191, 36, 0.14);
   color: #fbbf24;
 }
 
-.month-strip__forecast-tag--over {
+.month-strip__pair--forecast--over .month-strip__tag {
   background: rgba(248, 113, 113, 0.14);
   color: #f87171;
 }
 
-.month-strip__divider {
-  width: 1px;
-  align-self: stretch;
-  background: rgba(148, 163, 184, 0.18);
-}
-
-.month-strip__month {
-  margin-left: auto;
-  font-size: 0.78rem;
-  color: var(--color-text-muted, #94a3b8);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
 @media (max-width: 640px) {
   .month-strip {
-    flex-wrap: wrap;
-    gap: 0.65rem 1rem;
-    padding: 0.85rem 0.95rem;
+    gap: 0.75rem 1.25rem;
+    padding: 0.8rem 0.95rem;
   }
-  .month-strip__divider {
-    display: none;
-  }
-  .month-strip__month {
-    margin-left: 0;
+  .month-strip__aside {
     width: 100%;
-    text-align: right;
+    gap: 1rem 1.75rem;
   }
 }
 </style>

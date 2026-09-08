@@ -106,10 +106,7 @@ const restartOnboarding = async () => {
 </script>
 
 <template>
-  <ListPageShell
-    title="Haushalt-Einstellungen"
-    description="Bearbeite Name und Währung des aktiven Haushalts. Nur Owner können diese Werte ändern."
-  >
+  <ListPageShell title="Haushalt-Einstellungen">
     <template #summary>
       <Tag severity="info" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
       <Tag severity="secondary" :value="`Rolle ${roleLabel(canManageHousehold ? 'OWNER' : 'MEMBER')}`" />

@@ -354,10 +354,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Budget pro Zeitraum"
-    description="Plane, wie viel du pro Periode für einzelne Kategorien ausgeben willst. Die Progress-Bar zeigt, wie viel vom monatlichen Budget bereits verbraucht ist."
-  >
+  <ListPageShell title="Budget pro Zeitraum">
     <template #summary>
       <Tag severity="info" :value="`Geplant ${formatMoney(budgetOverview?.plannedTotal ?? 0)}`" />
       <Tag severity="warning" :value="`Ausgaben ${formatMoney(budgetOverview?.spentTotal ?? 0)}`" />

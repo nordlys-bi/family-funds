@@ -101,8 +101,6 @@ function toggle(budgetId: string): void {
   expandedIds.value = next
 }
 
-const hasWeekly = computed(() => props.alerts.some((a) => a.currentFrequency === 'WEEKLY' && (a.periods?.length ?? 0) > 0))
-
 // === Wochen-Label ===================================================
 // "KW 34 (18.–24. Aug)" — ISO-Kalenderwoche + Datums-Range der Woche.
 // Locale "de-DE" liefert "Aug."-Abkürzung passend zur Monats-Summe.
@@ -187,8 +185,10 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
       <!-- Issue #60 / ADR 0003: Forecast auf Monatsende. Wird zwischen
            Ist-Row und Wochen-Toggle (wenn WEEKLY) platziert, damit der
            User "wo stehe ich → wo werde ich landen" als Block liest.
-           Nur sichtbar wenn der Server `forecast` geliefert hat. -->
-      <div v-if="alert.forecast" class="forecast" :class="`forecast--${alert.forecast.severity}`">
+           Nur sichtbar, wenn es diesen Monat schon Ist-Ausgaben gibt
+           (basisAmount > 0) — ohne Ausgaben ist die Voraussicht bloß eine
+           Kopie der Plan-Zeile darüber und trägt nichts bei. -->
+      <div v-if="alert.forecast && alert.forecast.basisAmount > 0" class="forecast" :class="`forecast--${alert.forecast.severity}`">
         <div class="forecast__head">
           <span class="forecast__label">Voraussichtlich am Monatsende</span>
           <span class="sev-tag" :class="`sev-tag--${alert.forecast.severity}`">
@@ -230,9 +230,6 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
     </li>
   </ul>
   <p v-if="hiddenCount > 0" class="more">+ {{ hiddenCount }} weitere</p>
-  <div v-if="hasWeekly" class="footer-hint" aria-hidden="true">
-    Klick aufs Budget zeigt die einzelnen Wochen
-  </div>
 </template>
 
 <style scoped>
@@ -361,14 +358,6 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
 .period__meta {
   font-size: 0.74rem;
   color: var(--color-text-muted);
-}
-
-.footer-hint {
-  margin-top: 0.6rem;
-  font-size: 0.74rem;
-  color: var(--color-text-muted);
-  text-align: center;
-  font-style: italic;
 }
 
 .more {

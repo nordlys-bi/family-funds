@@ -424,13 +424,9 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Einnahmen"
-    :description="`Erfasse alle Einnahmen fuer ${monthLabel} — Gehalt, Boni, Rueckerstattungen, Geschenke.`"
-  >
+  <ListPageShell title="Einnahmen">
     <template #summary>
       <Tag severity="success" :value="`Einnahmen ${formatMoney(summary.incomeTotal)}`" />
-      <Tag severity="info" :value="`${visibleTransactions.length} Buchungen`" />
     </template>
 
     <template #toolbar>
@@ -512,7 +508,6 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
       <ListPanel
-        kicker="Monat"
         :title="`Einnahmen ${monthLabel}`"
         compact
         :badge="formatMoney(summary.incomeTotal)"

@@ -364,6 +364,25 @@ html.my-app-dark .p-datepicker-input {
 }
 
 /* ============================================================================
+ * Visually-hidden (A11y)
+ *
+ * Haelt Text fuer Screenreader im Accessibility-Tree, entfernt ihn aber
+ * visuell. Genutzt z. B. fuer die <h1> des Dashboards, das keinen
+ * sichtbaren Seitentitel mehr traegt (die Navigation benennt die Seite).
+ * ============================================================================ */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ============================================================================
  * 5. prefers-reduced-motion (A11y / WCAG 2.3.3)
  *    User mit vestibulaeren Beschwerden (~ 5-10 % der Nutzer) brauchen
  *    reduzierte Animationen. Globale Regel killt alle CSS-Transitions

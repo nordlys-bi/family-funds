@@ -19,7 +19,7 @@ type HouseholdDetail = {
 }
 
 const { user } = useAppAuth()
-const { households, activeHousehold, loading: householdsLoading, fetchHouseholds, setActiveHousehold } = useHousehold()
+const { activeHousehold, loading: householdsLoading, fetchHouseholds, setActiveHousehold } = useHousehold()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -96,17 +96,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Haushalts- & Mitgliederverwaltung"
-    description="Übersicht über deinen aktiven Haushalt. Mitglieder und Einladungen verwaltest du unter Mitglieder; Name und Währung unter Settings."
-  >
-    <template #summary>
-      <Tag severity="info" :value="`Haushalte ${households.length}`" />
-      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members?.length ?? 0}`" />
-      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations?.length ?? 0}`" />
-      <Tag severity="secondary" :value="`Aktiv ${activeHousehold?.name ?? 'Keiner'}`" />
-    </template>
-
+  <ListPageShell title="Haushalte">
     <template #toolbar>
       <Button label="Neuer Haushalt" icon="pi pi-plus" severity="success" @click="openCreateHouseholdDialog" />
       <NuxtLink to="/households/members">
