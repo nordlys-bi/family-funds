@@ -1,7 +1,13 @@
 <!--
   DashboardActivityList — die "Letzte Buchungen"-Liste des Dashboards.
+
+  Issue #97: Das Dashboard zeigt nur `limit` Zeilen (Default 3) + einen
+  "+N weitere"-Hinweis. Die volle Liste liegt eine Seite tiefer; der
+  Panel-Header verlinkt mit "Alle anzeigen" dorthin.
 -->
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = defineProps<{
   activity: Array<{
     id: string
@@ -16,17 +22,24 @@ const props = defineProps<{
    * Currency-aware money-formatter. Erwartet Cent-Amounts als Input.
    */
   formatMoney: (cents: number) => string
+  /** Max. Anzahl sichtbarer Zeilen. `undefined` = alle. */
+  limit?: number
 }>()
-void props
+
+const visible = computed(() =>
+  props.limit == null ? props.activity : props.activity.slice(0, props.limit),
+)
+const hiddenCount = computed(() => props.activity.length - visible.value.length)
 </script>
 
 <template>
   <div v-if="activity.length === 0" class="empty">
     Noch keine Buchungen in den letzten 7 Tagen.
   </div>
-  <ul v-else class="list">
+  <template v-else>
+  <ul class="list">
     <li
-      v-for="entry in activity.slice(0, 5)"
+      v-for="entry in visible"
       :key="entry.id"
       class="item"
     >
@@ -53,6 +66,8 @@ void props
       </div>
     </li>
   </ul>
+  <p v-if="hiddenCount > 0" class="more">+ {{ hiddenCount }} weitere</p>
+  </template>
 </template>
 
 <style scoped>
@@ -135,5 +150,11 @@ void props
   font-size: 0.75rem;
   color: var(--color-text-muted);
   margin-top: 0.15rem;
+}
+
+.more {
+  margin: 0.85rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 </style>
