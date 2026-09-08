@@ -204,44 +204,54 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <!-- Issue #93: flache, frequenzsortierte Navigation analog
+           <MobileBottomNav />. Alltags-Module oben in der Reihenfolge, in der
+           sie tatsaechlich genutzt werden; Haushalts-Setup als entwertete
+           "Verwaltung"-Gruppe unten. Keine <NavSection>-Verschachtelung mehr —
+           bei sechs flachen Items bringt die Ebene keinen Gewinn. -->
       <nav class="sidebar-nav">
         <NuxtLink to="/" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-chart-bar nav-icon"></i>
           <span>Dashboard</span>
         </NuxtLink>
-
-        <div class="nav-section-title">Module</div>
-
-        <NuxtLink to="/households" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-users nav-icon"></i>
-          <span>Haushalte</span>
+        <NuxtLink to="/transactions/expenses" class="nav-item" active-class="nav-item-active">
+          <i class="pi pi-arrow-down nav-icon"></i>
+          <span>Ausgaben</span>
+        </NuxtLink>
+        <NuxtLink to="/transactions/income" class="nav-item" active-class="nav-item-active">
+          <i class="pi pi-arrow-up nav-icon"></i>
+          <span>Einnahmen</span>
+        </NuxtLink>
+        <NuxtLink to="/budgeting/budgets" class="nav-item" active-class="nav-item-active">
+          <i class="pi pi-wallet nav-icon"></i>
+          <span>Budgets</span>
+        </NuxtLink>
+        <NuxtLink to="/budgeting/savings" class="nav-item" active-class="nav-item-active">
+          <i class="pi pi-star nav-icon"></i>
+          <span>Sparziele</span>
+        </NuxtLink>
+        <NuxtLink to="/budgeting/recurring" class="nav-item" active-class="nav-item-active">
+          <i class="pi pi-sync nav-icon"></i>
+          <span>Wiederkehrend</span>
         </NuxtLink>
 
-        <NavSection prefix="/budgeting" icon="pi pi-calendar-plus" label="Budgetierung">
-          <NuxtLink to="/budgeting/budgets" class="sub-nav-item" active-class="sub-nav-item-active">
-            <i class="pi pi-wallet"></i>
-            <span>Budgets</span>
-          </NuxtLink>
-          <NuxtLink to="/budgeting/recurring" class="sub-nav-item" active-class="sub-nav-item-active">
-            <i class="pi pi-sync"></i>
-            <span>Wiederkehrend</span>
-          </NuxtLink>
-          <NuxtLink to="/budgeting/savings" class="sub-nav-item" active-class="sub-nav-item-active">
-            <i class="pi pi-flag"></i>
-            <span>Sparziele</span>
-          </NuxtLink>
-        </NavSection>
+        <div class="nav-divider" role="separator"></div>
+        <div class="nav-section-title">Verwaltung</div>
 
-        <NavSection prefix="/transactions" icon="pi pi-list" label="Transaktionen">
-          <NuxtLink to="/transactions/expenses" class="sub-nav-item" active-class="sub-nav-item-active">
-            <i class="pi pi-arrow-down"></i>
-            <span>Ausgaben</span>
-          </NuxtLink>
-          <NuxtLink to="/transactions/income" class="sub-nav-item" active-class="sub-nav-item-active">
-            <i class="pi pi-arrow-up"></i>
-            <span>Einnahmen</span>
-          </NuxtLink>
-        </NavSection>
+        <!-- exact-active-class statt active-class: sonst leuchtet "Haushalt"
+             auch auf /households/members und /households/settings mit. -->
+        <NuxtLink to="/households" class="nav-item nav-item--muted" exact-active-class="nav-item-active">
+          <i class="pi pi-users nav-icon"></i>
+          <span>Haushalt</span>
+        </NuxtLink>
+        <NuxtLink to="/households/members" class="nav-item nav-item--muted" active-class="nav-item-active">
+          <i class="pi pi-user-plus nav-icon"></i>
+          <span>Mitglieder</span>
+        </NuxtLink>
+        <NuxtLink to="/households/settings" class="nav-item nav-item--muted" active-class="nav-item-active">
+          <i class="pi pi-cog nav-icon"></i>
+          <span>Einstellungen</span>
+        </NuxtLink>
       </nav>
 
       <div class="sidebar-footer">
@@ -488,14 +498,30 @@ onBeforeUnmount(() => {
   font-weight: 700;
   text-transform: uppercase;
   color: #4b5563;
-  margin-top: 1rem;
+  margin-top: 0.35rem;
   margin-bottom: 0.25rem;
   padding-left: 0.75rem;
   letter-spacing: 0.05em;
 }
 
-.nav-item,
-.sub-nav-item {
+/* Issue #93: Trenner zwischen Alltags-Modulen und der "Verwaltung"-Gruppe. */
+.nav-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 1rem 0.75rem 0;
+}
+
+/* Issue #93: Haushalts-Setup ist selten genutzt — visuell zuruecknehmen,
+   ohne es zu verstecken. Der Active-State (blau) sticht weiterhin durch. */
+.nav-item--muted {
+  color: #6b7280;
+}
+
+.nav-item--muted .nav-icon {
+  opacity: 0.75;
+}
+
+.nav-item {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -511,8 +537,7 @@ onBeforeUnmount(() => {
   min-height: var(--touch-target-min);
 }
 
-.nav-item:hover:not(.nav-item-disabled),
-.sub-nav-item:hover {
+.nav-item:hover:not(.nav-item-disabled) {
   background: rgba(255, 255, 255, 0.03);
   color: #f1f5f9;
 }
