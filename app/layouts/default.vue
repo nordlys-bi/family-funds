@@ -200,7 +200,6 @@ onBeforeUnmount(() => {
         </div>
         <div class="user-details">
           <span class="user-name">{{ user?.displayName || 'Benutzer' }}</span>
-          <span class="user-email">{{ user?.email }}</span>
         </div>
       </div>
 
@@ -471,14 +470,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   font-size: 0.9rem;
   color: #f1f5f9;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.user-email {
-  font-size: 0.75rem;
-  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

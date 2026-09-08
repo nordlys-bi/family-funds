@@ -314,13 +314,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Sparziele"
-    description="Definiere konkrete Sparziele mit Zielbetrag und monatlicher Rate."
-  >
+  <ListPageShell title="Sparziele">
     <template #summary>
-      <Tag severity="info" :value="`${currentHousehold?.savingsGoals.length ?? 0} Ziele`" />
-      <Tag severity="success" :value="`${formatMoney(monthlySavingsRateTotal)}/Monat`" />
+      <Tag severity="success" :value="`Sparrate ${formatMoney(monthlySavingsRateTotal)} / Monat`" />
     </template>
 
     <template #toolbar>

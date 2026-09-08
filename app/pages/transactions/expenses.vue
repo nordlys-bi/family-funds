@@ -564,14 +564,14 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Ausgaben"
-    :description="`Erfasse alle Ausgaben fuer ${monthLabel}. Filtere nach Monat oder lege neue Buchungen an.`"
-  >
+  <ListPageShell title="Ausgaben">
     <template #summary>
       <Tag severity="warning" :value="`Ausgaben ${formatMoney(summary.expenseTotal)}`" />
-      <Tag severity="secondary" :value="`Ohne Budget ${formatMoney(summary.unassignedExpenseTotal)}`" />
-      <Tag severity="info" :value="`${visibleTransactions.length} Buchungen`" />
+      <Tag
+        v-if="summary.unassignedExpenseTotal > 0"
+        severity="secondary"
+        :value="`Ohne Budget ${formatMoney(summary.unassignedExpenseTotal)}`"
+      />
     </template>
 
     <template #toolbar>

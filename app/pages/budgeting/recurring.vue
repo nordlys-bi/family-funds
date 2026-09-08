@@ -434,7 +434,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 <template>
   <ListPageShell
     title="Geplante Einnahmen & Fixkosten"
-    description="Wiederkehrende Einnahmen und Fixkosten als monatlich umgerechnete Pläne."
+    description="Alle Beträge sind auf einen Monat umgerechnet."
   >
     <template #summary>
       <Tag severity="success" :value="`Einnahmen ${formatMoney(monthlyIncomeTotal)} / Monat`" />

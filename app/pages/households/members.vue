@@ -157,15 +157,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 </script>
 
 <template>
-  <ListPageShell
-    title="Mitglieder & Einladungen"
-    description="Lade andere Personen per E-Mail in deinen Haushalt ein, entferne Mitglieder oder ziehe offene Einladungen zurück."
-  >
-    <template #summary>
-      <Tag severity="success" :value="`Mitglieder ${currentHousehold?.members.length ?? 0}`" />
-      <Tag severity="warning" :value="`Einladungen ${currentHousehold?.invitations.length ?? 0}`" />
-    </template>
-
+  <ListPageShell title="Mitglieder">
     <template #toolbar>
       <Button
         v-if="currentHousehold"
