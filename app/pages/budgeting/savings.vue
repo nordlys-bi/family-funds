@@ -351,7 +351,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
     <template v-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length > 0">
       <ListPanel
-        kicker="Sparziele"
         title="Auf dem Weg zum Zielbetrag"
         compact
         :badge="`${currentHousehold.savingsGoals.length} Einträge`"

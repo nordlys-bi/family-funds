@@ -437,9 +437,16 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     description="Alle Beträge sind auf einen Monat umgerechnet."
   >
     <template #summary>
-      <Tag severity="success" :value="`Einnahmen ${formatMoney(monthlyIncomeTotal)} / Monat`" />
-      <Tag severity="warning" :value="`Fixkosten ${formatMoney(monthlyFixedCostTotal)} / Monat`" />
-      <Tag severity="info" :value="`Spielraum ${formatMoney(planableBalance)} / Monat`" />
+      <!-- „Spielraum" ist die Leitzahl der Seite (was bleibt monatlich zum
+           Verplanen übrig) — als Kennzahl, nicht als dritter gleichwertiger
+           Tag. Einnahmen/Fixkosten stehen klein darunter als Herleitung. -->
+      <div class="planable" :class="{ 'planable--negative': planableBalance < 0 }">
+        <span class="planable__label">Spielraum / Monat</span>
+        <span class="planable__value">{{ formatMoney(planableBalance) }}</span>
+        <span class="planable__parts">
+          {{ formatMoney(monthlyIncomeTotal) }} Einnahmen − {{ formatMoney(monthlyFixedCostTotal) }} Fixkosten
+        </span>
+      </div>
     </template>
 
     <template #toolbar>
@@ -478,7 +485,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
          Inline-Empty-Hinweis (v-if="length === 0" innerhalb des Panels). -->
     <template v-if="!loading && activeHousehold && currentHousehold && !noRecurringPlans">
       <ListPanel
-        kicker="Einnahmen"
         title="Geplante Einnahmen"
         compact
         :badge="`${visiblePlans(currentHousehold.incomePlans).length} fällig${nonDueIncomeCount > 0 ? ` · ${nonDueIncomeCount} diesen Monat nicht relevant` : ''}`"
@@ -550,7 +556,6 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       </ListPanel>
 
       <ListPanel
-        kicker="Fixkosten"
         title="Regelmäßige Ausgaben"
         compact
         :badge="`${visiblePlans(currentHousehold.fixedCosts).length} fällig${nonDueFixedCount > 0 ? ` · ${nonDueFixedCount} diesen Monat nicht relevant` : ''}`"
@@ -720,6 +725,47 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 </template>
 
 <style scoped>
+/* „Spielraum" als hervorgehobene Kennzahl im Header-Summary-Slot. */
+.planable {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.planable__label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+.planable__value {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--color-accent-success-text, #34d399);
+}
+
+.planable--negative .planable__value {
+  color: var(--color-accent-danger-text, #f87171);
+}
+
+.planable__parts {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #94a3b8);
+}
+
+@media (max-width: 639px) {
+  .planable {
+    align-items: flex-start;
+    text-align: left;
+  }
+}
+
 .row-title {
   font-weight: 600;
   font-size: 0.92rem;

@@ -508,7 +508,6 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
       <ListPanel
-        kicker="Monat"
         :title="`Einnahmen ${monthLabel}`"
         compact
         :badge="formatMoney(summary.incomeTotal)"

@@ -214,7 +214,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
     />
 
     <template v-if="!currentLoading && currentHousehold && currentHousehold.members.length > 0">
-      <ListPanel kicker="Mitglieder" title="Aktive Mitglieder" compact :badge="`${currentHousehold.members.length}`">
+      <ListPanel title="Aktive Mitglieder" compact :badge="`${currentHousehold.members.length}`">
         <ListTable dense accent="primary">
           <template #head>
             <th>Name</th>
@@ -299,7 +299,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
         </ListTable>
       </ListPanel>
 
-      <ListPanel kicker="Offen" title="Offene Einladungen" compact :badge="`${currentHousehold.invitations.length}`">
+      <ListPanel title="Offene Einladungen" compact :badge="`${currentHousehold.invitations.length}`">
         <ListTable dense>
           <template #head>
             <th>E-Mail</th>
