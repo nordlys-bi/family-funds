@@ -36,6 +36,16 @@ const props = defineProps<{
     userDisplayName: string | null
   }>
   /**
+   * Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
+   * diesen Monat. `null`, wenn der Server das Feld (noch) nicht liefert.
+   */
+  recurringDue?: {
+    fixedCostsOpen: number
+    fixedCostsDue: number
+    incomeOpen: number
+    incomeDue: number
+  } | null
+  /**
    * Currency-aware money-formatter. Erwartet Cent-Amounts als Input.
    */
   formatMoney: (cents: number) => string
@@ -64,8 +74,27 @@ const hasUnassigned = computed(() => props.unassignedExpenses > 0)
 const hasLatest = computed(() => latestEntry.value !== null)
 const hasFreeBudget = computed(() => freeBudgetTotal.value > 0)
 
+// Issue #98: fällige Recurring-Pläne, die diesen Monat noch nicht
+// (voll) als bezahlt/erhalten markiert sind.
+const openRecurringCount = computed(
+  () => (props.recurringDue?.fixedCostsOpen ?? 0) + (props.recurringDue?.incomeOpen ?? 0),
+)
+const hasRecurringDue = computed(() => openRecurringCount.value > 0)
+const recurringDueLabel = computed(() => {
+  const rd = props.recurringDue
+  if (!rd) return ''
+  const { fixedCostsOpen: fixed, fixedCostsDue, incomeOpen: income, incomeDue } = rd
+  if (fixed > 0 && income > 0) {
+    return `${fixed + income} wiederkehrende Posten diesen Monat noch offen`
+  }
+  if (fixed > 0) {
+    return `${fixed} von ${fixedCostsDue} Fixkosten diesen Monat noch offen`
+  }
+  return `${income} von ${incomeDue} ${income === 1 ? 'Einnahme' : 'Einnahmen'} diesen Monat noch offen`
+})
+
 const isAllClear = computed(
-  () => !hasCritical.value && !hasUnassigned.value && !hasLatest.value,
+  () => !hasCritical.value && !hasUnassigned.value && !hasLatest.value && !hasRecurringDue.value,
 )
 
 // Anzahl der ueber-Critical-Budgets (severity === 'over') fuer die Ampel-Label.
@@ -136,7 +165,25 @@ const overBudgetCount = computed(
         <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
       </li>
 
-      <!-- 3. Letzte Buchung — Schnellzugriff, neutraler Ton -->
+      <!-- 3. Fällige wiederkehrende Posten (issue #98) — gelber Hinweis.
+           Deep-Link auf /budgeting/recurring, wo der User sie per
+           „als bezahlt / erhalten markieren" abhakt. -->
+      <li v-if="hasRecurringDue" class="action-required__item action-required__item--warn">
+        <span class="action-required__icon action-required__icon--warn" aria-hidden="true">
+          <i class="pi pi-sync" />
+        </span>
+        <div class="action-required__body">
+          <NuxtLink to="/budgeting/recurring" class="action-required__link">
+            <strong>{{ recurringDueLabel }}</strong>
+            <span class="action-required__detail">
+              Als bezahlt bzw. erhalten markieren, sobald die Buchung durch ist.
+            </span>
+          </NuxtLink>
+        </div>
+        <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
+      </li>
+
+      <!-- 4. Letzte Buchung — Schnellzugriff, neutraler Ton -->
       <li v-if="hasLatest && latestEntry" class="action-required__item action-required__item--neutral">
         <span class="action-required__icon action-required__icon--neutral" aria-hidden="true">
           <i :class="latestEntry.kind === 'income' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right'" />
@@ -156,7 +203,7 @@ const overBudgetCount = computed(
         <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
       </li>
 
-      <!-- 4. Freies Restbudget — informativ, gruen, am unteren Rand -->
+      <!-- 5. Freies Restbudget — informativ, gruen, am unteren Rand -->
       <li v-if="hasFreeBudget && !hasCritical" class="action-required__item action-required__item--ok">
         <span class="action-required__icon action-required__icon--ok" aria-hidden="true">
           <i class="pi pi-check" />

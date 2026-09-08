@@ -72,6 +72,14 @@ type DashboardData = {
     severity: 'on-track' | 'warning' | 'over'
     computedAt: string
   }
+  // Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
+  // diesen Monat — Zähler für den „Handlungsbedarf"-Block.
+  recurringDue?: {
+    fixedCostsOpen: number
+    fixedCostsDue: number
+    incomeOpen: number
+    incomeDue: number
+  }
 }
 
 const { activeHousehold } = useHousehold()
@@ -186,6 +194,7 @@ watch(quickCaptureSavedTick, loadDashboard)
         :budget-alerts="budgetAlerts"
         :unassigned-expenses="summary?.unassignedExpenses ?? 0"
         :recent-activity="recentActivity"
+        :recurring-due="snapshot.recurringDue ?? null"
         :format-money="formatMoney"
       />
 
