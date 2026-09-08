@@ -60,10 +60,9 @@ function formatDateInput(value: Date) {
 // --- Month-Filter via Composable (issue #9) ---
 // Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
 // WICHTIG: die Refs MÜSSEN top-level destructuriert werden, damit
-// Vue's Template-Compiler sie auto-unwrapped. Ein `txList.monthOptions`
-// wäre ein nested Ref auf einem zurückgegebenen Object und würde NICHT
-// auto-unwrap — PrimeVue's Select würde dann den Ref-Proxy statt
-// des Arrays bekommen und mit "findIndex is not a function" sterben.
+// Vue's Template-Compiler sie auto-unwrapped. Ein `tx.summary` im
+// Template wäre ein nested Ref auf einem zurückgegebenen Object und
+// würde NICHT auto-unwrap — Consumer bekämen dann den Ref-Proxy.
 const tx = useTransactionList({
   initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
   // Issue #52: Dashboard "ohne Budgetzuordnung"-Link setzt ?unassigned=1
@@ -81,7 +80,6 @@ const unassignedOnly = tx.unassignedOnly
 const userIdFilter = tx.userIdFilter
 const budgetIdFilter = tx.budgetIdFilter
 const hasLocalFilters = tx.hasLocalFilters
-const monthOptions = tx.monthOptions
 const monthLabel = tx.monthLabel
 const summary = tx.summary
 const txLoading = tx.loading
@@ -556,18 +554,9 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     </template>
 
     <template #toolbar>
+      <!-- Issue #96: einheitlicher Monats-Stepper (statt <Select>). -->
       <div class="toolbar-month">
-        <label for="expenses-month-select" class="toolbar-month__label">Monat</label>
-        <Select
-          id="expenses-month-select"
-          :model-value="month"
-          :options="monthOptions"
-          option-label="label"
-          option-value="value"
-          :loading="txLoading"
-          aria-label="Monat auswaehlen"
-          @update:model-value="onMonthChange"
-        />
+        <MonthSwitcher :model-value="month" :loading="txLoading" @update:model-value="onMonthChange" />
       </div>
       <!-- Issue #55: Person-Filter (Single-Select). Wert null bedeutet
            "Alle Mitglieder" — PrimeVue-Select verträgt das ohne Custom-
@@ -893,11 +882,6 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   align-items: center;
   gap: 8px;
   margin-right: auto;
-}
-
-.toolbar-month__label {
-  font-size: 0.85rem;
-  color: var(--text-muted, #94a3b8);
 }
 
 /* Issue #55: Filter-Selects in der Toolbar. Kompakte Hoehe, passt
