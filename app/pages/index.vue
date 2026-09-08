@@ -119,6 +119,13 @@ function forecastSeverityLabel(severity: 'on-track' | 'warning' | 'over'): strin
 const savingsGoals = computed(() => snapshot.value?.savingsGoals ?? [])
 const budgetAlerts = computed(() => snapshot.value?.budgetAlerts ?? [])
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
+// Issue #97: der Schnellzugriff auf die letzte Buchung ist aus dem
+// "Handlungsbedarf"-Block in den "Letzte Buchungen"-Panel-Header gewandert.
+const latestEntry = computed(() => recentActivity.value[0] ?? null)
+
+// Issue #97: Dashboard-Listen zeigen nur die Spitze — die volle Liste
+// liegt je eine Seite tiefer, verlinkt ueber "Alle anzeigen".
+const DASHBOARD_LIST_LIMIT = 3
 
 const balanceTone = computed(() => ((summary.value?.balance ?? 0) >= 0 ? 'primary' : 'danger'))
 
@@ -187,13 +194,13 @@ watch(quickCaptureSavedTick, loadDashboard)
 
       <!-- Handlungsbedarf (issue #37): steht jetzt ganz oben, weil die
            Alltagsfrage "Was muss ich mir ansehen?" wichtiger ist als
-           "Wie hoch waren meine Einnahmen?". Zeigt kritische Budgets,
-           unzugeordnete Buchungen, die letzte Buchung als Schnellzugriff
-           und das freie Restbudget. -->
+           "Wie hoch waren meine Einnahmen?". Issue #97: zeigt nur echten
+           Handlungsbedarf (kritische Budgets, unzugeordnete Buchungen,
+           fällige wiederkehrende Posten) + das freie Restbudget — sonst
+           einen ruhigen Einzeiler. -->
       <DashboardActionRequired
         :budget-alerts="budgetAlerts"
         :unassigned-expenses="summary?.unassignedExpenses ?? 0"
-        :recent-activity="recentActivity"
         :recurring-due="snapshot.recurringDue ?? null"
         :format-money="formatMoney"
       />
@@ -259,11 +266,28 @@ watch(quickCaptureSavedTick, loadDashboard)
           <NuxtLink to="/budgeting/budgets">
             <Button label="Budget anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
           </NuxtLink>
+          <NuxtLink to="/budgeting/budgets">
+            <Button
+              label="Alle anzeigen"
+              icon="pi pi-list"
+              size="small"
+              severity="secondary"
+              outlined
+              aria-label="Alle Budgets anzeigen"
+            />
+          </NuxtLink>
         </template>
-        <DashboardBudgetList :alerts="budgetAlerts" :format-money="formatMoney" />
+        <DashboardBudgetList :alerts="budgetAlerts" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
       </ListPanel>
 
       <ListPanel kicker="Aktivität" title="Letzte Buchungen" :compact="true">
+        <template v-if="latestEntry" #subtitle>
+          <NuxtLink to="/transactions/expenses" class="panel-quicklink">
+            Zuletzt: {{ latestEntry.description || (latestEntry.kind === 'income' ? 'Einnahme' : 'Ausgabe') }}
+            · {{ latestEntry.kind === 'income' ? '+' : '−' }}{{ formatMoney(latestEntry.amount) }}
+            <i class="pi pi-arrow-right" aria-hidden="true" />
+          </NuxtLink>
+        </template>
         <template #actions>
           <NuxtLink to="/transactions/expenses">
             <Button label="Ausgabe erfassen" icon="pi pi-plus" size="small" severity="primary" />
@@ -285,7 +309,7 @@ watch(quickCaptureSavedTick, loadDashboard)
             />
           </NuxtLink>
         </template>
-        <DashboardActivityList :activity="recentActivity" :format-money="formatMoney" />
+        <DashboardActivityList :activity="recentActivity" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
       </ListPanel>
 
       <!-- Sparziele mit Fortschrittsbalken (issue #6 AC):
@@ -296,14 +320,44 @@ watch(quickCaptureSavedTick, loadDashboard)
           <NuxtLink to="/budgeting/savings">
             <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
           </NuxtLink>
+          <NuxtLink to="/budgeting/savings">
+            <Button
+              label="Alle anzeigen"
+              icon="pi pi-list"
+              size="small"
+              severity="secondary"
+              outlined
+              aria-label="Alle Sparziele anzeigen"
+            />
+          </NuxtLink>
         </template>
-        <DashboardSavingsList :goals="savingsGoals" :format-money="formatMoney" />
+        <DashboardSavingsList :goals="savingsGoals" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
       </ListPanel>
     </template>
   </ListPageShell>
 </template>
 
 <style scoped>
+/* Issue #97: Schnellzugriff auf die letzte Buchung im Panel-Header. */
+.panel-quicklink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted, #94a3b8);
+  text-decoration: none;
+}
+
+.panel-quicklink:hover {
+  color: var(--color-accent-primary-text, #93c5fd);
+}
+
+.panel-quicklink .pi {
+  font-size: 0.7rem;
+}
+
 /* === Kompakte Monatszeile (issue #37) === */
 .month-strip {
   display: flex;

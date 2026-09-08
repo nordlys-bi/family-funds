@@ -5,9 +5,15 @@
   "currentAmount / targetAmount · +monthlyRate / Monat". Wird vom
   Dashboard-Endpoint aggregiert geliefert (currentAmount = Summe
   aller SavingsGoalExecution-Amounts, siehe issue #12).
+
+  Issue #97: Das Dashboard zeigt nur `limit` Zeilen (Default 3) + einen
+  "+N weitere"-Hinweis; "Alle anzeigen" im Panel-Header fuehrt zur
+  vollen Liste.
 -->
 <script setup lang="ts">
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   goals: Array<{
     id: string
     name: string
@@ -20,15 +26,23 @@ defineProps<{
    * Currency-aware money-formatter. Erwartet Cent-Amounts als Input.
    */
   formatMoney: (cents: number) => string
+  /** Max. Anzahl sichtbarer Zeilen. `undefined` = alle. */
+  limit?: number
 }>()
+
+const visible = computed(() =>
+  props.limit == null ? props.goals : props.goals.slice(0, props.limit),
+)
+const hiddenCount = computed(() => props.goals.length - visible.value.length)
 </script>
 
 <template>
   <div v-if="goals.length === 0" class="empty">
     Noch keine Sparziele — lege eins an, um deine Fortschritte zu sehen.
   </div>
-  <ul v-else class="list">
-    <li v-for="goal in goals" :key="goal.id" class="item">
+  <template v-else>
+  <ul class="list">
+    <li v-for="goal in visible" :key="goal.id" class="item">
       <div class="head">
         <span class="name">{{ goal.name }}</span>
         <span class="pct">{{ goal.percentToTarget.toFixed(0) }}%</span>
@@ -42,6 +56,8 @@ defineProps<{
       </div>
     </li>
   </ul>
+  <p v-if="hiddenCount > 0" class="more">+ {{ hiddenCount }} weitere</p>
+  </template>
 </template>
 
 <style scoped>
@@ -83,5 +99,11 @@ defineProps<{
   font-size: 0.78rem;
   color: var(--color-text-muted);
   margin-top: 0.35rem;
+}
+
+.more {
+  margin: 1.1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 </style>

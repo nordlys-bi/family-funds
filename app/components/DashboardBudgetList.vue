@@ -68,7 +68,17 @@ const props = defineProps<{
    * (Detail-Kontext → Whitespace ist hier ok).
    */
   defaultExpanded?: boolean
+  /**
+   * Issue #97: Max. Anzahl sichtbarer Budgets auf dem Dashboard
+   * (Default 3, via Prop gesetzt). `undefined` = alle (Detail-Page).
+   */
+  limit?: number
 }>()
+
+const visibleAlerts = computed(() =>
+  props.limit == null ? props.alerts : props.alerts.slice(0, props.limit),
+)
+const hiddenCount = computed(() => props.alerts.length - visibleAlerts.value.length)
 
 // Set<string> mit budgetIds, die aktuell aufgeklappt sind. Lokaler
 // Component-State, kein Pinia/Persist nötig — Toggle-Status ist
@@ -148,7 +158,7 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
     Noch keine Budgets — Budgets helfen, geplante Ausgaben im Auge zu behalten.
   </div>
   <ul v-else class="list">
-    <li v-for="alert in alerts" :key="alert.budgetId" class="item">
+    <li v-for="alert in visibleAlerts" :key="alert.budgetId" class="item">
       <button
         type="button"
         class="head"
@@ -219,6 +229,7 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
       </ul>
     </li>
   </ul>
+  <p v-if="hiddenCount > 0" class="more">+ {{ hiddenCount }} weitere</p>
   <div v-if="hasWeekly" class="footer-hint" aria-hidden="true">
     Klick aufs Budget zeigt die einzelnen Wochen
   </div>
@@ -358,6 +369,12 @@ function forecastSeverityLabel(severity: ForecastSeverity): string {
   color: var(--color-text-muted);
   text-align: center;
   font-style: italic;
+}
+
+.more {
+  margin: 1.1rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
 /* Issue #60 / ADR 0003: Forecast-Block pro Budget. */

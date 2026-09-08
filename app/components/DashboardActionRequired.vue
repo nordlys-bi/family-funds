@@ -7,12 +7,14 @@
 
   1. Kritische Budgets (severity warning/over) — direkter Handlungsbedarf
   2. Buchungen ohne Budget-Zuordnung — User muss entscheiden
-  3. Letzte Buchung — Schnellzugriff / Kontext
+  3. Fällige wiederkehrende Posten (issue #98) — als bezahlt markieren
   4. Freies Restbudget — informativ, am unteren Rand
 
-  Wenn keines der Felder Daten hat, zeigen wir einen ruhigen Empty-State
-  ("Alles im grünen Bereich"). Kein Alarm-Sound, keine rote Karte
-  ohne Inhalt.
+  Issue #97: Die Liste wird nur gerendert, wenn es echten Handlungsbedarf
+  gibt (kritische Budgets, unzugeordnete Buchungen oder fällige Posten).
+  Sonst ein ruhiger Einzeiler ("Alles im grünen Bereich") — keine
+  Feed-Zeilen ohne Aktion. Die "letzte Buchung" als Schnellzugriff lebt
+  jetzt im "Letzte Buchungen"-Panel-Header, nicht mehr hier.
 -->
 <script setup lang="ts">
 const props = defineProps<{
@@ -26,15 +28,6 @@ const props = defineProps<{
     severity: 'ok' | 'warning' | 'over'
   }>
   unassignedExpenses: number
-  recentActivity: Array<{
-    id: string
-    kind: 'expense' | 'income'
-    amount: number
-    description: string | null
-    date: string
-    budgetName: string | null
-    userDisplayName: string | null
-  }>
   /**
    * Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
    * diesen Monat. `null`, wenn der Server das Feld (noch) nicht liefert.
@@ -63,15 +56,10 @@ const freeBudgetTotal = computed(() =>
     .reduce((sum, alert) => sum + alert.remainingAmount, 0),
 )
 
-// Nur die neueste Buchung fuer den Schnellzugriff. Der vollstaendige
-// Verlauf bleibt weiter unten im "Letzte Buchungen"-Panel.
-const latestEntry = computed(() => props.recentActivity[0] ?? null)
-
 // Welche Items zeigen wir im Block? Ein Item gilt als "aktiv", wenn es
 // entweder ueberhaupt Daten hat oder eine sinnvolle Aussage machen kann.
 const hasCritical = computed(() => criticalBudgets.value.length > 0)
 const hasUnassigned = computed(() => props.unassignedExpenses > 0)
-const hasLatest = computed(() => latestEntry.value !== null)
 const hasFreeBudget = computed(() => freeBudgetTotal.value > 0)
 
 // Issue #98: fällige Recurring-Pläne, die diesen Monat noch nicht
@@ -93,8 +81,10 @@ const recurringDueLabel = computed(() => {
   return `${income} von ${incomeDue} ${income === 1 ? 'Einnahme' : 'Einnahmen'} diesen Monat noch offen`
 })
 
+// Issue #97: "letzte Buchung" zaehlt nicht mehr als Handlungsbedarf —
+// eine ruhige Aktivitaet ist kein Grund, den Alarm-Block offen zu halten.
 const isAllClear = computed(
-  () => !hasCritical.value && !hasUnassigned.value && !hasLatest.value && !hasRecurringDue.value,
+  () => !hasCritical.value && !hasUnassigned.value && !hasRecurringDue.value,
 )
 
 // Anzahl der ueber-Critical-Budgets (severity === 'over') fuer die Ampel-Label.
@@ -112,12 +102,13 @@ const overBudgetCount = computed(
       </span>
     </header>
 
-    <!-- Empty-State: alles ruhig. Kein rotes Banner, einfach gruen. -->
+    <!-- Empty-State: alles ruhig. Kein rotes Banner, einfach gruen.
+         Issue #97: ein Einzeiler statt Feed-Zeilen, wenn nichts ansteht. -->
     <div v-if="isAllClear" class="action-required__empty">
       <i class="pi pi-check-circle" aria-hidden="true" />
       <div>
         <strong>Alles im grünen Bereich.</strong>
-        Keine kritischen Budgets, keine Buchungen ohne Zuordnung.
+        Keine kritischen Budgets, nichts ohne Zuordnung, keine offenen Posten.
       </div>
     </div>
 
@@ -183,27 +174,7 @@ const overBudgetCount = computed(
         <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
       </li>
 
-      <!-- 4. Letzte Buchung — Schnellzugriff, neutraler Ton -->
-      <li v-if="hasLatest && latestEntry" class="action-required__item action-required__item--neutral">
-        <span class="action-required__icon action-required__icon--neutral" aria-hidden="true">
-          <i :class="latestEntry.kind === 'income' ? 'pi pi-arrow-down-left' : 'pi pi-arrow-up-right'" />
-        </span>
-        <div class="action-required__body">
-          <NuxtLink to="/transactions/expenses" class="action-required__link">
-            <strong>
-              Letzte Buchung: {{ latestEntry.description || (latestEntry.kind === 'income' ? 'Einnahme' : 'Ausgabe') }}
-            </strong>
-            <span class="action-required__detail">
-              {{ formatMoney(latestEntry.amount) }} ·
-              {{ new Date(latestEntry.date).toLocaleDateString('de-DE') }}
-              <template v-if="latestEntry.userDisplayName"> · {{ latestEntry.userDisplayName }}</template>
-            </span>
-          </NuxtLink>
-        </div>
-        <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
-      </li>
-
-      <!-- 5. Freies Restbudget — informativ, gruen, am unteren Rand -->
+      <!-- 4. Freies Restbudget — informativ, gruen, am unteren Rand -->
       <li v-if="hasFreeBudget && !hasCritical" class="action-required__item action-required__item--ok">
         <span class="action-required__icon action-required__icon--ok" aria-hidden="true">
           <i class="pi pi-check" />
@@ -324,11 +295,6 @@ const overBudgetCount = computed(
   background: rgba(251, 191, 36, 0.08);
 }
 
-.action-required__item--neutral {
-  background: rgba(59, 130, 246, 0.04);
-  border-color: rgba(59, 130, 246, 0.14);
-}
-
 .action-required__item--ok {
   background: rgba(16, 185, 129, 0.04);
   border-color: rgba(16, 185, 129, 0.16);
@@ -353,11 +319,6 @@ const overBudgetCount = computed(
 .action-required__icon--warn {
   background: rgba(251, 191, 36, 0.18);
   color: var(--color-accent-warning, #fbbf24);
-}
-
-.action-required__icon--neutral {
-  background: rgba(59, 130, 246, 0.18);
-  color: var(--color-accent-primary, #60a5fa);
 }
 
 .action-required__icon--ok {
