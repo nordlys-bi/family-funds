@@ -20,6 +20,14 @@ export const useHousehold = () => {
   const activeHousehold = useState<HouseholdInfo | null>('active-household', () => null)
   const loading = useState<boolean>('household-loading', () => false)
 
+  // ID des aktiven Haushalts als eigener Ref — Seiten wie households/members.vue
+  // und households/settings.vue destrukturieren `activeHouseholdId` direkt aus
+  // dem Composable (statt lokal `computed(() => activeHousehold.value?.id)` zu
+  // bauen wie die uebrigen Seiten). Ohne diesen Export war der Wert dort
+  // `undefined` und jeder Handler mit `if (!activeHouseholdId.value) return`
+  // ist mit einem TypeError abgebrochen — u.a. das Einladen von Mitgliedern.
+  const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
+
   // Persist the active household ID in a cookie
   const activeHouseholdIdCookie = useCookie<string | null>('active_household_id', {
     path: '/',
@@ -82,6 +90,7 @@ export const useHousehold = () => {
   return {
     households,
     activeHousehold,
+    activeHouseholdId,
     loading,
     fetchHouseholds,
     setActiveHousehold,
