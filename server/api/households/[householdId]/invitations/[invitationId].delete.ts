@@ -3,6 +3,8 @@ import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
+import { isClerkEnabled } from '../../../../utils/auth-mode'
+import { revokeClerkInvitation } from '../../../../utils/clerk-invite'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -18,6 +20,7 @@ export default defineEventHandler(async (event) => {
     },
     select: {
       id: true,
+      clerkInvitationId: true,
     },
   })
 
@@ -26,6 +29,10 @@ export default defineEventHandler(async (event) => {
       statusCode: 404,
       statusMessage: 'Invitation not found.',
     })
+  }
+
+  if (isClerkEnabled() && invitation.clerkInvitationId) {
+    await revokeClerkInvitation(event, invitation.clerkInvitationId)
   }
 
   await prisma.householdInvitation.delete({
