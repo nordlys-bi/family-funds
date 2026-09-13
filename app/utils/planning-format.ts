@@ -98,6 +98,54 @@ export function monthlyFrequencyFactor(frequency: Frequency): number {
   }
 }
 
+// === Dashboard-Budget-Perioden-Label ========================================
+
+/**
+ * ISO-8601-Kalenderwoche einer Date. Donnerstag der Woche bestimmt die KW
+ * (ISO-Regel). Kopiert aus dem vorherigen `DashboardBudgetList.vue` (jetzt
+ * zusaetzlich fuer die Dashboard-Perioden-Karten gebraucht).
+ */
+export function isoWeekNumber(date: Date): number {
+  const target = new Date(date)
+  target.setHours(0, 0, 0, 0)
+  const dayNum = (target.getDay() + 6) % 7 // Mo = 0, So = 6
+  target.setDate(target.getDate() - dayNum + 3)
+  const firstThursday = new Date(target.getFullYear(), 0, 4)
+  const firstDayNum = (firstThursday.getDay() + 6) % 7
+  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3)
+  const diff = target.getTime() - firstThursday.getTime()
+  return 1 + Math.round(diff / (7 * 24 * 60 * 60 * 1000))
+}
+
+const MONTH_YEAR_FORMATTER = new Intl.DateTimeFormat('de-DE', { month: 'short', year: 'numeric' })
+
+/**
+ * Kompaktes Label fuer die aktuell laufende Periode einer Dashboard-Budget-
+ * Karte, z. B. "KW 34" / "Aug. 2026" / "Q3 2026" / "2026" / "seit 27. Jul.
+ * 2026" (ONCE, offen) / Datumsrange (ONCE, bereits abgeloest).
+ */
+export function formatBudgetPeriodLabel(
+  frequency: Frequency,
+  periodStart: string,
+  periodEnd: string | null,
+): string {
+  const start = new Date(periodStart)
+  switch (frequency) {
+    case 'WEEKLY':
+      return `KW ${isoWeekNumber(start)}`
+    case 'MONTHLY':
+      return MONTH_YEAR_FORMATTER.format(start)
+    case 'QUARTERLY':
+      return `Q${Math.floor(start.getMonth() / 3) + 1} ${start.getFullYear()}`
+    case 'YEARLY':
+      return `${start.getFullYear()}`
+    case 'ONCE':
+      return periodEnd
+        ? `${formatPlanningDate(periodStart)} – ${formatPlanningDate(periodEnd)}`
+        : `seit ${formatPlanningDate(periodStart)}`
+  }
+}
+
 /**
  * Liefert das erste gültige Datum einer Periode der angegebenen Frequenz,
  * berechnet ab `value`. Heute ist der Default.

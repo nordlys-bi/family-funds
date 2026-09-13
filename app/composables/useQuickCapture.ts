@@ -29,12 +29,19 @@ export type QuickCaptureKind = 'expense' | 'income'
 type QuickCaptureState = {
   open: boolean
   kind: QuickCaptureKind
+  /**
+   * Vorausgewaehltes Budget fuer den naechsten Open-Aufruf (z. B. von
+   * einer Budget-Karte auf dem Dashboard). Nur fuer `kind: 'expense'`
+   * relevant — <QuickCaptureRoot> ignoriert es bei Einnahmen.
+   */
+  budgetId: string | null
 }
 
 export function useQuickCapture() {
   const state = useState<QuickCaptureState>('quick-capture:state', () => ({
     open: false,
     kind: 'expense',
+    budgetId: null,
   }))
 
   // Monoton steigender Zaehler, den <QuickCaptureRoot> nach jedem
@@ -44,10 +51,15 @@ export function useQuickCapture() {
 
   const isOpen = computed(() => state.value.open)
   const kind = computed(() => state.value.kind)
+  const budgetId = computed(() => state.value.budgetId)
 
-  /** Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. */
-  function open(nextKind: QuickCaptureKind = 'expense') {
-    state.value = { open: true, kind: nextKind }
+  /**
+   * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `budgetId`
+   * (optional) fuellt das Budget-Feld vor — z. B. beim Klick auf die
+   * "+"-Aktion einer Dashboard-Budget-Karte.
+   */
+  function open(nextKind: QuickCaptureKind = 'expense', options?: { budgetId?: string | null }) {
+    state.value = { open: true, kind: nextKind, budgetId: options?.budgetId ?? null }
   }
 
   function close() {
@@ -64,5 +76,5 @@ export function useQuickCapture() {
     savedTick.value += 1
   }
 
-  return { isOpen, kind, savedTick, open, close, setKind, markSaved }
+  return { isOpen, kind, budgetId, savedTick, open, close, setKind, markSaved }
 }

@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest'
 import type { BudgetVersion, Frequency } from '@prisma/client'
 import {
   addPeriod,
+  attachPeriodSpending,
   buildBudgetOverview,
+  buildCurrentBudgetPeriods,
   buildWeeklyPeriods,
+  getCurrentBudgetPeriodWindows,
   getMonthWindow,
+  getOverallBudgetPeriodWindow,
   startOfPeriod,
+  type BudgetCurrentPeriodWindow,
 } from '../budget-evaluation'
 
 /**
@@ -601,5 +606,253 @@ describe('buildBudgetOverview — periods-Feld (issue #82)', () => {
     ])
     const result = buildBudgetOverview([budget], [], new Date(2026, 5, 17))
     expect(result.budgets[0].periods).toEqual([])
+  })
+})
+
+// === Dashboard-Budget-Perioden-Karten =====================================
+//
+// Im Gegensatz zu buildBudgetOverview (kalendermonats-skaliert) beziehen
+// sich diese Funktionen auf die eigene, aktuell laufende Periode jedes
+// Budgets. Kernregression: QUARTERLY/YEARLY-Budgets zeigen den vollen
+// Planbetrag auch AUSSERHALB des Monats, in dem die Periode startet
+// (buildBudgetOverview liefert dort 0, siehe Tests oben).
+describe('getCurrentBudgetPeriodWindows', () => {
+  it('WEEKLY: Fenster ist Mo–Mo der laufenden Woche', () => {
+    // Mittwoch 17. Juni 2026 liegt in der Woche Mo 15.6. – Mo 22.6.
+    const now = new Date(2026, 5, 17, 15, 0)
+    const budget = makeBudget('b1', 'misc', 'Sonstiges', [
+      makeVersion({ amount: 2500, frequency: 'WEEKLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.frequency).toBe('WEEKLY')
+    expect(window.amount).toBe(2500)
+    expect(window.periodStart).toEqual(new Date(2026, 5, 15, 12))
+    expect(window.periodEnd).toEqual(new Date(2026, 5, 22, 12))
+  })
+
+  it('MONTHLY: Fenster ist der 1. bis zum 1. des Folgemonats', () => {
+    const now = new Date(2026, 5, 17, 15, 0)
+    const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+      makeVersion({ amount: 50000, frequency: 'MONTHLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.periodStart).toEqual(new Date(2026, 5, 1, 12))
+    expect(window.periodEnd).toEqual(new Date(2026, 6, 1, 12))
+  })
+
+  it('QUARTERLY: zeigt das volle Quartals-Fenster auch AUSSERHALB des Start-Monats (Bugfix)', () => {
+    // Q2 2026 = Apr–Jun. "now" ist Juni, nicht der Start-Monat (April) —
+    // buildBudgetOverview liefert hier plannedAmount 0 (siehe Test oben),
+    // getCurrentBudgetPeriodWindows liefert korrekt das ganze Quartal.
+    const now = new Date(2026, 5, 17, 12)
+    const budget = makeBudget('b1', 'insurance', 'Versicherung', [
+      makeVersion({ amount: 30000, frequency: 'QUARTERLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.amount).toBe(30000)
+    expect(window.periodStart).toEqual(new Date(2026, 3, 1, 12)) // 1. April
+    expect(window.periodEnd).toEqual(new Date(2026, 6, 1, 12)) // 1. Juli
+  })
+
+  it('YEARLY: zeigt das volle Jahres-Fenster auch im September (Bugfix)', () => {
+    // buildBudgetOverview liefert hier plannedAmount 0 (nur im Januar > 0).
+    const now = new Date(2026, 8, 15, 12) // 15. September
+    const budget = makeBudget('b1', 'annual', 'Jährlich', [
+      makeVersion({ amount: 120000, frequency: 'YEARLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.amount).toBe(120000)
+    expect(window.periodStart).toEqual(new Date(2026, 0, 1, 12))
+    expect(window.periodEnd).toEqual(new Date(2027, 0, 1, 12))
+  })
+
+  it('ONCE ohne Nachfolge-Version: periodEnd ist null (offene Periode)', () => {
+    const now = new Date(2026, 5, 17, 12)
+    const budget = makeBudget('b1', 'once', 'Einmalig', [
+      makeVersion({ amount: 9900, frequency: 'ONCE', validFrom: new Date(2026, 2, 5) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.periodStart).toEqual(new Date(2026, 2, 5, 12))
+    expect(window.periodEnd).toBeNull()
+  })
+
+  it('ONCE mit bereits geplanter Nachfolge-Version: periodEnd ist deren validFrom', () => {
+    // v1 (ONCE, Jan 1) ist zum Zeitpunkt "now" noch aktiv, v2 (ONCE, Aug 1)
+    // ist bereits angelegt, startet aber erst in der Zukunft.
+    const now = new Date(2026, 5, 17, 12)
+    const budget = makeBudget('b1', 'once', 'Einmalig', [
+      makeVersion({ amount: 20000, frequency: 'ONCE', validFrom: new Date(2026, 7, 1) }),
+      makeVersion({ amount: 9900, frequency: 'ONCE', validFrom: new Date(2026, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.amount).toBe(9900)
+    expect(window.periodStart).toEqual(new Date(2026, 0, 1, 12))
+    // validTo ist die rohe validFrom der Nachfolge-Version (unverändert,
+    // nicht durch startOfPeriod normalisiert).
+    expect(window.periodEnd).toEqual(new Date(2026, 7, 1))
+  })
+
+  it('clippt periodStart auf validFrom, wenn die Version mitten in einer Periode beginnt', () => {
+    // Version beginnt am 15. Juni (nicht am natuerlichen Monatsanfang).
+    const now = new Date(2026, 5, 20, 12)
+    const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+      makeVersion({ amount: 50000, frequency: 'MONTHLY', validFrom: new Date(2026, 5, 15) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.periodStart).toEqual(new Date(2026, 5, 15))
+    expect(window.periodEnd).toEqual(new Date(2026, 6, 1, 12))
+  })
+
+  it('clippt periodEnd auf validTo, wenn eine neuere Version die laufende vor dem natuerlichen Periodenende abloest', () => {
+    // v1 (Jan 1, MONTHLY) ist am 5. Juni noch aktiv, v2 startet am 10. Juni
+    // (mitten im natuerlichen Juni-Fenster von v1).
+    const now = new Date(2026, 5, 5, 12)
+    const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+      makeVersion({ amount: 20000, frequency: 'MONTHLY', validFrom: new Date(2026, 5, 10) }),
+      makeVersion({ amount: 10000, frequency: 'MONTHLY', validFrom: new Date(2026, 0, 1) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], now)
+    expect(window.amount).toBe(10000)
+    expect(window.periodStart).toEqual(new Date(2026, 5, 1, 12))
+    expect(window.periodEnd).toEqual(new Date(2026, 5, 10))
+  })
+
+  it('schliesst Budgets ohne Versionen aus', () => {
+    const budget = makeBudget('b1', 'empty', 'Leer', [])
+    const windows = getCurrentBudgetPeriodWindows([budget], new Date(2026, 5, 17))
+    expect(windows).toEqual([])
+  })
+
+  it('schliesst Budgets aus, deren einzige Version erst in der Zukunft beginnt', () => {
+    const budget = makeBudget('b1', 'future', 'Zukunft', [
+      makeVersion({ amount: 50000, frequency: 'MONTHLY', validFrom: new Date(2026, 9, 1) }),
+    ])
+    const windows = getCurrentBudgetPeriodWindows([budget], new Date(2026, 5, 17))
+    expect(windows).toEqual([])
+  })
+})
+
+describe('getOverallBudgetPeriodWindow', () => {
+  function makeWindow(overrides: Partial<BudgetCurrentPeriodWindow>): BudgetCurrentPeriodWindow {
+    return {
+      budgetId: 'b1',
+      key: 'k',
+      name: 'n',
+      frequency: 'MONTHLY',
+      amount: 1000,
+      periodStart: new Date(2026, 5, 1),
+      periodEnd: new Date(2026, 6, 1),
+      ...overrides,
+    }
+  }
+
+  it('liefert null bei leerem Input', () => {
+    expect(getOverallBudgetPeriodWindow([])).toBeNull()
+  })
+
+  it('liefert die eigenen Grenzen bei genau einem Fenster', () => {
+    const window = makeWindow({})
+    expect(getOverallBudgetPeriodWindow([window])).toEqual({ start: window.periodStart, end: window.periodEnd })
+  })
+
+  it('liefert min(start) / max(end) über mehrere Fenster', () => {
+    const windows = [
+      makeWindow({ periodStart: new Date(2026, 5, 1), periodEnd: new Date(2026, 6, 1) }),
+      makeWindow({ periodStart: new Date(2026, 0, 1), periodEnd: new Date(2027, 0, 1) }),
+      makeWindow({ periodStart: new Date(2026, 3, 1), periodEnd: new Date(2026, 6, 1) }),
+    ]
+    expect(getOverallBudgetPeriodWindow(windows)).toEqual({
+      start: new Date(2026, 0, 1),
+      end: new Date(2027, 0, 1),
+    })
+  })
+
+  it('end ist null, sobald irgendein Fenster offen ist — unabhängig von der Reihenfolge', () => {
+    const windows = [
+      makeWindow({ periodStart: new Date(2026, 0, 1), periodEnd: new Date(2027, 0, 1) }),
+      makeWindow({ periodStart: new Date(2026, 2, 5), periodEnd: null }),
+      makeWindow({ periodStart: new Date(2026, 5, 1), periodEnd: new Date(2026, 6, 1) }),
+    ]
+    const result = getOverallBudgetPeriodWindow(windows)
+    expect(result?.end).toBeNull()
+    expect(result?.start).toEqual(new Date(2026, 0, 1))
+  })
+})
+
+describe('attachPeriodSpending', () => {
+  function makeWindow(overrides: Partial<BudgetCurrentPeriodWindow>): BudgetCurrentPeriodWindow {
+    return {
+      budgetId: 'b1',
+      key: 'food',
+      name: 'Lebensmittel',
+      frequency: 'MONTHLY',
+      amount: 50000,
+      periodStart: new Date(2026, 5, 1),
+      periodEnd: new Date(2026, 6, 1),
+      ...overrides,
+    }
+  }
+
+  it('summiert nur Ausgaben innerhalb [periodStart, periodEnd)', () => {
+    const window = makeWindow({})
+    const expenses = [
+      { amount: 1000, date: new Date(2026, 4, 30), budgetId: 'b1' }, // vor periodStart
+      { amount: 2000, date: new Date(2026, 5, 15), budgetId: 'b1' }, // innerhalb
+      { amount: 4000, date: new Date(2026, 6, 1), budgetId: 'b1' }, // == periodEnd, exklusiv
+    ]
+    const [item] = attachPeriodSpending([window], expenses)
+    expect(item.spentAmount).toBe(2000)
+    expect(item.remainingAmount).toBe(48000)
+  })
+
+  it('ignoriert Ausgaben anderer Budgets und ohne Budget-Zuordnung', () => {
+    const window = makeWindow({})
+    const expenses = [
+      { amount: 5000, date: new Date(2026, 5, 10), budgetId: 'other-budget' },
+      { amount: 3000, date: new Date(2026, 5, 10), budgetId: null },
+    ]
+    const [item] = attachPeriodSpending([window], expenses)
+    expect(item.spentAmount).toBe(0)
+  })
+
+  it('offenes Fenster (periodEnd null): keine obere Grenze', () => {
+    const window = makeWindow({ periodEnd: null })
+    const expenses = [
+      { amount: 1000, date: new Date(2026, 5, 1), budgetId: 'b1' },
+      { amount: 2000, date: new Date(2030, 0, 1), budgetId: 'b1' }, // weit in der Zukunft
+    ]
+    const [item] = attachPeriodSpending([window], expenses)
+    expect(item.spentAmount).toBe(3000)
+  })
+
+  it('klassifiziert severity konsistent (>=80% warning, >100% over)', () => {
+    const warningWindow = makeWindow({ amount: 10000 })
+    const overWindow = makeWindow({ budgetId: 'b2', amount: 10000 })
+    const expenses = [
+      { amount: 8000, date: new Date(2026, 5, 10), budgetId: 'b1' }, // 80% -> warning
+      { amount: 12000, date: new Date(2026, 5, 10), budgetId: 'b2' }, // 120% -> over
+    ]
+    const [warningItem, overItem] = attachPeriodSpending([warningWindow, overWindow], expenses)
+    expect(warningItem.severity).toBe('warning')
+    expect(overItem.severity).toBe('over')
+  })
+})
+
+describe('buildCurrentBudgetPeriods', () => {
+  it('verkettet Fenster-Berechnung und Ausgaben-Zuordnung end-to-end', () => {
+    const now = new Date(2026, 8, 15, 12) // September — YEARLY-Bugfix-Fall
+    const budget = makeBudget('b1', 'annual', 'Jährlich', [
+      makeVersion({ amount: 120000, frequency: 'YEARLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const expenses = [
+      { amount: 30000, date: new Date(2026, 2, 1), budgetId: 'b1' },
+      { amount: 100000, date: new Date(2025, 11, 31), budgetId: 'b1' }, // Vorjahr, ausserhalb
+    ]
+    const [item] = buildCurrentBudgetPeriods([budget], expenses, now)
+    expect(item.amount).toBe(120000)
+    expect(item.spentAmount).toBe(30000)
+    expect(item.remainingAmount).toBe(90000)
+    expect(item.percentUsed).toBe(25)
+    expect(item.severity).toBe('ok')
   })
 })

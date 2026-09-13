@@ -251,6 +251,7 @@ describe('GET /api/households/:id/dashboard — Empty State', () => {
       unassignedExpenses: 0,
     })
     expect(response.budgetAlerts).toEqual([])
+    expect(response.budgetPeriodCards).toEqual([])
     expect(response.recentActivity).toEqual([])
     expect(response.savingsGoals).toEqual([])
     expect(response.recurringDue).toEqual({
@@ -438,6 +439,55 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
 
     expect(response.budgetAlerts[0]!.severity).toBe('ok')
     expect(response.budgetAlerts[0]!.percentUsed).toBe(79.9)
+  })
+})
+
+describe('GET /api/households/:id/dashboard — budgetPeriodCards (Perioden-Bugfix)', () => {
+  it('YEARLY-Budget zeigt den vollen Jahresbetrag unabhaengig vom aktuellen Kalendermonat', async () => {
+    mockAuthSuccess()
+
+    // "now" ist real (dashboard.get.ts nutzt new Date(), kein Fake-Timer
+    // in dieser Testdatei) — Jan 1 des laufenden Jahres liegt immer <= now.
+    const currentYear = new Date().getFullYear()
+    const yearlyValidFrom = new Date(currentYear, 0, 1)
+
+    prismaMocks.budget.findMany.mockResolvedValue([
+      {
+        id: 'b-yearly',
+        key: 'yearly',
+        name: 'Jahresbudget',
+        versions: [
+          { id: 'v-1', amount: 120000, frequency: Frequency.YEARLY, validFrom: yearlyValidFrom },
+        ],
+      },
+    ])
+
+    prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
+      // Die neue Perioden-Query filtert explizit auf budgetId != null
+      // (dashboard.get.ts) — eindeutig von Monats-/Recent-/RecurringTx-
+      // Queries unterscheidbar, die kein `where.budgetId` setzen.
+      if (args?.where?.budgetId?.not === null) {
+        return [{ amount: 30000, date: new Date(), budgetId: 'b-yearly' }]
+      }
+      return []
+    })
+    prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
+    prismaMocks.savingsGoal.findMany.mockResolvedValue([])
+
+    const response = await handler(makeEvent(HH_ID))
+
+    expect(response.budgetPeriodCards).toHaveLength(1)
+    const card = response.budgetPeriodCards[0]!
+    expect(card.budgetId).toBe('b-yearly')
+    expect(card.frequency).toBe('YEARLY')
+    expect(card.plannedAmount).toBe(120000)
+    expect(card.spentAmount).toBe(30000)
+    expect(card.remainingAmount).toBe(90000)
+    expect(card.percentUsed).toBe(25)
+    expect(card.severity).toBe('ok')
+    expect(new Date(card.periodStart).getFullYear()).toBe(currentYear)
+    expect(new Date(card.periodStart).getMonth()).toBe(0)
+    expect(new Date(card.periodEnd!).getFullYear()).toBe(currentYear + 1)
   })
 })
 

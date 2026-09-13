@@ -9,7 +9,8 @@
  * Budget-Aggregation nicht zu duplizieren (Issue-Anforderung:
  * "buildBudgetOverview wiederverwenden, nicht neu schreiben").
  */
-import type { BudgetOverview } from './budget-evaluation'
+import type { Frequency } from '@prisma/client'
+import type { BudgetCurrentPeriodItem, BudgetOverview } from './budget-evaluation'
 import { buildAggregatedForecast, type AggregatedForecast } from './forecast'
 
 // ---------------------------------------------------------------------------
@@ -88,12 +89,34 @@ export type DashboardMonthSummary = {
   unassignedExpenses: number
 }
 
+/**
+ * Eine Budget-Karte fuer die "oberste Prio"-Dashboard-Sektion: bezieht sich
+ * auf die AKTUELL laufende Periode des Budgets (eigene Frequenz), nicht
+ * auf den Kalendermonat wie `DashboardBudgetAlert`. Siehe
+ * `getCurrentBudgetPeriodWindows` in `budget-evaluation.ts`.
+ */
+export type DashboardBudgetPeriodCard = {
+  budgetId: string
+  key: string
+  name: string
+  frequency: Frequency
+  periodStart: Date
+  /** null = offene Periode (ONCE, noch keine Nachfolge-Version). */
+  periodEnd: Date | null
+  plannedAmount: number
+  spentAmount: number
+  remainingAmount: number
+  percentUsed: number
+  severity: 'ok' | 'warning' | 'over'
+}
+
 export type DashboardData = {
   householdId: string
   monthStart: Date
   monthEnd: Date
   monthSummary: DashboardMonthSummary
   budgetAlerts: DashboardBudgetAlert[]
+  budgetPeriodCards: DashboardBudgetPeriodCard[]
   recentActivity: DashboardRecentActivity[]
   savingsGoals: DashboardSavingsGoal[]
   /**
@@ -155,6 +178,35 @@ export function buildBudgetAlerts(budgetOverview: BudgetOverview): DashboardBudg
         forecast: budget.forecast,
       }
     })
+    .sort((left, right) => {
+      const severityDiff = SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]
+      if (severityDiff !== 0) return severityDiff
+      return right.percentUsed - left.percentUsed
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Budget-Perioden-Karten — die "oberste Prio"-Dashboard-Sektion. Anders als
+// `buildBudgetAlerts` (kalendermonats-skaliert) bezieht sich jede Karte auf
+// die eigene, aktuell laufende Periode des Budgets. Gleiche Sortierung wie
+// budgetAlerts (schlechteste Severity zuerst, dann hoechstes percentUsed).
+// ---------------------------------------------------------------------------
+
+export function buildBudgetPeriodCards(periods: BudgetCurrentPeriodItem[]): DashboardBudgetPeriodCard[] {
+  return periods
+    .map((period) => ({
+      budgetId: period.budgetId,
+      key: period.key,
+      name: period.name,
+      frequency: period.frequency,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      plannedAmount: period.amount,
+      spentAmount: period.spentAmount,
+      remainingAmount: period.remainingAmount,
+      percentUsed: period.percentUsed,
+      severity: period.severity,
+    }))
     .sort((left, right) => {
       const severityDiff = SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]
       if (severityDiff !== 0) return severityDiff

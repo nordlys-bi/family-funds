@@ -43,6 +43,7 @@ describe('useQuickCapture — Default-State', () => {
     const qc = useQuickCapture()
     expect(qc.isOpen.value).toBe(false)
     expect(qc.kind.value).toBe('expense')
+    expect(qc.budgetId.value).toBeNull()
     expect(qc.savedTick.value).toBe(0)
   })
 })
@@ -53,6 +54,7 @@ describe('useQuickCapture — open()', () => {
     qc.open()
     expect(qc.isOpen.value).toBe(true)
     expect(qc.kind.value).toBe('expense')
+    expect(qc.budgetId.value).toBeNull()
   })
 
   it('open("income") oeffnet mit kind = income', () => {
@@ -60,6 +62,21 @@ describe('useQuickCapture — open()', () => {
     qc.open('income')
     expect(qc.isOpen.value).toBe(true)
     expect(qc.kind.value).toBe('income')
+  })
+
+  it('open("expense", { budgetId }) fuellt das Budget-Prefill', () => {
+    const qc = useQuickCapture()
+    qc.open('expense', { budgetId: 'budget-42' })
+    expect(qc.isOpen.value).toBe(true)
+    expect(qc.kind.value).toBe('expense')
+    expect(qc.budgetId.value).toBe('budget-42')
+  })
+
+  it('ein erneuter open() ohne budgetId loescht ein vorheriges Prefill', () => {
+    const qc = useQuickCapture()
+    qc.open('expense', { budgetId: 'budget-42' })
+    qc.open('expense')
+    expect(qc.budgetId.value).toBeNull()
   })
 })
 
