@@ -11,6 +11,22 @@ type DashboardData = {
     balance: number
     unassignedExpenses: number
   }
+  // Issue: Dashboard-"oberste Prio"-Budget-Karten. Beziehen sich auf die
+  // aktuell laufende Periode jedes Budgets (eigene Frequenz), nicht auf
+  // den Kalendermonat — siehe DashboardBudgetPeriodGrid.vue.
+  budgetPeriodCards: Array<{
+    budgetId: string
+    key: string
+    name: string
+    frequency: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
+    periodStart: string
+    periodEnd: string | null
+    plannedAmount: number
+    spentAmount: number
+    remainingAmount: number
+    percentUsed: number
+    severity: 'ok' | 'warning' | 'over'
+  }>
   budgetAlerts: Array<{
     budgetId: string
     name: string
@@ -116,6 +132,7 @@ function forecastSeverityLabel(severity: 'on-track' | 'warning' | 'over'): strin
 }
 const savingsGoals = computed(() => snapshot.value?.savingsGoals ?? [])
 const budgetAlerts = computed(() => snapshot.value?.budgetAlerts ?? [])
+const budgetPeriodCards = computed(() => snapshot.value?.budgetPeriodCards ?? [])
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
 // Issue #97: der Schnellzugriff auf die letzte Buchung ist aus dem
 // "Handlungsbedarf"-Block in den "Letzte Buchungen"-Panel-Header gewandert.
@@ -187,9 +204,31 @@ watch(quickCaptureSavedTick, loadDashboard)
     </Message>
 
     <template v-else-if="snapshot">
-      <!-- Handlungsbedarf (issue #37): steht jetzt ganz oben, weil die
-           Alltagsfrage "Was muss ich mir ansehen?" wichtiger ist als
-           "Wie hoch waren meine Einnahmen?". Issue #97: zeigt nur echten
+      <!-- Budget-Perioden-Karten: oberste Prio auf dem Dashboard. Jede
+           Karte bezieht sich auf die eigene, aktuell laufende Periode des
+           Budgets (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
+           Kalendermonat — ersetzt die alte, kalendermonats-skalierte
+           "Budget-Auslastung"-Liste (DashboardBudgetList). -->
+      <ListPanel title="Budgets" :compact="true">
+        <template #actions>
+          <NuxtLink to="/budgeting/budgets">
+            <Button
+              icon="pi pi-external-link"
+              size="small"
+              severity="secondary"
+              outlined
+              text
+              aria-label="Alle Budgets anzeigen"
+            />
+          </NuxtLink>
+        </template>
+        <DashboardBudgetPeriodGrid :cards="budgetPeriodCards" :format-money="formatMoney" />
+      </ListPanel>
+
+      <!-- Handlungsbedarf (issue #37): stand urspruenglich ganz oben, weil
+           die Alltagsfrage "Was muss ich mir ansehen?" wichtiger war als
+           "Wie hoch waren meine Einnahmen?" — steht jetzt direkt unter den
+           Budget-Perioden-Karten (neue oberste Prio). Issue #97: zeigt nur echten
            Handlungsbedarf (kritische Budgets, unzugeordnete Buchungen,
            fällige wiederkehrende Posten) + das freie Restbudget — sonst
            einen ruhigen Einzeiler. -->
@@ -246,25 +285,6 @@ watch(quickCaptureSavedTick, loadDashboard)
           </div>
         </dl>
       </div>
-
-      <ListPanel title="Budget-Auslastung" :compact="true">
-        <template #actions>
-          <NuxtLink to="/budgeting/budgets">
-            <Button label="Budget anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
-          </NuxtLink>
-          <NuxtLink to="/budgeting/budgets">
-            <Button
-              label="Alle anzeigen"
-              icon="pi pi-list"
-              size="small"
-              severity="secondary"
-              outlined
-              aria-label="Alle Budgets anzeigen"
-            />
-          </NuxtLink>
-        </template>
-        <DashboardBudgetList :alerts="budgetAlerts" :limit="DASHBOARD_LIST_LIMIT" :format-money="formatMoney" />
-      </ListPanel>
 
       <ListPanel title="Letzte Buchungen" :compact="true">
         <template v-if="latestEntry" #subtitle>

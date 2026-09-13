@@ -160,6 +160,202 @@ function getActiveVersionRange(versions: BudgetVersion[], index: number) {
   }
 }
 
+/**
+ * Welche Version ist zum Zeitpunkt `at` aktiv? Anders als
+ * `getActiveVersionRange` (die pro Index nur den Range zurueckgibt) sucht
+ * das hier die EINE Version, deren `[validFrom, validTo)` `at` enthaelt.
+ * `versions` muss aufsteigend nach `validFrom` sortiert sein.
+ */
+function findActiveVersionAt<T extends { validFrom: Date }>(
+  versions: T[],
+  at: Date,
+): { version: T; validFrom: Date; validTo: Date | null } | null {
+  for (let index = 0; index < versions.length; index += 1) {
+    const validFrom = versions[index].validFrom
+    const validTo = versions[index + 1]?.validFrom ?? null
+    if (validFrom <= at && (!validTo || validTo > at)) {
+      return { version: versions[index], validFrom, validTo }
+    }
+  }
+  return null
+}
+
+/**
+ * Grenzen der Periode, die `at` enthaelt, fuer eine einzelne Budget-Version.
+ *
+ * ONCE-Sonderfall: `addPeriod` liefert fuer ONCE absichtlich ein Invalid
+ * Date (NaN-Zeit) — es gibt keine "naechste" Periode. Die Periode ist
+ * daher einfach `[validFrom, validTo)`, offen falls `validTo` null ist
+ * (die Version ist noch die aktuelle, kein Nachfolger hat sie beendet).
+ *
+ * Fuer alle anderen Frequenzen: von `startOfPeriod(validFrom, freq)` aus
+ * vorwaerts laufen, bis die naechste Periode erst nach `at` beginnt. Start
+ * wird auf `validFrom` geclippt (Version begann mitten in einer Periode),
+ * Ende auf `validTo` (eine neuere Version hat diese vor dem natuerlichen
+ * Periodenende abgeloest).
+ */
+function computeCurrentPeriodBounds(
+  frequency: Frequency,
+  validFrom: Date,
+  validTo: Date | null,
+  at: Date,
+): { start: Date; end: Date | null } {
+  if (frequency === 'ONCE') {
+    return { start: startOfPeriod(validFrom, frequency), end: validTo }
+  }
+
+  let cursor = startOfPeriod(validFrom, frequency)
+  let next = addPeriod(cursor, frequency)
+  while (next <= at) {
+    cursor = next
+    next = addPeriod(cursor, frequency)
+  }
+
+  const start = cursor < validFrom ? validFrom : cursor
+  const end = validTo && validTo < next ? validTo : next
+
+  return { start, end }
+}
+
+export type BudgetCurrentPeriodWindow = {
+  budgetId: string
+  key: string
+  name: string
+  frequency: Frequency
+  amount: number
+  periodStart: Date
+  /** null = offene Periode (ONCE, noch keine Nachfolge-Version). */
+  periodEnd: Date | null
+}
+
+export type BudgetCurrentPeriodItem = BudgetCurrentPeriodWindow & {
+  spentAmount: number
+  remainingAmount: number
+  percentUsed: number
+  severity: PeriodSeverity
+}
+
+/**
+ * Fuer jedes Budget das Zeitfenster seiner AKTUELL laufenden Periode
+ * (bezogen auf die eigene Frequenz, nicht den Kalendermonat). Budgets ohne
+ * zum Zeitpunkt `now` aktive Version (keine Versionen, oder die frueheste
+ * `validFrom` liegt noch in der Zukunft) werden ausgeschlossen.
+ *
+ * Das ist die Grundlage fuer die Dashboard-Budget-Karten — im Unterschied
+ * zu `buildBudgetOverview` (kalendermonats-skaliert, fuer die
+ * Monats-Browsing-Detailseite) zeigt das hier fuer QUARTERLY/YEARLY/ONCE
+ * immer die korrekte, volle Perioden-Planzahl statt "0 ausser im
+ * Start-Monat der Periode".
+ */
+export function getCurrentBudgetPeriodWindows(
+  budgets: BudgetWithVersions[],
+  now: Date = new Date(),
+): BudgetCurrentPeriodWindow[] {
+  const windows: BudgetCurrentPeriodWindow[] = []
+
+  for (const budget of budgets) {
+    const versions = [...budget.versions].sort((left, right) => left.validFrom.getTime() - right.validFrom.getTime())
+    const active = findActiveVersionAt(versions, now)
+    if (!active) continue
+
+    const { version, validFrom, validTo } = active
+    const { start, end } = computeCurrentPeriodBounds(version.frequency, validFrom, validTo, now)
+
+    windows.push({
+      budgetId: budget.id,
+      key: budget.key,
+      name: budget.name,
+      frequency: version.frequency,
+      amount: version.amount,
+      periodStart: start,
+      periodEnd: end,
+    })
+  }
+
+  return windows
+}
+
+/**
+ * Kleinstes/groesstes Zeitfenster ueber alle `windows` — fuer die EINE
+ * Expense-Query, die alle Perioden-Karten mit Daten versorgt. `end: null`
+ * sobald irgendein Fenster offen ist (ONCE ohne Nachfolger); es gibt dann
+ * bewusst kein Sentinel-Datum, sondern die Query laesst das obere Ende
+ * offen.
+ */
+export function getOverallBudgetPeriodWindow(
+  windows: BudgetCurrentPeriodWindow[],
+): { start: Date; end: Date | null } | null {
+  if (windows.length === 0) return null
+
+  let start = windows[0].periodStart
+  let end: Date | null = windows[0].periodEnd
+  let unbounded = end === null
+
+  for (const window of windows.slice(1)) {
+    if (window.periodStart < start) start = window.periodStart
+    if (!unbounded) {
+      if (window.periodEnd === null) {
+        unbounded = true
+        end = null
+      } else if (end === null || window.periodEnd > end) {
+        end = window.periodEnd
+      }
+    }
+  }
+
+  return { start, end }
+}
+
+/**
+ * Reichert Perioden-Fenster mit den tatsaechlichen Ausgaben an (Ist-Stand,
+ * Rest, Prozent, Severity). `expenses` muss mindestens das Fenster aus
+ * `getOverallBudgetPeriodWindow` abdecken.
+ */
+export function attachPeriodSpending(
+  windows: BudgetCurrentPeriodWindow[],
+  expenses: ExpenseLike[],
+): BudgetCurrentPeriodItem[] {
+  const expensesByBudget = new Map<string, ExpenseLike[]>()
+  for (const expense of expenses) {
+    if (!expense.budgetId) continue
+    const list = expensesByBudget.get(expense.budgetId)
+    if (list) {
+      list.push(expense)
+    } else {
+      expensesByBudget.set(expense.budgetId, [expense])
+    }
+  }
+
+  return windows.map((window) => {
+    const spentAmount = (expensesByBudget.get(window.budgetId) ?? []).reduce((sum, expense) => {
+      const inRange = expense.date >= window.periodStart && (window.periodEnd === null || expense.date < window.periodEnd)
+      return inRange ? sum + expense.amount : sum
+    }, 0)
+    const remainingAmount = window.amount - spentAmount
+    const percentUsed = window.amount > 0 ? (spentAmount / window.amount) * 100 : 0
+
+    return {
+      ...window,
+      spentAmount,
+      remainingAmount,
+      percentUsed,
+      severity: classifyPeriodSeverity(percentUsed),
+    }
+  })
+}
+
+/**
+ * Convenience-Komposition der drei Funktionen oben — primaer fuer Tests,
+ * die den kompletten Pfad ohne separate Query-Planung durchspielen wollen.
+ */
+export function buildCurrentBudgetPeriods(
+  budgets: BudgetWithVersions[],
+  expenses: ExpenseLike[],
+  now: Date = new Date(),
+): BudgetCurrentPeriodItem[] {
+  return attachPeriodSpending(getCurrentBudgetPeriodWindows(budgets, now), expenses)
+}
+
 function countPeriodsInMonth(
   validFrom: Date,
   validTo: Date | null,

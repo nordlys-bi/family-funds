@@ -20,7 +20,7 @@ import { todayDateHelperText } from '~/utils/form-helpers'
 
 type BudgetItem = { id: string; name: string }
 
-const { isOpen, kind, close, setKind, markSaved } = useQuickCapture()
+const { isOpen, kind, budgetId: prefillBudgetId, close, setKind, markSaved } = useQuickCapture()
 const { activeHousehold } = useHousehold()
 
 // PrimeVue useToast wirft ohne ToastService-Provide (SSR / Tests). Der
@@ -90,6 +90,9 @@ async function loadBudgets() {
 watch(isOpen, (open) => {
   if (open) {
     resetForm()
+    // Vorausgewaehltes Budget (z. B. von einer Dashboard-Budget-Karte)
+    // NACH dem Reset setzen, sonst wird es sofort wieder auf '' geleert.
+    if (prefillBudgetId.value) form.value.budgetId = prefillBudgetId.value
     if (isExpense.value) loadBudgets()
   }
 })

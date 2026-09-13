@@ -1,9 +1,16 @@
 import { defineEventHandler } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { buildBudgetOverview, getMonthWindow } from '../../../utils/budget-evaluation'
+import {
+  attachPeriodSpending,
+  buildBudgetOverview,
+  getCurrentBudgetPeriodWindows,
+  getMonthWindow,
+  getOverallBudgetPeriodWindow,
+} from '../../../utils/budget-evaluation'
 import {
   buildBudgetAlerts,
+  buildBudgetPeriodCards,
   buildRecentActivity,
   buildSavingsGoalsProgress,
 } from '../../../utils/dashboard'
@@ -170,6 +177,31 @@ export default defineEventHandler(async (event) => {
 
   const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart)
 
+  // Dashboard-Budget-Karten (oberste Prio, issue-request): beziehen sich
+  // auf die eigene, aktuell laufende Periode jedes Budgets statt auf den
+  // Kalendermonat. Braucht `budgets` aus dem Batch oben, deshalb ein
+  // zusaetzlicher sequentieller Query-Hop — nur ausgefuehrt, wenn
+  // ueberhaupt ein Budget gerade eine aktive Version hat.
+  const periodWindows = getCurrentBudgetPeriodWindows(budgets, now)
+  const overallPeriodWindow = getOverallBudgetPeriodWindow(periodWindows)
+
+  const periodExpenses = overallPeriodWindow
+    ? await prisma.expenseTransaction.findMany({
+        where: {
+          householdId,
+          budgetId: { not: null },
+          date: {
+            gte: overallPeriodWindow.start,
+            ...(overallPeriodWindow.end ? { lt: overallPeriodWindow.end } : {}),
+          },
+          deletedAt: null,
+        },
+        select: { amount: true, date: true, budgetId: true },
+      })
+    : []
+
+  const budgetPeriodCards = buildBudgetPeriodCards(attachPeriodSpending(periodWindows, periodExpenses))
+
   const incomeTotal = monthIncomeTotal._sum.amount ?? 0
   const expensesTotal = monthExpenses.reduce((sum, transaction) => sum + transaction.amount, 0)
 
@@ -198,6 +230,7 @@ export default defineEventHandler(async (event) => {
       unassignedExpenses: budgetOverview.unassignedSpent,
     },
     budgetAlerts: buildBudgetAlerts(budgetOverview),
+    budgetPeriodCards,
     recentActivity: buildRecentActivity(recentExpenses, recentIncomes, now),
     savingsGoals: buildSavingsGoalsProgress(savingsGoals),
     // Issue #98: Zähler für den „Handlungsbedarf"-Block. `open` =
