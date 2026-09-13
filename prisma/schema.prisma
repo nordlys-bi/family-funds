@@ -58,14 +58,15 @@ model Household {
 }
 
 model HouseholdInvitation {
-  id              String      @id @default(uuid())
-  householdId     String
-  email           String
-  role            Role        @default(MEMBER)
-  invitedByUserId  String
-  acceptedAt      DateTime?
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  id                String      @id @default(uuid())
+  householdId       String
+  email             String
+  role              Role        @default(MEMBER)
+  invitedByUserId   String
+  clerkInvitationId String?     @unique
+  acceptedAt        DateTime?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   household       Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
   invitedBy       User        @relation("UserHouseholdInvitations", fields: [invitedByUserId], references: [id], onDelete: Cascade)

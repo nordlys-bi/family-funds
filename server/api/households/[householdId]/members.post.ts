@@ -4,6 +4,8 @@ import { prisma } from '../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../utils/household-access'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
+import { isClerkEnabled } from '../../../utils/auth-mode'
+import { sendClerkInvitation } from '../../../utils/clerk-invite'
 
 type AddMemberBody = {
   email?: string
@@ -113,6 +115,19 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let clerkInvitationId: string | null = null
+  if (isClerkEnabled()) {
+    try {
+      clerkInvitationId = await sendClerkInvitation(event, email)
+    } catch (error) {
+      console.error('Clerk invitation could not be sent:', error)
+      throw createError({
+        statusCode: 502,
+        statusMessage: 'Failed to send invitation email. Please try again later.',
+      })
+    }
+  }
+
   const invitation = await prisma.householdInvitation.upsert({
     where: {
       householdId_email: {
@@ -125,11 +140,13 @@ export default defineEventHandler(async (event) => {
       email,
       role,
       invitedByUserId: user.id,
+      ...(clerkInvitationId ? { clerkInvitationId } : {}),
     },
     update: {
       role,
       invitedByUserId: user.id,
       acceptedAt: null,
+      ...(clerkInvitationId ? { clerkInvitationId } : {}),
     },
     select: {
       id: true,
