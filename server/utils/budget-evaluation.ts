@@ -253,13 +253,23 @@ export function getCurrentBudgetPeriodWindows(
 ): BudgetCurrentPeriodWindow[] {
   const windows: BudgetCurrentPeriodWindow[] = []
 
+  // Auf Mittag normalisieren: `startOfPeriod`/`addPeriod` (via `startOfDay`)
+  // legen jede Perioden-Grenze auf 12:00, damit die Datumsarithmetik nicht
+  // in DST-Umstellungen um Mitternacht laeuft. Wuerde man das rohe `now`
+  // (echte Uhrzeit) direkt gegen diese 12:00-Grenzen vergleichen, "beginnt"
+  // eine neue Periode faktisch erst um 12:00 mittags statt um Mitternacht —
+  // vormittags zeigt die App dann noch die vorherige Woche/Monat/etc.
+  // User-Report 2026-09-14: Montag-Vormittag zeigte ein WEEKLY-Budget noch
+  // KW 37 statt KW 38.
+  const at = startOfDay(now)
+
   for (const budget of budgets) {
     const versions = [...budget.versions].sort((left, right) => left.validFrom.getTime() - right.validFrom.getTime())
-    const active = findActiveVersionAt(versions, now)
+    const active = findActiveVersionAt(versions, at)
     if (!active) continue
 
     const { version, validFrom, validTo } = active
-    const { start, end } = computeCurrentPeriodBounds(version.frequency, validFrom, validTo, now)
+    const { start, end } = computeCurrentPeriodBounds(version.frequency, validFrom, validTo, at)
 
     windows.push({
       budgetId: budget.id,
