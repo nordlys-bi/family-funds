@@ -630,6 +630,21 @@ describe('getCurrentBudgetPeriodWindows', () => {
     expect(window.periodEnd).toEqual(new Date(2026, 5, 22, 12))
   })
 
+  it('WEEKLY: neue Periode gilt schon ab Mitternacht, nicht erst ab 12 Uhr mittags (Bugfix)', () => {
+    // User-Report 2026-09-14: Montag 14.9. VORMITTAGS (09:00) zeigte das
+    // Dashboard noch KW 37 (Vorwoche) statt KW 38. Ursache: startOfPeriod/
+    // addPeriod normalisieren jede Perioden-Grenze auf 12:00 (wegen DST-
+    // Arithmetik), aber `now` kam bisher roh (mit echter Uhrzeit) rein —
+    // der Wochenwechsel griff dadurch faktisch erst ab 12:00 statt ab 00:00.
+    const mondayMorning = new Date(2026, 8, 14, 9, 0) // Montag 14.9., 09:00
+    const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+      makeVersion({ amount: 25000, frequency: 'WEEKLY', validFrom: new Date(2026, 5, 29) }),
+    ])
+    const [window] = getCurrentBudgetPeriodWindows([budget], mondayMorning)
+    expect(window.periodStart).toEqual(new Date(2026, 8, 14, 12)) // diese Woche (14.–21.9.)
+    expect(window.periodEnd).toEqual(new Date(2026, 8, 21, 12))
+  })
+
   it('MONTHLY: Fenster ist der 1. bis zum 1. des Folgemonats', () => {
     const now = new Date(2026, 5, 17, 15, 0)
     const budget = makeBudget('b1', 'food', 'Lebensmittel', [
