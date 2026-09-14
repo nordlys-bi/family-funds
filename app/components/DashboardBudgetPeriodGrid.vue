@@ -12,6 +12,11 @@
   dieses Budget erfassen koennen. Nutzt den globalen Erfassen-Dialog
   (useQuickCapture, issue #91) mit vorausgewaehltem Budget — kein
   eigener Dialog noetig.
+
+  Issue-Request: Klick auf die Karte (oberhalb des "Erfassen"-Buttons)
+  oeffnet die Buchungsliste, gefiltert nach genau diesem Budget UND der
+  exakten Perioden-Spanne (nicht dem Kalendermonat) — siehe
+  `?from&to`-Support in `server/api/households/[householdId]/transactions.get.ts`.
 -->
 <script setup lang="ts">
 import type { Frequency } from '~/types/planning'
@@ -40,6 +45,17 @@ const quickCapture = useQuickCapture()
 function captureExpense(budgetId: string) {
   quickCapture.open('expense', { budgetId })
 }
+
+function transactionsLink(card: PeriodCard) {
+  return {
+    path: '/transactions/expenses',
+    query: {
+      budgetId: card.budgetId,
+      from: card.periodStart,
+      ...(card.periodEnd ? { to: card.periodEnd } : {}),
+    },
+  }
+}
 </script>
 
 <template>
@@ -48,30 +64,32 @@ function captureExpense(budgetId: string) {
   </div>
   <div v-else class="grid">
     <article v-for="card in cards" :key="card.budgetId" class="card" :class="`card--${card.severity}`">
-      <div class="card__head">
-        <span class="card__name">{{ card.name }}</span>
-        <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>
-      </div>
-      <div class="card__body">
-        <BudgetPeriodRing :percent="card.percentUsed" :severity="card.severity" :size="56" class="card__ring" />
-        <dl class="card__amounts">
-          <div class="card__amount-row">
-            <dt class="sr-only">Budget</dt>
-            <span class="card__op" aria-hidden="true"></span>
-            <dd>{{ formatMoney(card.plannedAmount) }}</dd>
-          </div>
-          <div class="card__amount-row">
-            <dt class="sr-only">Ausgaben</dt>
-            <span class="card__op" aria-hidden="true">−</span>
-            <dd>{{ formatMoney(card.spentAmount) }}</dd>
-          </div>
-          <div class="card__amount-row card__amount-row--saldo" :class="{ 'is-negative': card.remainingAmount < 0 }">
-            <dt class="sr-only">Saldo</dt>
-            <span class="card__op" aria-hidden="true">=</span>
-            <dd>{{ formatMoney(card.remainingAmount) }}</dd>
-          </div>
-        </dl>
-      </div>
+      <NuxtLink :to="transactionsLink(card)" class="card__main">
+        <div class="card__head">
+          <span class="card__name">{{ card.name }}</span>
+          <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>
+        </div>
+        <div class="card__body">
+          <BudgetPeriodRing :percent="card.percentUsed" :severity="card.severity" :size="56" class="card__ring" />
+          <dl class="card__amounts">
+            <div class="card__amount-row">
+              <dt class="sr-only">Budget</dt>
+              <span class="card__op" aria-hidden="true"></span>
+              <dd>{{ formatMoney(card.plannedAmount) }}</dd>
+            </div>
+            <div class="card__amount-row">
+              <dt class="sr-only">Ausgaben</dt>
+              <span class="card__op" aria-hidden="true">−</span>
+              <dd>{{ formatMoney(card.spentAmount) }}</dd>
+            </div>
+            <div class="card__amount-row card__amount-row--saldo" :class="{ 'is-negative': card.remainingAmount < 0 }">
+              <dt class="sr-only">Saldo</dt>
+              <span class="card__op" aria-hidden="true">=</span>
+              <dd>{{ formatMoney(card.remainingAmount) }}</dd>
+            </div>
+          </dl>
+        </div>
+      </NuxtLink>
       <button
         type="button"
         class="card__footer"
@@ -113,13 +131,35 @@ function captureExpense(budgetId: string) {
 .card {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   min-width: 0;
   padding: 0.7rem 0.65rem 0;
   background: rgba(15, 23, 42, 0.44);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;
+}
+
+/* Klick-Flaeche der Karte (Kopf + Ring/Zahlen) — verlinkt auf die
+   Buchungsliste, gefiltert nach Budget + exakter Perioden-Spanne. Der
+   "Erfassen"-Button bleibt bewusst AUSSERHALB dieses Links (eigener
+   Klick-Handler direkt darunter). */
+.card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-bottom: 0.7rem;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-md);
+}
+
+.card__main:hover .card__name {
+  color: var(--color-accent-primary-text, #93c5fd);
+}
+
+.card__main:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
 }
 
 .card--warning {

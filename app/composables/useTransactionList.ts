@@ -73,6 +73,15 @@ export type UseTransactionListOptions = {
    * wenn keine Items ein passendes Budget haben.
    */
   initialBudgetIdFilter?: string | null
+  /**
+   * Expliziter Zeitraum (ISO-8601-Strings), z. B. von einem Klick auf
+   * eine Dashboard-Budget-Karte (periodStart/periodEnd). Hat Vorrang vor
+   * `month`, solange gesetzt — fuer Perioden, die nicht auf Kalendermonate
+   * passen (WEEKLY/QUARTERLY/YEARLY/ONCE). `to` fehlt bei einer offenen
+   * ONCE-Periode. Ueber `setRange`/`clearRange` wieder verlassbar.
+   */
+  initialFrom?: string
+  initialTo?: string | null
 }
 
 export type UseTransactionListReturn = ReturnType<typeof useTransactionList>
@@ -91,6 +100,11 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   // View-Sache, die das Neuladen nicht rechtfertigt.
   const userIdFilter = ref<string | null>(options.initialUserIdFilter ?? null)
   const budgetIdFilter = ref<string | null>(options.initialBudgetIdFilter ?? null)
+  // Expliziter Zeitraum statt Monat (siehe UseTransactionListOptions.initialFrom).
+  // `null` = normaler Monats-Modus.
+  const range = ref<{ from: string; to: string | null } | null>(
+    options.initialFrom ? { from: options.initialFrom, to: options.initialTo ?? null } : null,
+  )
   const transactions = ref<TransactionItem[]>([])
   const summary = ref<TransactionSummary>({ ...EMPTY_SUMMARY })
   const loading = ref(false)
@@ -147,7 +161,10 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     try {
       // unassignedOnly-Param nur anhängen, wenn aktiv — Default-Reads
       // sollen sauber bleiben ("kein redundantes ?unassigned=0").
-      const params: Record<string, string> = { month: month.value }
+      // Zeitraum: `range` (explizites from/to) hat Vorrang vor `month`.
+      const params: Record<string, string> = range.value
+        ? { from: range.value.from, ...(range.value.to ? { to: range.value.to } : {}) }
+        : { month: month.value }
       if (unassignedOnly.value) params.unassigned = '1'
       const response = await $fetch<{
         transactions: TransactionItem[]
@@ -181,6 +198,25 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     }
     month.value = nextMonth
     await load(householdId)
+  }
+
+  /**
+   * Setzt den expliziten Zeitraum-Filter und loest ein Reload aus. Ersetzt
+   * `month` als Quelle fuer den naechsten `load()`-Aufruf, solange aktiv.
+   * `to` weglassen fuer eine offene Periode (ONCE ohne Nachfolge-Version).
+   */
+  async function setRange(from: string, to: string | null, householdId: string | null | undefined) {
+    range.value = { from, to }
+    await load(householdId)
+  }
+
+  /**
+   * Verlaesst den Zeitraum-Modus und faellt zurueck auf den aktuellen
+   * `month`-Wert (kein Reload hier — der Caller entscheidet, ob er
+   * direkt neu laedt oder erst die URL synct, analog zu `setMonth`).
+   */
+  function clearRange() {
+    range.value = null
   }
 
   /**
@@ -344,6 +380,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
 
   return {
     month,
+    range,
     unassignedOnly,
     userIdFilter,
     budgetIdFilter,
@@ -358,6 +395,8 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     error,
     load,
     setMonth,
+    setRange,
+    clearRange,
     setUnassignedOnly,
     setUserIdFilter,
     setBudgetIdFilter,
