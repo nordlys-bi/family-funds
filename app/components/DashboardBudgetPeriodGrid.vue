@@ -67,7 +67,7 @@ function transactionsLink(card: PeriodCard) {
       <NuxtLink :to="transactionsLink(card)" class="card__main">
         <div class="card__head">
           <span class="card__name">{{ card.name }}</span>
-          <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>
+          <span class="card__period">{{ formatBudgetPeriodLabel(card.periodStart, card.periodEnd) }}</span>
         </div>
         <div class="card__body">
           <BudgetPeriodRing :percent="card.percentUsed" :severity="card.severity" :size="56" class="card__ring" />

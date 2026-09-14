@@ -100,50 +100,57 @@ export function monthlyFrequencyFactor(frequency: Frequency): number {
 
 // === Dashboard-Budget-Perioden-Label ========================================
 
-/**
- * ISO-8601-Kalenderwoche einer Date. Donnerstag der Woche bestimmt die KW
- * (ISO-Regel). Kopiert aus dem vorherigen `DashboardBudgetList.vue` (jetzt
- * zusaetzlich fuer die Dashboard-Perioden-Karten gebraucht).
- */
-export function isoWeekNumber(date: Date): number {
-  const target = new Date(date)
-  target.setHours(0, 0, 0, 0)
-  const dayNum = (target.getDay() + 6) % 7 // Mo = 0, So = 6
-  target.setDate(target.getDate() - dayNum + 3)
-  const firstThursday = new Date(target.getFullYear(), 0, 4)
-  const firstDayNum = (firstThursday.getDay() + 6) % 7
-  firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3)
-  const diff = target.getTime() - firstThursday.getTime()
-  return 1 + Math.round(diff / (7 * 24 * 60 * 60 * 1000))
+/** Jahreszahl auf 2-stellig gekuerzt, z. B. 2026 -> "26". */
+function shortYear(year: number): string {
+  return String(year % 100).padStart(2, '0')
 }
 
-const MONTH_YEAR_FORMATTER = new Intl.DateTimeFormat('de-DE', { month: 'short', year: 'numeric' })
+/**
+ * Kuerzestmoegliches Datumsformat fuer eine Perioden-Spanne (issue-request:
+ * "1.-30.9.26" statt "Sept. 2026" / "14.-20.9.26" statt "KW 38"). `start`
+ * und `endInclusive` sind beide inklusiv — der Aufrufer zieht bei einem
+ * exklusiven Ende (periodEnd) vorher einen Tag ab.
+ *
+ * Format haengt davon ab, wie viel Start und Ende teilen:
+ *  - gleicher Monat+Jahr:  "1.-30.9.26"
+ *  - gleiches Jahr:        "28.9.-4.10.26"
+ *  - unterschiedl. Jahre:  "29.12.25-4.1.26"
+ */
+function formatShortDateRange(start: Date, endInclusive: Date): string {
+  const sameYear = start.getFullYear() === endInclusive.getFullYear()
+  const sameMonth = sameYear && start.getMonth() === endInclusive.getMonth()
+  const endYY = shortYear(endInclusive.getFullYear())
+
+  if (sameMonth) {
+    return `${start.getDate()}.-${endInclusive.getDate()}.${endInclusive.getMonth() + 1}.${endYY}`
+  }
+  if (sameYear) {
+    return `${start.getDate()}.${start.getMonth() + 1}.-${endInclusive.getDate()}.${endInclusive.getMonth() + 1}.${endYY}`
+  }
+  const startYY = shortYear(start.getFullYear())
+  return `${start.getDate()}.${start.getMonth() + 1}.${startYY}-${endInclusive.getDate()}.${endInclusive.getMonth() + 1}.${endYY}`
+}
 
 /**
- * Kompaktes Label fuer die aktuell laufende Periode einer Dashboard-Budget-
- * Karte, z. B. "KW 34" / "Aug. 2026" / "Q3 2026" / "2026" / "seit 27. Jul.
- * 2026" (ONCE, offen) / Datumsrange (ONCE, bereits abgeloest).
+ * Kompaktes Datums-Label fuer die aktuell laufende Periode einer Dashboard-
+ * Budget-Karte, z. B. "1.-30.9.26" (MONTHLY) / "14.-20.9.26" (WEEKLY) /
+ * "1.7.-30.9.26" (QUARTERLY) / "1.1.-31.12.26" (YEARLY) / "seit 27.7.26"
+ * (ONCE, offen — kein Enddatum anzeigbar).
  */
 export function formatBudgetPeriodLabel(
-  frequency: Frequency,
   periodStart: string,
   periodEnd: string | null,
 ): string {
   const start = new Date(periodStart)
-  switch (frequency) {
-    case 'WEEKLY':
-      return `KW ${isoWeekNumber(start)}`
-    case 'MONTHLY':
-      return MONTH_YEAR_FORMATTER.format(start)
-    case 'QUARTERLY':
-      return `Q${Math.floor(start.getMonth() / 3) + 1} ${start.getFullYear()}`
-    case 'YEARLY':
-      return `${start.getFullYear()}`
-    case 'ONCE':
-      return periodEnd
-        ? `${formatPlanningDate(periodStart)} – ${formatPlanningDate(periodEnd)}`
-        : `seit ${formatPlanningDate(periodStart)}`
+  if (!periodEnd) {
+    return `seit ${start.getDate()}.${start.getMonth() + 1}.${shortYear(start.getFullYear())}`
   }
+  // periodEnd ist exklusiv (wie monthEnd) — fuer die Anzeige einen Tag
+  // abziehen, sonst wuerde z. B. eine Woche als "14.-21.9.26" statt
+  // "14.-20.9.26" angezeigt (der 21. gehoert schon zur naechsten Periode).
+  const endInclusive = new Date(periodEnd)
+  endInclusive.setDate(endInclusive.getDate() - 1)
+  return formatShortDateRange(start, endInclusive)
 }
 
 /**
