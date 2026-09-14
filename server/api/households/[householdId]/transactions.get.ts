@@ -18,6 +18,13 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                       muss 01-12 sein, Year 1900-3000. Validation-Fehler
  *                       liefern 400. Aggregate beziehen sich auf den
  *                       gefilterten Monat.
+ *   - `?from=DATE[&to=DATE]`  Expliziter Zeitraum (ISO-8601), hat Vorrang
+ *                       vor `?month`. Fuer Budget-Perioden, die nicht auf
+ *                       Kalendermonate passen (WEEKLY/QUARTERLY/YEARLY/
+ *                       ONCE — siehe Dashboard-Budget-Karten). `to` ist
+ *                       exklusiv (wie `monthEnd`) und optional — ohne `to`
+ *                       ist der Zeitraum nach oben offen (ONCE ohne
+ *                       Nachfolge-Version).
  *   - `?limit=N`        Anzahl Transaktionen pro Page (Default 200, max 500).
  *                       ?limit=0 und ?limit=501 -> 400.
  *   - `?before=DATE`    Cursor — liefert nur Transaktionen mit
@@ -55,11 +62,37 @@ export default defineEventHandler(async (event) => {
 
   const { user } = await requireHouseholdMembership(event, householdId)
 
-  // --- Monatsfilter (Default: aktueller Monat) ---
+  // --- Zeitraum: entweder expliziter ?from[&to]-Range oder Monatsfilter ---
   const query = getQuery(event)
   let monthStart: Date
-  let monthEnd: Date
-  if (query.month !== undefined) {
+  let monthEnd: Date | null
+  if (query.from !== undefined) {
+    const rawFrom = String(query.from)
+    const parsedFrom = new Date(rawFrom)
+    if (Number.isNaN(parsedFrom.getTime())) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'from must be a valid ISO date string.',
+      })
+    }
+    monthStart = parsedFrom
+
+    if (query.to !== undefined) {
+      const rawTo = String(query.to)
+      const parsedTo = new Date(rawTo)
+      if (Number.isNaN(parsedTo.getTime())) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'to must be a valid ISO date string.',
+        })
+      }
+      monthEnd = parsedTo
+    } else {
+      // Kein oberes Ende (ONCE-Budget ohne Nachfolge-Version) — Query
+      // laesst `lt` unten einfach weg.
+      monthEnd = null
+    }
+  } else if (query.month !== undefined) {
     const raw = String(query.month)
     if (!MONTH_REGEX.test(raw)) {
       throw createError({
@@ -130,6 +163,11 @@ export default defineEventHandler(async (event) => {
   const unassignedOnly = query.unassigned === '1'
   const unassignedFilter = unassignedOnly ? { budgetId: null } : {}
 
+  // Basis-Zeitraum als eigener Wert: `monthEnd` ist nur bei explizitem
+  // `?from` ohne `?to` (offene ONCE-Periode) null — dann faellt `lt` ganz weg,
+  // statt mit `lt: null` jede Transaktion herauszufiltern.
+  const dateRangeFilter = monthEnd ? { gte: monthStart, lt: monthEnd } : { gte: monthStart }
+
   // Rows werden fuer die Listen-Darstellung gebraucht. Summen kommen
   // separat via `_sum`-Aggregates (Backend-Review Finding #6).
   // Pagination: `take: limit + 1` fuer jeden der beiden Calls — das
@@ -139,8 +177,7 @@ export default defineEventHandler(async (event) => {
     ...softDeleteFilter,
     ...unassignedFilter,
     date: {
-      gte: monthStart,
-      lt: monthEnd,
+      ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
     },
   }
@@ -148,8 +185,7 @@ export default defineEventHandler(async (event) => {
     householdId,
     ...softDeleteFilter,
     date: {
-      gte: monthStart,
-      lt: monthEnd,
+      ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
     },
   }
@@ -208,18 +244,18 @@ export default defineEventHandler(async (event) => {
       },
     }),
     prisma.incomeTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, date: { gte: monthStart, lt: monthEnd } },
+      where: { householdId, ...softDeleteFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, date: { gte: monthStart, lt: monthEnd } },
+      where: { householdId, ...softDeleteFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
       where: {
         householdId,
         ...softDeleteFilter,
-        date: { gte: monthStart, lt: monthEnd },
+        date: dateRangeFilter,
         budgetId: null,
       },
       _sum: { amount: true },

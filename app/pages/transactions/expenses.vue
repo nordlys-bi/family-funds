@@ -74,8 +74,15 @@ const tx = useTransactionList({
   // Default-URL sauber bleibt (kein "?userId=" in der Adressleiste).
   initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
   initialBudgetIdFilter: typeof route.query.budgetId === 'string' && route.query.budgetId.length > 0 ? route.query.budgetId : null,
+  // Klick auf eine Dashboard-Budget-Karte verlinkt hierher mit
+  // ?from=<periodStart>&to=<periodEnd> (ISO) statt ?month — die exakte
+  // Budget-Periode passt bei WEEKLY/QUARTERLY/YEARLY/ONCE nicht auf
+  // Kalendermonate. `to` fehlt bei einer offenen ONCE-Periode.
+  initialFrom: typeof route.query.from === 'string' && route.query.from.length > 0 ? route.query.from : undefined,
+  initialTo: typeof route.query.to === 'string' && route.query.to.length > 0 ? route.query.to : null,
 })
 const month = tx.month
+const range = tx.range
 const unassignedOnly = tx.unassignedOnly
 const userIdFilter = tx.userIdFilter
 const budgetIdFilter = tx.budgetIdFilter
@@ -88,6 +95,8 @@ const setMonth = tx.setMonth
 const setUnassignedOnly = tx.setUnassignedOnly
 const setUserIdFilter = tx.setUserIdFilter
 const setBudgetIdFilter = tx.setBudgetIdFilter
+const setRange = tx.setRange
+const clearRange = tx.clearRange
 const clearLocalFilters = tx.clearLocalFilters
 const loadTransactions = tx.load
 const transactionsByKind = tx.transactionsByKind
@@ -98,6 +107,38 @@ const insertTransactionLocal = tx.insertTransactionLocal
 const recomputeSummaryFromLocal = tx.recomputeSummaryFromLocal
 
 const visibleTransactions = computed(() => transactionsByKind('expense'))
+
+// === Zeitraum-Modus (Klick auf eine Dashboard-Budget-Karte) ==============
+// `range` ersetzt den Monats-Modus, solange ?from(&to) in der URL steht.
+// Statt des Monats-Switchers zeigt die Toolbar dann eine schlichte
+// Zeitraum-Zeile mit Ausstiegs-Link — ein Monats-Stepper ergibt fuer eine
+// beliebige Woche/Quartal/Jahr keinen Sinn.
+const isRangeMode = computed(() => range.value !== null)
+const rangeFormatter = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short', year: 'numeric' })
+const rangeLabel = computed(() => {
+  if (!range.value) return null
+  const start = new Date(range.value.from)
+  if (!range.value.to) return `seit ${rangeFormatter.format(start)}`
+  // `to` ist exklusiv (wie monthEnd) — fuer die Anzeige einen Tag abziehen,
+  // sonst wuerde z. B. eine Woche als "14.–21. Sept" statt "14.–20. Sept"
+  // angezeigt (der 21. gehoert schon zur naechsten Periode).
+  const endDisplay = new Date(range.value.to)
+  endDisplay.setDate(endDisplay.getDate() - 1)
+  return `${rangeFormatter.format(start)} – ${rangeFormatter.format(endDisplay)}`
+})
+// Fuer Empty-State-Texte, die sonst "in {monthLabel}" sagen: im
+// Zeitraum-Modus ist der Perioden-Zeitraum die richtige Angabe, nicht
+// der (irrelevante) aktuelle Monat.
+const periodOrMonthLabel = computed(() => rangeLabel.value ?? monthLabel.value)
+
+// Verlaesst den Zeitraum-Modus: Filter zuruecksetzen, URL bereinigen,
+// aktuellen Monat neu laden.
+async function exitRangeMode() {
+  clearRange()
+  clearLocalFilters()
+  await router.replace({ query: {} })
+  await loadTransactions(activeHouseholdId.value)
+}
 
 // Empty-State-Variante (issue #13): wenn der Haushalt < 7 Tage alt ist
 // UND noch keine Buchungen existieren, zeigen wir den First-Time-State
@@ -170,7 +211,9 @@ async function onMonthChange(newMonth: string) {
  * Non-Default-Werte landen im Query. So bleibt die Adressleiste
  * lesbar und Deep-Links zeigen nur die relevanten Abweichungen.
  *
- * - month: nur wenn nicht aktueller Monat
+ * - from/to: wenn ein Zeitraum aktiv ist (Klick auf eine Budget-Karte) —
+ *   ersetzt month komplett, solange range gesetzt ist
+ * - month: nur wenn nicht aktueller Monat (und kein Zeitraum aktiv)
  * - unassigned: nur wenn aktiv
  * - userId: nur wenn gesetzt
  * - budgetId: nur wenn gesetzt
@@ -178,13 +221,20 @@ async function onMonthChange(newMonth: string) {
  * `monthOverride` ist ein Hack fuer `onMonthChange`: der neue Monat
  * ist noch nicht in `month.value` committed, wenn die Query gebaut
  * wird. Der Caller uebergibt ihn hier explizit, damit die Helper-
- * Funktion den State nicht selbst kennen muss.
+ * Funktion den State nicht selbst kennen muss. Nur relevant im
+ * Monats-Modus — `onMonthChange` feuert nie waehrend isRangeMode
+ * (der Monats-Stepper ist dann ausgeblendet).
  */
 function buildRouteQuery(options: { monthOverride?: string } = {}): Record<string, string> {
-  const currentMonth = new Date().toISOString().slice(0, 7)
-  const monthValue = options.monthOverride ?? month.value
   const query: Record<string, string> = {}
-  if (monthValue !== currentMonth) query.month = monthValue
+  if (range.value) {
+    query.from = range.value.from
+    if (range.value.to) query.to = range.value.to
+  } else {
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const monthValue = options.monthOverride ?? month.value
+    if (monthValue !== currentMonth) query.month = monthValue
+  }
   if (unassignedOnly.value) query.unassigned = '1'
   if (userIdFilter.value) query.userId = userIdFilter.value
   if (budgetIdFilter.value) query.budgetId = budgetIdFilter.value
@@ -300,6 +350,26 @@ watch(
   (newValue) => {
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
     if (next !== budgetIdFilter.value) setBudgetIdFilter(next)
+  },
+)
+
+// Zeitraum-Modus: gleicher Browser-Back/-Forward-Sync wie oben. Anders
+// als die Local-Filter braucht ein Range-Wechsel einen echten Reload
+// (der Server liefert die Liste fuer den Zeitraum, keine Client-Filterung).
+watch(
+  () => [route.query.from, route.query.to],
+  async ([newFrom, newTo]) => {
+    const nextFrom = typeof newFrom === 'string' && newFrom.length > 0 ? newFrom : null
+    const nextTo = typeof newTo === 'string' && newTo.length > 0 ? newTo : null
+    const currentFrom = range.value?.from ?? null
+    const currentTo = range.value?.to ?? null
+    if (nextFrom === currentFrom && nextTo === currentTo) return
+    if (nextFrom) {
+      await setRange(nextFrom, nextTo, activeHouseholdId.value)
+    } else {
+      clearRange()
+      await loadTransactions(activeHouseholdId.value)
+    }
   },
 )
 
@@ -575,8 +645,26 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     </template>
 
     <template #toolbar>
+      <!-- Zeitraum-Modus (Klick auf eine Dashboard-Budget-Karte): ein
+           Monats-Stepper ergibt fuer eine beliebige Woche/Quartal/Jahr
+           keinen Sinn — stattdessen ein schlichtes Zeitraum-Label mit
+           Ausstieg zurueck zur normalen Monatsansicht. -->
+      <div v-if="isRangeMode" class="toolbar-range">
+        <span class="toolbar-range__label">
+          <i class="pi pi-calendar" aria-hidden="true" />
+          {{ rangeLabel }}
+        </span>
+        <Button
+          label="Zur Monatsansicht"
+          icon="pi pi-times"
+          size="small"
+          severity="secondary"
+          text
+          @click="exitRangeMode"
+        />
+      </div>
       <!-- Issue #96: einheitlicher Monats-Stepper (statt <Select>). -->
-      <div class="toolbar-month">
+      <div v-else class="toolbar-month">
         <MonthSwitcher :model-value="month" :loading="txLoading" @update:model-value="onMonthChange" />
       </div>
       <!-- Issue #95: sekundaere Filter hinter einem Toggle — die Toolbar
@@ -653,7 +741,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       icon="pi pi-wallet"
       icon-tone="accent"
       headline="Noch keine Ausgaben"
-      :description="`Lege deine erste Ausgabe fuer ${monthLabel} an, um Auswertungen zu sehen.`"
+      :description="`Lege deine erste Ausgabe fuer ${periodOrMonthLabel} an, um Auswertungen zu sehen.`"
       :cta="{ label: 'Ausgabe anlegen', onClick: openCreateTransactionDialog, severity: 'primary' }"
     />
     <!-- Issue #52: Empty-State fuer den unassigned-Filter. Wenn aktiv
@@ -664,8 +752,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       variant="no-data"
       icon="pi pi-check-circle"
       icon-tone="success"
-      :headline="`Alle Ausgaben in ${monthLabel} haben ein Budget`"
-      :description="`In ${monthLabel} ist keine Ausgabe ohne Budgetzuordnung offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
+      :headline="`Alle Ausgaben in ${periodOrMonthLabel} haben ein Budget`"
+      :description="`In ${periodOrMonthLabel} ist keine Ausgabe ohne Budgetzuordnung offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
       :cta="{ label: 'Alle Ausgaben anzeigen', onClick: toggleUnassignedFilter, severity: 'secondary' }"
     />
     <!-- Issue #55: Empty-State fuer die Person/Budget-Filter. Wenn aktiv
@@ -678,8 +766,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       variant="no-results"
       icon="pi pi-search"
       icon-tone="muted"
-      :headline="`Keine Ausgaben fuer ${activeFilterLabel} in ${monthLabel}`"
-      :description="`Mit der aktuellen Filter-Auswahl gibt es in ${monthLabel} keine Treffer. Du kannst die Filter zuruecksetzen, um alle Buchungen zu sehen.`"
+      :headline="`Keine Ausgaben fuer ${activeFilterLabel} in ${periodOrMonthLabel}`"
+      :description="`Mit der aktuellen Filter-Auswahl gibt es in ${periodOrMonthLabel} keine Treffer. Du kannst die Filter zuruecksetzen, um alle Buchungen zu sehen.`"
       :cta="{ label: 'Alle Ausgaben anzeigen', onClick: clearAllLocalFilters, severity: 'secondary' }"
     />
     <EmptyState
@@ -687,13 +775,13 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       variant="no-data"
       icon="pi pi-receipt"
       icon-tone="muted"
-      :headline="`Keine Ausgaben in ${monthLabel}`"
-      description="Wechsle den Monat im Spinner oben, oder erfasse eine neue Buchung."
+      :headline="`Keine Ausgaben in ${periodOrMonthLabel}`"
+      :description="isRangeMode ? 'Fuer diesen Zeitraum liegt keine Buchung vor.' : 'Wechsle den Monat im Spinner oben, oder erfasse eine neue Buchung.'"
     />
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
       <ListPanel
-        :title="`Ausgaben ${monthLabel}`"
+        :title="`Ausgaben ${periodOrMonthLabel}`"
         compact
         :badge="formatMoney(summary.expenseTotal)"
       >
@@ -761,13 +849,13 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
           </tr>
 
           <tr v-if="visibleTransactions.length === 0">
-            <td colspan="6" class="data-table__empty">Keine Ausgaben in {{ monthLabel }}.</td>
+            <td colspan="6" class="data-table__empty">Keine Ausgaben in {{ periodOrMonthLabel }}.</td>
           </tr>
 
           <!-- Mobile (< 768px): Cards statt Tabelle. Betrag prominent oben rechts. -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
-              Keine Ausgaben in {{ monthLabel }}.
+              Keine Ausgaben in {{ periodOrMonthLabel }}.
             </div>
             <div
               v-for="transaction in visibleTransactions"
@@ -917,6 +1005,29 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   margin-right: auto;
 }
 
+/* Zeitraum-Modus: ersetzt den Monats-Stepper, wenn ?from(&to) aktiv ist
+   (Klick auf eine Dashboard-Budget-Karte). */
+.toolbar-range {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-right: auto;
+}
+
+.toolbar-range__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--color-accent-primary-text, #93c5fd);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 /* Issue #55: Filter-Selects. Kompakte Breite; min-width verhindert,
    dass PrimeVue die Selects auf Mobile zu schmal rendert. */
 .toolbar-filter {
@@ -937,7 +1048,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 }
 
 @media (max-width: 480px) {
-  .toolbar-month {
+  .toolbar-month,
+  .toolbar-range {
     width: 100%;
   }
   /* Auf Mobile volle Breite, damit die Filter-Selects umbrechen

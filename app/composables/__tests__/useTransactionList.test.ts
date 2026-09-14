@@ -162,6 +162,66 @@ describe('useTransactionList — setMonth()', () => {
   })
 })
 
+describe('useTransactionList — range (from/to) statt month', () => {
+  it('startet ohne Range (range.value ist null)', () => {
+    const list = useTransactionList()
+    expect(list.range.value).toBeNull()
+  })
+
+  it('initialFrom setzt range direkt beim Erzeugen', () => {
+    const list = useTransactionList({ initialFrom: '2026-09-14T12:00:00.000Z', initialTo: '2026-09-21T12:00:00.000Z' })
+    expect(list.range.value).toEqual({ from: '2026-09-14T12:00:00.000Z', to: '2026-09-21T12:00:00.000Z' })
+  })
+
+  it('initialFrom ohne initialTo laesst to null (offene Periode)', () => {
+    const list = useTransactionList({ initialFrom: '2026-09-14T12:00:00.000Z' })
+    expect(list.range.value).toEqual({ from: '2026-09-14T12:00:00.000Z', to: null })
+  })
+
+  it('load() schickt from/to statt month, wenn range aktiv ist', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialFrom: '2026-09-14T12:00:00.000Z', initialTo: '2026-09-21T12:00:00.000Z' })
+    await list.load('hh-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/households/hh-1/transactions',
+      expect.objectContaining({ params: { from: '2026-09-14T12:00:00.000Z', to: '2026-09-21T12:00:00.000Z' } }),
+    )
+  })
+
+  it('load() laesst to weg, wenn die Periode offen ist', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialFrom: '2026-09-14T12:00:00.000Z' })
+    await list.load('hh-1')
+    const params = fetchMock.mock.calls[0][1].params
+    expect(params).toEqual({ from: '2026-09-14T12:00:00.000Z' })
+    expect(params.to).toBeUndefined()
+  })
+
+  it('setRange() setzt range und laedt neu', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialMonth: '2026-05' })
+    await list.setRange('2026-09-14T12:00:00.000Z', '2026-09-21T12:00:00.000Z', 'hh-1')
+    expect(list.range.value).toEqual({ from: '2026-09-14T12:00:00.000Z', to: '2026-09-21T12:00:00.000Z' })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/households/hh-1/transactions',
+      expect.objectContaining({ params: { from: '2026-09-14T12:00:00.000Z', to: '2026-09-21T12:00:00.000Z' } }),
+    )
+  })
+
+  it('clearRange() faellt zurueck auf den month-Modus (ohne Reload)', async () => {
+    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    const list = useTransactionList({ initialMonth: '2026-05', initialFrom: '2026-09-14T12:00:00.000Z' })
+    list.clearRange()
+    expect(list.range.value).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await list.load('hh-1')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/households/hh-1/transactions',
+      expect.objectContaining({ params: { month: '2026-05' } }),
+    )
+  })
+})
+
 describe('useTransactionList — transactionsByKind()', () => {
   it('filters by expense kind', async () => {
     fetchMock.mockResolvedValue({
