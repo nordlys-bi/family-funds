@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Menu from 'primevue/menu'
 import { isFirstRun } from '~/utils/household-age'
 import { todayDateHelperText } from '~/utils/form-helpers'
 
@@ -323,6 +324,42 @@ const activeFilterLabel = computed(() => {
   return parts.join(' ')
 })
 
+/**
+ * Alle aktiven Filter (Zeitraum + Person + Budget + Ohne-Budget) als
+ * Chip-Liste fuer die Toolbar — jeder Chip hat sein eigenes X, das genau
+ * diesen einen Filter entfernt. Der Zeitraum-Chip ersetzt den frueheren
+ * "Zur Monatsansicht"-Button: sein X ruft dieselbe `exitRangeMode`-Logik.
+ */
+type FilterChip = { key: string; label: string; icon: string; onRemove: () => void }
+const activeFilterChips = computed<FilterChip[]>(() => {
+  const chips: FilterChip[] = []
+  if (isRangeMode.value && rangeLabel.value) {
+    chips.push({ key: 'range', label: rangeLabel.value, icon: 'pi pi-calendar', onRemove: exitRangeMode })
+  }
+  if (userIdFilter.value) {
+    const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
+    chips.push({
+      key: 'user',
+      label: member?.displayName || member?.email || 'Person',
+      icon: 'pi pi-user',
+      onRemove: () => onUserIdFilterChange(null),
+    })
+  }
+  if (budgetIdFilter.value) {
+    const budget = budgetOptions.value.find((b) => b.id === budgetIdFilter.value)
+    chips.push({
+      key: 'budget',
+      label: budget?.name ?? 'Budget',
+      icon: 'pi pi-wallet',
+      onRemove: () => onBudgetIdFilterChange(null),
+    })
+  }
+  if (unassignedOnly.value) {
+    chips.push({ key: 'unassigned', label: 'Ohne Budget', icon: 'pi pi-filter', onRemove: toggleUnassignedFilter })
+  }
+  return chips
+})
+
 // Issue #52: reaktive Sync, wenn der User per Browser-Back / -Forward
 // die URL aendert (z. B. von /transactions/expenses?unassigned=1 zurueck
 // auf /transactions/expenses ohne Filter). Ohne diesen Watch wuerde die
@@ -607,6 +644,62 @@ const deleteTransaction = async (transaction: { id: string; description?: string
   }
 }
 
+// === Mobile-Kartenliste: Datum-Gruppierung + Floating Options-Menu ======
+// Setzt voraus, dass `visibleTransactions` nach Datum sortiert ist (date
+// DESC, siehe useTransactionList/insertTransactionLocal + Server-Sortierung
+// in transactions.get.ts) — sonst wuerden gleiche Tage nicht zusammen-
+// haengend gruppiert. Gruppen-Key ist das FORMATIERTE Datum (nicht der
+// rohe ISO-String), damit die Gruppengrenze exakt dem entspricht, was
+// angezeigt wird (kein Risiko einer Zeitzonen-Verschiebung durch simples
+// String-Slicing).
+const groupedByDate = computed(() => {
+  const groups: { dateLabel: string; items: typeof visibleTransactions.value }[] = []
+  for (const transaction of visibleTransactions.value) {
+    const dateLabel = formatDate(transaction.date)
+    const lastGroup = groups[groups.length - 1]
+    if (lastGroup && lastGroup.dateLabel === dateLabel) {
+      lastGroup.items.push(transaction)
+    } else {
+      groups.push({ dateLabel, items: [transaction] })
+    }
+  }
+  return groups
+})
+
+// Ein geteiltes PrimeVue-Menu statt permanent sichtbarer Bearbeiten/
+// Loeschen-Icons pro Karte (Folge-Feedback zu "Ausgabenliste deutlich
+// kompakter gestalten"). `cardMenuTransaction` haelt fest, fuer welche
+// Karte das Menu gerade geoeffnet ist/wurde — die Menu-Items lesen das
+// reaktiv, ohne dass jede Karte ihr eigenes Menu-Element braucht.
+const cardMenu = ref<InstanceType<typeof Menu> | null>(null)
+const cardMenuTransaction = ref<(typeof visibleTransactions.value)[number] | null>(null)
+
+function openCardMenu(event: Event, transaction: (typeof visibleTransactions.value)[number]) {
+  cardMenuTransaction.value = transaction
+  cardMenu.value?.toggle(event)
+}
+
+const cardMenuItems = computed(() => {
+  const transaction = cardMenuTransaction.value
+  // Gleiche Sperre wie vorher auf den Icon-Buttons: waehrend eine ANDERE
+  // Karte im Inline-Edit ist, sind Aktionen auf dieser Karte gesperrt.
+  const disabled = !transaction || (editingTransactionId.value !== null && editingTransactionId.value !== transaction.id)
+  return [
+    {
+      label: 'Bearbeiten',
+      icon: 'pi pi-pen-to-square',
+      disabled,
+      command: () => { if (transaction) startInlineEdit(transaction.id) },
+    },
+    {
+      label: 'Löschen',
+      icon: 'pi pi-trash',
+      disabled,
+      command: () => { if (transaction) deleteTransaction(transaction) },
+    },
+  ]
+})
+
 // Composable-Fehler in Notice mappen, damit User was sehen.
 watch(txError, (error) => {
   if (error) {
@@ -651,24 +744,9 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     <template #toolbar>
       <!-- Zeitraum-Modus (Klick auf eine Dashboard-Budget-Karte): ein
            Monats-Stepper ergibt fuer eine beliebige Woche/Quartal/Jahr
-           keinen Sinn — stattdessen ein schlichtes Zeitraum-Label mit
-           Ausstieg zurueck zur normalen Monatsansicht. -->
-      <div v-if="isRangeMode" class="toolbar-range">
-        <span class="toolbar-range__label">
-          <i class="pi pi-calendar" aria-hidden="true" />
-          {{ rangeLabel }}
-        </span>
-        <Button
-          label="Zur Monatsansicht"
-          icon="pi pi-times"
-          size="small"
-          severity="secondary"
-          text
-          @click="exitRangeMode"
-        />
-      </div>
-      <!-- Issue #96: einheitlicher Monats-Stepper (statt <Select>). -->
-      <div v-else class="toolbar-month">
+           keinen Sinn — der aktive Zeitraum steht stattdessen als
+           entfernbarer Chip unten (siehe active-filter-chips). -->
+      <div v-if="!isRangeMode" class="toolbar-month">
         <MonthSwitcher :model-value="month" :loading="txLoading" @update:model-value="onMonthChange" />
       </div>
       <!-- Issue #95: sekundaere Filter hinter einem Toggle — die Toolbar
@@ -678,6 +756,25 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
            diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
       <Button label="Ausgabe anlegen" icon="pi pi-plus" severity="success" class="toolbar-create-btn" @click="openCreateTransactionDialog" />
     </template>
+
+    <!-- Alle aktiven Filter (Zeitraum/Person/Budget/Ohne-Budget) als
+         entfernbare Chips — ersetzt den frueheren separaten "Zur
+         Monatsansicht"-Button, dessen Funktion jetzt das X auf dem
+         Zeitraum-Chip uebernimmt. -->
+    <div v-if="activeFilterChips.length > 0" class="active-filter-chips" role="group" aria-label="Aktive Filter">
+      <span v-for="chip in activeFilterChips" :key="chip.key" class="filter-chip">
+        <i v-if="chip.icon" :class="chip.icon" aria-hidden="true" />
+        {{ chip.label }}
+        <button
+          type="button"
+          class="filter-chip__remove"
+          :aria-label="`${chip.label} entfernen`"
+          @click="chip.onRemove"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
+      </span>
+    </div>
 
     <!-- Issue #95: aufklappbare Filter-Leiste. Initial offen, wenn per
          Deep-Link (?userId / ?budgetId / ?unassigned) schon ein Filter
@@ -784,9 +881,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     />
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
-      <!-- Issue "Ausgabenliste deutlich kompakter gestalten": die Summe steht
-           schon oben im Header-Chip (#summary) — hier nicht nochmal wiederholen. -->
-      <ListPanel :title="`Ausgaben ${periodOrMonthLabel}`" compact>
+      <!-- "Ausgaben ..." steht schon als Seiten-H1 + Zeitraum-Chip oben —
+           kein eigener Panel-Titel/Badge mehr noetig (Issue "Ausgabenliste
+           deutlich kompakter gestalten" + Folge-Feedback). -->
+      <ListPanel compact>
         <ListTable dense accent="primary">
           <template #head>
             <th>Datum</th>
@@ -854,19 +952,22 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
             <td colspan="6" class="data-table__empty">Keine Ausgaben in {{ periodOrMonthLabel }}.</td>
           </tr>
 
-          <!-- Mobile (< 768px): Cards statt Tabelle. Betrag prominent oben rechts. -->
+          <!-- Mobile (< 768px): Cards statt Tabelle, gruppiert nach Datum.
+               Betrag prominent oben rechts, Bearbeiten/Loeschen per Tap auf
+               die Karte (Floating-Menu) statt permanent sichtbarer Icons. -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
               Keine Ausgaben in {{ periodOrMonthLabel }}.
             </div>
-            <div
-              v-for="transaction in visibleTransactions"
-              v-else
-              :key="`m-${transaction.id}`"
-              :class="['data-table__card', { 'data-table__card--editing': editingTransactionId === transaction.id }]"
-            >
-              <template v-if="editingTransactionId === transaction.id">
+            <template v-for="group in groupedByDate" v-else :key="group.dateLabel">
+              <div class="data-table__date-separator">{{ group.dateLabel }}</div>
+              <div
+                v-for="transaction in group.items"
+                :key="`m-${transaction.id}`"
+                :class="['data-table__card', { 'data-table__card--editing': editingTransactionId === transaction.id }]"
+              >
                 <TransactionRowEditor
+                  v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
                   :budget-options="budgetSelectOptions"
                   :currency="currencyCode"
@@ -875,57 +976,46 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   @save="(payload) => saveInlineEdit(transaction.id, payload)"
                   @cancel="cancelInlineEdit"
                 />
-              </template>
-              <template v-else>
-                <div class="data-table__card-line">
-                  <span class="data-table__card-name">
-                    {{ transaction.description || 'Ausgabe' }}
-                  </span>
-                  <span class="data-table__card-amount expense-amount">
-                    −{{ formatMoney(transaction.amount) }}
-                  </span>
-                </div>
-                <!-- Issue "Ausgabenliste deutlich kompakter gestalten": Meta
-                     und Aktionen teilen sich eine Zeile statt einer eigenen,
-                     durch Border+Padding abgesetzten Actions-Zeile. -->
-                <div class="data-table__card-footer">
+                <div
+                  v-else
+                  class="data-table__card-content"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`Optionen fuer ${transaction.description || 'Ausgabe'} anzeigen`"
+                  @click="openCardMenu($event, transaction)"
+                  @keydown.enter="openCardMenu($event, transaction)"
+                  @keydown.space.prevent="openCardMenu($event, transaction)"
+                >
+                  <div class="data-table__card-line">
+                    <span class="data-table__card-name">
+                      {{ transaction.description || 'Ausgabe' }}
+                    </span>
+                    <span class="data-table__card-amount expense-amount">
+                      −{{ formatMoney(transaction.amount) }}
+                    </span>
+                  </div>
                   <div class="data-table__card-meta">
-                    <span>{{ formatDate(transaction.date) }}</span>
-                    <span>·</span>
                     <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
                       {{ budgetLabel(transaction) }}
                     </span>
-                    <span>·</span>
-                    <span>{{ transaction.user.displayName || transaction.user.email }}</span>
-                  </div>
-                  <div class="data-table__card-actions">
-                    <Button
-                      icon="pi pi-pen-to-square"
-                      severity="secondary"
-                      size="small"
-                      text
-                      aria-label="Ausgabe inline bearbeiten"
-                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                      @click="startInlineEdit(transaction.id)"
-                    />
-                    <Button
-                      icon="pi pi-trash"
-                      severity="danger"
-                      size="small"
-                      text
-                      aria-label="Ausgabe löschen"
-                      :loading="actionLoadingKey === `expense:${transaction.id}`"
-                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                      @click="deleteTransaction(transaction)"
-                    />
+                    <span class="data-table__card-user">
+                      {{ transaction.user.displayName || transaction.user.email }}
+                      <i class="pi pi-ellipsis-v data-table__card-hint" aria-hidden="true" />
+                    </span>
                   </div>
                 </div>
-              </template>
-            </div>
+              </div>
+            </template>
           </template>
         </ListTable>
       </ListPanel>
     </template>
+
+    <!-- Floating Options-Menu fuer die Mobile-Kartenliste: ein geteiltes
+         Menu statt permanent sichtbarer Bearbeiten/Loeschen-Icons pro
+         Karte, geoeffnet per Tap auf die Karte (PrimeVue positioniert es
+         am Klickpunkt/Trigger-Element). -->
+    <Menu ref="cardMenu" :model="cardMenuItems" popup />
 
     <FormDialog
       v-model:visible="transactionDialogOpen"
@@ -1014,27 +1104,45 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   margin-right: auto;
 }
 
-/* Zeitraum-Modus: ersetzt den Monats-Stepper, wenn ?from(&to) aktiv ist
-   (Klick auf eine Dashboard-Budget-Karte). */
-.toolbar-range {
+/* Aktive Filter (Zeitraum/Person/Budget/Ohne-Budget) als Chips mit
+   eigenem X. Ersetzt die frühere .toolbar-range-Zeile samt separatem
+   "Zur Monatsansicht"-Button. */
+.active-filter-chips {
   display: flex;
-  align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-right: auto;
 }
 
-.toolbar-range__label {
+.filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.4rem 0.7rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.14);
-  color: var(--color-accent-primary-text, #93c5fd);
+  color: var(--color-accent-primary-text);
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.filter-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.filter-chip__remove:hover {
+  background: rgba(59, 130, 246, 0.24);
 }
 
 /* Issue #55: Filter-Selects. Kompakte Breite; min-width verhindert,
@@ -1057,8 +1165,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 }
 
 @media (max-width: 480px) {
-  .toolbar-month,
-  .toolbar-range {
+  .toolbar-month {
     width: 100%;
   }
   /* Auf Mobile volle Breite, damit die Filter-Selects umbrechen

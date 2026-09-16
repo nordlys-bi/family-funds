@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import Menu from 'primevue/menu'
 import { isFirstRun } from '~/utils/household-age'
 import { todayDateHelperText } from '~/utils/form-helpers'
 
@@ -170,6 +171,26 @@ const activeFilterLabel = computed(() => {
   if (!userIdFilter.value) return ''
   const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
   return member?.displayName || member?.email || 'diese Person'
+})
+
+/**
+ * Aktive Filter als Chip-Liste fuer die Toolbar (siehe expenses.vue fuer
+ * die ausfuehrliche Begruendung). Hier nur der Person-Filter — Einnahmen
+ * kennen weder Budget noch Zeitraum-Modus.
+ */
+type FilterChip = { key: string; label: string; icon: string; onRemove: () => void }
+const activeFilterChips = computed<FilterChip[]>(() => {
+  const chips: FilterChip[] = []
+  if (userIdFilter.value) {
+    const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
+    chips.push({
+      key: 'user',
+      label: member?.displayName || member?.email || 'Person',
+      icon: 'pi pi-user',
+      onRemove: () => onUserIdFilterChange(null),
+    })
+  }
+  return chips
 })
 
 // Issue #55: reaktive Sync, wenn der User per Browser-Back / -Forward
@@ -394,6 +415,50 @@ const deleteTransaction = async (transaction: { id: string; description?: string
   }
 }
 
+// === Mobile-Kartenliste: Datum-Gruppierung + Floating Options-Menu ======
+// Siehe expenses.vue fuer die ausfuehrliche Begruendung (gleiche Logik,
+// hier ohne Budget-Chip — Einnahmen haben kein Budget).
+const groupedByDate = computed(() => {
+  const groups: { dateLabel: string; items: typeof visibleTransactions.value }[] = []
+  for (const transaction of visibleTransactions.value) {
+    const dateLabel = formatDate(transaction.date)
+    const lastGroup = groups[groups.length - 1]
+    if (lastGroup && lastGroup.dateLabel === dateLabel) {
+      lastGroup.items.push(transaction)
+    } else {
+      groups.push({ dateLabel, items: [transaction] })
+    }
+  }
+  return groups
+})
+
+const cardMenu = ref<InstanceType<typeof Menu> | null>(null)
+const cardMenuTransaction = ref<(typeof visibleTransactions.value)[number] | null>(null)
+
+function openCardMenu(event: Event, transaction: (typeof visibleTransactions.value)[number]) {
+  cardMenuTransaction.value = transaction
+  cardMenu.value?.toggle(event)
+}
+
+const cardMenuItems = computed(() => {
+  const transaction = cardMenuTransaction.value
+  const disabled = !transaction || (editingTransactionId.value !== null && editingTransactionId.value !== transaction.id)
+  return [
+    {
+      label: 'Bearbeiten',
+      icon: 'pi pi-pen-to-square',
+      disabled,
+      command: () => { if (transaction) startInlineEdit(transaction.id) },
+    },
+    {
+      label: 'Löschen',
+      icon: 'pi pi-trash',
+      disabled,
+      command: () => { if (transaction) deleteTransaction(transaction) },
+    },
+  ]
+})
+
 // Composable-Fehler in Notice mappen, damit User was sehen.
 watch(txError, (error) => {
   if (error) {
@@ -442,6 +507,22 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
            diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
       <Button label="Einnahme anlegen" icon="pi pi-plus" severity="success" class="toolbar-create-btn" @click="openCreateTransactionDialog" />
     </template>
+
+    <!-- Aktiver Person-Filter als entfernbarer Chip (siehe expenses.vue). -->
+    <div v-if="activeFilterChips.length > 0" class="active-filter-chips" role="group" aria-label="Aktive Filter">
+      <span v-for="chip in activeFilterChips" :key="chip.key" class="filter-chip">
+        <i v-if="chip.icon" :class="chip.icon" aria-hidden="true" />
+        {{ chip.label }}
+        <button
+          type="button"
+          class="filter-chip__remove"
+          :aria-label="`${chip.label} entfernen`"
+          @click="chip.onRemove"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
+      </span>
+    </div>
 
     <div v-if="filtersOpen" class="filter-panel" role="group" aria-label="Filter">
       <Select
@@ -507,9 +588,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     />
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
-      <!-- Issue "Ausgabenliste deutlich kompakter gestalten": die Summe steht
-           schon oben im Header-Chip (#summary) — hier nicht nochmal wiederholen. -->
-      <ListPanel :title="`Einnahmen ${monthLabel}`" compact>
+      <!-- "Einnahmen ..." steht schon als Seiten-H1 + Monats-Stepper oben —
+           kein eigener Panel-Titel/Badge mehr noetig (Issue "Ausgabenliste
+           deutlich kompakter gestalten" + Folge-Feedback). -->
+      <ListPanel compact>
         <ListTable dense accent="primary">
           <template #head>
             <th>Datum</th>
@@ -567,19 +649,21 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
             <td colspan="5" class="data-table__empty">Keine Einnahmen in {{ monthLabel }}.</td>
           </tr>
 
-          <!-- Mobile (< 768px): Cards statt Tabelle. -->
+          <!-- Mobile (< 768px): Cards statt Tabelle, gruppiert nach Datum.
+               Bearbeiten/Loeschen per Tap auf die Karte (Floating-Menu). -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
               Keine Einnahmen in {{ monthLabel }}.
             </div>
-            <div
-              v-for="transaction in visibleTransactions"
-              v-else
-              :key="`m-${transaction.id}`"
-              :class="['data-table__card', { 'data-table__card--editing': editingTransactionId === transaction.id }]"
-            >
-              <template v-if="editingTransactionId === transaction.id">
+            <template v-for="group in groupedByDate" v-else :key="group.dateLabel">
+              <div class="data-table__date-separator">{{ group.dateLabel }}</div>
+              <div
+                v-for="transaction in group.items"
+                :key="`m-${transaction.id}`"
+                :class="['data-table__card', { 'data-table__card--editing': editingTransactionId === transaction.id }]"
+              >
                 <TransactionRowEditor
+                  v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `income:${transaction.id}`"
@@ -587,53 +671,40 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   @save="(payload) => saveInlineEdit(transaction.id, payload)"
                   @cancel="cancelInlineEdit"
                 />
-              </template>
-              <template v-else>
-                <div class="data-table__card-line">
-                  <span class="data-table__card-name">
-                    {{ transaction.description || 'Einnahme' }}
-                  </span>
-                  <span class="data-table__card-amount income-amount">
-                    +{{ formatMoney(transaction.amount) }}
-                  </span>
-                </div>
-                <!-- Issue "Ausgabenliste deutlich kompakter gestalten": Meta
-                     und Aktionen teilen sich eine Zeile statt einer eigenen,
-                     durch Border+Padding abgesetzten Actions-Zeile. -->
-                <div class="data-table__card-footer">
+                <div
+                  v-else
+                  class="data-table__card-content"
+                  role="button"
+                  tabindex="0"
+                  :aria-label="`Optionen fuer ${transaction.description || 'Einnahme'} anzeigen`"
+                  @click="openCardMenu($event, transaction)"
+                  @keydown.enter="openCardMenu($event, transaction)"
+                  @keydown.space.prevent="openCardMenu($event, transaction)"
+                >
+                  <div class="data-table__card-line">
+                    <span class="data-table__card-name">
+                      {{ transaction.description || 'Einnahme' }}
+                    </span>
+                    <span class="data-table__card-amount income-amount">
+                      +{{ formatMoney(transaction.amount) }}
+                    </span>
+                  </div>
                   <div class="data-table__card-meta">
-                    <span>{{ formatDate(transaction.date) }}</span>
-                    <span>·</span>
-                    <span>{{ transaction.user.displayName || transaction.user.email }}</span>
-                  </div>
-                  <div class="data-table__card-actions">
-                    <Button
-                      icon="pi pi-pen-to-square"
-                      severity="secondary"
-                      size="small"
-                      text
-                      aria-label="Einnahme inline bearbeiten"
-                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                      @click="startInlineEdit(transaction.id)"
-                    />
-                    <Button
-                      icon="pi pi-trash"
-                      severity="danger"
-                      size="small"
-                      text
-                      aria-label="Einnahme löschen"
-                      :loading="actionLoadingKey === `income:${transaction.id}`"
-                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                      @click="deleteTransaction(transaction)"
-                    />
+                    <span class="data-table__card-user">
+                      {{ transaction.user.displayName || transaction.user.email }}
+                      <i class="pi pi-ellipsis-v data-table__card-hint" aria-hidden="true" />
+                    </span>
                   </div>
                 </div>
-              </template>
-            </div>
+              </div>
+            </template>
           </template>
         </ListTable>
       </ListPanel>
     </template>
+
+    <!-- Floating Options-Menu fuer die Mobile-Kartenliste (siehe expenses.vue). -->
+    <Menu ref="cardMenu" :model="cardMenuItems" popup />
 
     <FormDialog
       v-model:visible="transactionDialogOpen"
@@ -700,6 +771,46 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   align-items: center;
   gap: 8px;
   margin-right: auto;
+}
+
+/* Aktiver Person-Filter als Chip mit eigenem X (siehe expenses.vue fuer
+   die ausfuehrliche Begruendung). */
+.active-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.14);
+  color: var(--color-accent-primary-text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.filter-chip__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.filter-chip__remove:hover {
+  background: rgba(59, 130, 246, 0.24);
 }
 
 /* Issue #55: Filter-Select. Kompakte Breite; min-width verhindert,

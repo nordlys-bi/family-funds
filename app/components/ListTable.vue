@@ -234,22 +234,55 @@ defineProps<{
   }
 }
 
+/* Datum-Trenner zwischen Karten-Gruppen (Folge-Feedback zu "Ausgabenliste
+   deutlich kompakter gestalten"): ersetzt das Datum auf jeder einzelnen
+   Karte. Voraussetzung: die Page gruppiert schon sortiert nach Datum
+   (siehe groupedByDate in expenses.vue/income.vue). */
+.data-table-mobile :deep(.data-table__date-separator) {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 4px 2px 0;
+}
+.data-table-mobile :deep(.data-table__date-separator:first-child) {
+  padding-top: 0;
+}
 /* Styling-Hooks für Cards, die der Mobile-Slot rendert.
    Pages legen ihre Card-Markup frei, hier ist nur Spacing + Border. */
 .data-table-mobile :deep(.data-table__card) {
   background: var(--bg-card-row);
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .data-table-mobile :deep(.data-table__card:hover) {
   background: var(--bg-card-row-hover);
   border-color: var(--border-row-hover);
 }
+/* Klickbarer/fokussierbarer Bereich, der das Floating-Options-Menu oeffnet
+   (Folge-Feedback: Bearbeiten/Loeschen sind keine permanent sichtbaren
+   Icons mehr, sondern ein Menu per Tap auf die Karte). Waehrend Inline-
+   Edit ersetzt <TransactionRowEditor> diesen Bereich komplett — der
+   editierende Zustand ist deshalb NICHT klickbar/fokussierbar. */
+.data-table-mobile :deep(.data-table__card-content) {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-radius: inherit;
+}
+.data-table-mobile :deep(.data-table__card-content:focus-visible) {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+/* Editing-Zustand (TransactionRowEditor statt .data-table__card-content):
+   Padding/Akzentfarbe kommen bewusst von der jeweiligen Page (siehe
+   `.data-table__card--editing` in expenses.vue/income.vue), nicht von
+   hier — die Page kennt die Akzentfarbe (blau) und den gewuenschten
+   Abstand (8px), hier gibt's dafuer keinen sinnvollen Default. */
 .data-table-mobile :deep(.data-table__card-line) {
   display: flex;
   justify-content: space-between;
@@ -268,34 +301,31 @@ defineProps<{
   color: var(--text);
   font-size: 0.92rem;
 }
-/* Issue "Ausgabenliste deutlich kompakter gestalten": Meta-Infos und
-   Zeilen-Aktionen teilen sich eine Zeile statt einer eigenen, durch
-   Border+Padding abgesetzten Actions-Zeile darunter — spart eine ganze
-   Zeile Hoehe pro Karte. Bewusst flex-start (nicht space-between/flex-end):
-   siehe Issue #92-Kommentar unten — Aktionen duerfen nicht an den rechten
-   Rand wandern, sonst kollidieren sie bei kurzen Listen mit dem fixierten
-   Mobile-FAB Speed-Dial unten rechts. */
-.data-table-mobile :deep(.data-table__card-footer) {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-}
+/* Budget-Chip linksbuendig, Person rechtsbuendig in derselben Zeile
+   (Folge-Feedback) — das Datum steht jetzt im Gruppen-Trenner darüber,
+   dadurch bleiben hier nur noch die zwei Elemente. */
 .data-table-mobile :deep(.data-table__card-meta) {
   font-size: 0.78rem;
   color: var(--text-muted);
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 10px;
+  justify-content: space-between;
   align-items: center;
+  gap: 8px;
 }
-/* Issue #92: linksbuendig statt flex-end — der Mobile-FAB Speed-Dial
-   sitzt fixiert unten rechts und wuerde rechtsbuendige Zeilen-Aktionen
-   (Bearbeiten/Loeschen) bei kurzer Liste verdecken. */
-.data-table-mobile :deep(.data-table__card-actions) {
-  display: flex;
-  justify-content: flex-start;
-  gap: 0;
+.data-table-mobile :deep(.data-table__card-user) {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Rein dekorativer Hinweis, dass die Karte tappbar ist — der eigentliche
+   Klick-Bereich ist die ganze Karte (.data-table__card-content). */
+.data-table-mobile :deep(.data-table__card-hint) {
+  color: var(--text-muted);
+  font-size: 0.85rem;
   flex-shrink: 0;
 }
 .data-table-mobile :deep(.data-table__empty) {
