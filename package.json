@@ -24,6 +24,7 @@
     "@primeuix/themes": "^2.0.3",
     "@primevue/nuxt-module": "^4.5.5",
     "@prisma/client": "^6.19.3",
+    "@vite-pwa/nuxt": "^1.1.1",
     "emojilib": "^4.0.3",
     "nuxt": "^4.4.7",
     "primeicons": "^7.0.0",
@@ -33,6 +34,7 @@
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@vite-pwa/assets-generator": "^1.0.4",
     "@vitest/coverage-v8": "^2.1.9",
     "dotenv": "^17.2.0",
     "prisma": "^6.19.3",
