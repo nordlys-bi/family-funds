@@ -8,6 +8,11 @@ const quickCapture = useQuickCapture()
 // Top-Level-Ref fuers Template (auto-unwrap) — steuert u. a. das
 // Ausblenden des FAB, solange der Erfassen-Dialog offen ist.
 const quickCaptureDialogOpen = quickCapture.isOpen
+// Zusaetzlich ausblenden, waehrend eine Ausgabe/Einnahme inline bearbeitet
+// wird — der FAB (fixed, z-index 1200) ueberlappt sonst bei kurzen Listen
+// die rechtsbuendigen Speichern/Abbrechen-Buttons des Inline-Editors und
+// faengt den Tap ab (siehe useInlineEditing.ts).
+const inlineEditingActive = useInlineEditing().isActive
 const config = useRuntimeConfig()
 const isClerkMode = config.public.authMode === 'clerk'
 
@@ -347,7 +352,7 @@ onBeforeUnmount(() => {
     <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop).
          Issue #91: waehrend der globale Erfassen-Dialog offen ist, ausblenden —
          sonst pokt der FAB durch die Dialog-Maske. -->
-    <FabSpeedDial v-show="!quickCaptureDialogOpen" :actions="fabActions" />
+    <FabSpeedDial v-show="!quickCaptureDialogOpen && !inlineEditingActive" :actions="fabActions" />
 
     <!-- Onboarding-Tour (issue #16): 4-Step-Modal, auto-getriggert fuer
          neue User mit leerem Haushalt. Persistiert pro User, ueberlebt
