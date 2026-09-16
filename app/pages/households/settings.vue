@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useTheme, type ThemePreference } from '~/composables/useTheme'
 
 definePageMeta({ layout: 'default' })
+
+const THEME_OPTIONS: { label: string; value: ThemePreference }[] = [
+  { label: 'System', value: 'system' },
+  { label: 'Hell', value: 'light' },
+  { label: 'Dunkel', value: 'dark' },
+]
 
 type HouseholdMember = {
   id: string
@@ -20,6 +27,7 @@ type HouseholdDetail = {
 const { user } = useAppAuth()
 const { activeHouseholdId, fetchHouseholds } = useHousehold()
 const onboarding = useOnboarding()
+const { preference: themePreference, setPreference: setThemePreference } = useTheme()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -153,6 +161,23 @@ const restartOnboarding = async () => {
       <Message v-else severity="warn" variant="simple">
         Nur Owner können den Haushalt bearbeiten.
       </Message>
+    </article>
+
+    <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
+      <h3 class="settings-help-title">Darstellung</h3>
+      <p class="settings-help-text">
+        Folgt standardmäßig dem Farbschema deines Geräts. Du kannst Hell oder
+        Dunkel aber auch fest einstellen — die Wahl gilt nur auf diesem Gerät.
+      </p>
+      <SelectButton
+        :model-value="themePreference"
+        :options="THEME_OPTIONS"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+        aria-label="Darstellung"
+        @update:model-value="setThemePreference"
+      />
     </article>
 
     <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
