@@ -1,0 +1,27 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gF" x1="60" y1="46" x2="452" y2="466" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#93c5fd"/>
+      <stop offset="45%" stop-color="#3b82f6"/>
+      <stop offset="100%" stop-color="#10b981"/>
+    </linearGradient>
+    <filter id="haloF" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="20"/>
+    </filter>
+    <clipPath id="clipCircleF">
+      <circle cx="256" cy="256" r="196"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" fill="#0b0f19"/>
+  <circle cx="256" cy="256" r="220" fill="url(#gF)" filter="url(#haloF)" opacity="0.55"/>
+  <circle cx="256" cy="256" r="196" fill="url(#gF)"/>
+  <ellipse cx="196" cy="168" rx="130" ry="82" fill="#ffffff" opacity="0.14" clip-path="url(#clipCircleF)"/>
+  <g fill="#0b0f19">
+    <rect x="128" y="136" width="44" height="240" rx="12"/>
+    <rect x="128" y="136" width="120" height="44" rx="12"/>
+    <rect x="128" y="232" width="88" height="44" rx="12"/>
+    <rect x="264" y="136" width="44" height="240" rx="12"/>
+    <rect x="264" y="136" width="120" height="44" rx="12"/>
+    <rect x="264" y="232" width="88" height="44" rx="12"/>
+  </g>
+</svg>

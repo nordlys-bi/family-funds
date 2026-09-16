@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeMount, onBeforeUnmount } from 'vue'
+import { computed, onBeforeMount, onBeforeUnmount } from 'vue'
 import { useNuxtApp } from '#app'
 import ToastService from 'primevue/toastservice'
 import { useTheme } from '~/composables/useTheme'
@@ -8,10 +8,16 @@ import { useTheme } from '~/composables/useTheme'
 // Architektur-Erklaerung. `htmlClass`/`htmlDataTheme` sind reaktiv — sobald
 // sich `preference` aendert (User-Toggle) oder die OS-Praeferenz wechselt,
 // aktualisiert unhead <html> automatisch.
-const { htmlClass, htmlDataTheme, initClient, disposeClient } = useTheme()
+const { htmlClass, htmlDataTheme, effective, initClient, disposeClient } = useTheme()
+
+// theme-color (issue #123): Browser-UI/Statusleiste soll dem aktuellen
+// Theme folgen, nicht dauerhaft auf Dark stehen bleiben. Werte entsprechen
+// --color-bg-page in tokens.css fuer dark/light.
+const themeColor = computed(() => (effective.value === 'light' ? '#f1f5f9' : '#0b0f19'))
 
 useHead({
   htmlAttrs: { class: htmlClass, 'data-theme': htmlDataTheme },
+  meta: [{ name: 'theme-color', content: themeColor, tagPriority: 'critical' }],
 })
 
 // PrimeVue 4 ToastService explizit registrieren (issue #58).
@@ -48,6 +54,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="app-shell">
+    <!-- Injiziert <link rel="manifest">, Favicon/Apple-Touch-Icon/Splash-
+         Screen-Links aus public/favicon.svg (issue #123, siehe
+         pwa-assets.config.ts). Rendert selbst nichts sichtbares. -->
+    <NuxtPwaAssets />
+
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
