@@ -57,7 +57,7 @@ withDefaults(
 .progress__bar {
   flex: 1;
   height: 6px;
-  background: rgba(148, 163, 184, 0.14);
+  background: var(--color-border-default);
   border-radius: 999px;
   overflow: hidden;
   display: flex;

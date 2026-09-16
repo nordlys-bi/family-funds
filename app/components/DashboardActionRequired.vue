@@ -192,8 +192,8 @@ const overBudgetCount = computed(
 
 <style scoped>
 .action-required {
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.66));
-  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, var(--color-bg-panel), var(--color-bg-panel-soft));
+  border: 1px solid var(--color-border-subtle);
   border-radius: 18px;
   padding: 1.1rem 1.25rem;
   margin-bottom: 1.25rem;
@@ -269,12 +269,12 @@ const overBudgetCount = computed(
   padding: 0.7rem 0.85rem;
   border-radius: 12px;
   border: 1px solid transparent;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--color-overlay-subtle);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .action-required__item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--color-overlay-hover);
 }
 
 .action-required__item--danger {

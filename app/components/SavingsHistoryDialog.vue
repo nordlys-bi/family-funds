@@ -271,11 +271,11 @@ function reload() {
 }
 
 .history-item--deposit .history-item__amount {
-  color: #34d399; /* gruen */
+  color: var(--color-accent-success-text); /* gruen */
 }
 
 .history-item--withdraw .history-item__amount {
-  color: #f87171; /* rot */
+  color: var(--color-accent-danger-text); /* rot */
 }
 
 .history-item__note {

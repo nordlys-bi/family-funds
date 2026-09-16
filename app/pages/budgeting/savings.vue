@@ -622,7 +622,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   display: inline-block;
   padding: 1px 7px;
   background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -632,12 +632,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 .row-tag--green {
   background: rgba(52, 211, 153, 0.16);
-  color: #34d399;
+  color: var(--color-accent-success-text);
 }
 
 .row-tag--muted {
   background: rgba(148, 163, 184, 0.12);
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 /* Issue #56: warn/danger-Severity fuer den monatlichen Plan-vs-Ist-Tag.
@@ -646,12 +646,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
    einordnen kann ohne neue Farbcodes zu lernen. */
 .row-tag--warn {
   background: rgba(251, 191, 36, 0.18);
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 .row-tag--danger {
   background: rgba(248, 113, 113, 0.18);
-  color: #f87171;
+  color: var(--color-accent-danger-text);
 }
 
 /* Issue #56: Inline-Toggle fuer den 3-Monats-Verlauf. Bewusst als
@@ -664,7 +664,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   gap: 4px;
   padding: 1px 7px;
   background: rgba(59, 130, 246, 0.10);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -692,7 +692,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   list-style: none;
   padding: 0.5rem 0 0;
   margin: 0.4rem 0 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -727,15 +727,15 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 }
 
 .row-history__pct--green {
-  color: #34d399;
+  color: var(--color-accent-success-text);
 }
 
 .row-history__pct--warn {
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 .row-history__pct--danger {
-  color: #f87171;
+  color: var(--color-accent-danger-text);
 }
 
 .amount-secondary {

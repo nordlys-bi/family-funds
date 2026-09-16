@@ -46,8 +46,8 @@ withDefaults(
 
 <style scoped>
 .kpi-card {
-  background: rgba(30, 41, 59, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--color-bg-panel-soft);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 16px;
   padding: 1.25rem 1.5rem;
   transition:
@@ -57,7 +57,7 @@ withDefaults(
 
 .kpi-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-border-default);
 }
 
 .kpi-card__row {

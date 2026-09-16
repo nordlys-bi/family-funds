@@ -531,7 +531,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   display: inline-block;
   padding: 1px 7px;
   background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -543,7 +543,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   display: inline-block;
   padding: 1px 7px;
   background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -563,7 +563,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .empty-list {
   padding: 16px;
   border-radius: 10px;
-  border: 1px dashed rgba(148, 163, 184, 0.18);
+  border: 1px dashed var(--color-border-default);
   color: var(--color-text-muted);
   text-align: center;
   font-size: 0.85rem;
@@ -574,7 +574,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   list-style: none;
   padding: 0.6rem 0 0.6rem 1.25rem;
   margin: 0.4rem 0 0.8rem;
-  border-left: 2px solid rgba(148, 163, 184, 0.18);
+  border-left: 2px solid var(--color-border-default);
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -595,7 +595,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .weekly-breakdown__label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .weekly-breakdown__pct {

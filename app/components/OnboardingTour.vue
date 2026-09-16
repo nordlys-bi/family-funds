@@ -181,7 +181,7 @@ function resolveCurrentStep(completed: OnboardingStep[]): StepContent {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  background: rgba(11, 15, 25, 0.7);
+  background: var(--color-bg-backdrop);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -191,9 +191,9 @@ function resolveCurrentStep(completed: OnboardingStep[]): StepContent {
 }
 
 .onboarding-modal {
-  background: var(--color-bg-elevated, #1f2937);
+  background: var(--color-bg-modal);
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid var(--color-border-default);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
   padding: 1.75rem 1.5rem 1.25rem;
   max-width: 480px;
@@ -215,7 +215,7 @@ function resolveCurrentStep(completed: OnboardingStep[]): StepContent {
   width: 28px;
   height: 4px;
   border-radius: 2px;
-  background: rgba(148, 163, 184, 0.2);
+  background: var(--color-border-strong);
   transition: background 200ms;
 }
 

@@ -381,8 +381,8 @@ watch(quickCaptureSavedTick, loadDashboard)
   flex-wrap: wrap;
   padding: 0.8rem 1.1rem;
   margin-bottom: 1.25rem;
-  background: rgba(15, 23, 42, 0.55);
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: var(--color-bg-panel-soft);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 14px;
   font-variant-numeric: tabular-nums;
 }
@@ -459,11 +459,11 @@ watch(quickCaptureSavedTick, loadDashboard)
 
 /* Issue #60 / ADR 0003: Voraussicht nur bei Abweichung vom Plan. */
 .month-strip__aside .month-strip__pair--forecast--warning dd {
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 .month-strip__aside .month-strip__pair--forecast--over dd {
-  color: #f87171;
+  color: var(--color-accent-danger-text);
 }
 
 .month-strip__tag {
@@ -476,12 +476,12 @@ watch(quickCaptureSavedTick, loadDashboard)
   letter-spacing: 0.02em;
   vertical-align: middle;
   background: rgba(251, 191, 36, 0.14);
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 .month-strip__pair--forecast--over .month-strip__tag {
   background: rgba(248, 113, 113, 0.14);
-  color: #f87171;
+  color: var(--color-accent-danger-text);
 }
 
 @media (max-width: 640px) {

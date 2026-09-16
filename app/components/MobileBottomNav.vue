@@ -185,9 +185,9 @@ const isMoreActive = computed(() => {
     z-index: 100;
     display: grid;
     grid-template-columns: repeat(5, 1fr);
-    background: rgba(15, 23, 42, 0.96);
+    background: var(--color-bg-panel);
     backdrop-filter: blur(12px);
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    border-top: 1px solid var(--color-border-default);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.32);
     /* iPhone-Notch: Bottom-Inset für Home-Indicator */
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -202,7 +202,7 @@ const isMoreActive = computed(() => {
   gap: 4px;
   padding: 10px 4px;
   min-height: 56px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   text-decoration: none;
   font-size: 0.7rem;
   font-weight: 600;
@@ -221,11 +221,11 @@ const isMoreActive = computed(() => {
 }
 
 .mobile-bottom-nav__item:hover {
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
 }
 
 .mobile-bottom-nav__item--active {
-  color: #60a5fa;
+  color: var(--color-accent-primary);
 }
 
 /* Oberer Akzent-Indikator fuer das active Item. */
@@ -259,9 +259,9 @@ const isMoreActive = computed(() => {
   gap: 12px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  color: #f1f5f9;
+  background: var(--color-overlay-subtle);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text-primary);
   font-size: 0.95rem;
   font-weight: 600;
   text-align: left;
@@ -273,35 +273,35 @@ const isMoreActive = computed(() => {
 }
 
 .more-list__item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-overlay-hover);
 }
 
 .more-list__item--active {
   background: rgba(59, 130, 246, 0.12);
   border-color: rgba(59, 130, 246, 0.32);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
 }
 
 /* Destructive Aktionen (z. B. Abmelden): rot getönt, aber nicht
    aufdringlich — die Optik soll klar machen "Vorsicht", nicht
    "Panik-Button". Active-Hover verstärkt den Rotton. */
 .more-list__item--destructive {
-  color: #fca5a5;
+  color: var(--color-accent-danger-text);
   border-color: rgba(248, 113, 113, 0.18);
 }
 
 .more-list__item--destructive:hover {
   background: rgba(248, 113, 113, 0.08);
-  color: #fecaca;
+  color: var(--color-accent-danger-text);
 }
 
 .more-list__item--destructive i {
-  color: #f87171;
+  color: var(--color-accent-danger);
 }
 
 .more-list__item i {
   font-size: 1.1rem;
-  color: #60a5fa;
+  color: var(--color-accent-primary);
   flex-shrink: 0;
 }
 </style>

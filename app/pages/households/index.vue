@@ -185,8 +185,8 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   gap: 1rem;
   padding: 1.25rem;
   border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.66));
+  border: 1px solid var(--color-border-subtle);
+  background: linear-gradient(180deg, var(--color-bg-panel), var(--color-bg-panel-soft));
   box-shadow: 0 18px 40px rgba(2, 6, 23, 0.22);
 }
 
@@ -206,7 +206,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 .overview-card__description {
   margin: 0.3rem 0 0;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .overview-card__strip {
@@ -221,8 +221,8 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
   gap: 0.3rem;
   padding: 0.9rem 1rem;
   border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  background: rgba(15, 23, 42, 0.44);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-bg-panel-soft);
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s ease, background 0.15s ease;
@@ -230,11 +230,11 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 .overview-tile:hover {
   border-color: rgba(96, 165, 250, 0.4);
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--color-bg-panel);
 }
 
 .overview-tile span {
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 0.82rem;
 }
 
@@ -243,7 +243,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 }
 
 .overview-tile--accent {
-  background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), rgba(15, 23, 42, 0.48));
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.16), var(--color-bg-panel-soft));
 }
 
 .loading-state {
@@ -277,7 +277,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 
 .empty-card p {
   margin: 0.65rem 0 1rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 @media (max-width: 639px) {

@@ -127,7 +127,7 @@ defineProps<{
   letter-spacing: 0.1em;
   color: var(--text-muted);
   padding: 12px 14px;
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--color-bg-panel-soft);
   border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
 }
@@ -138,7 +138,7 @@ defineProps<{
 
 .data-table :deep(td) {
   padding: 12px 14px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+  border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
 
@@ -197,7 +197,7 @@ defineProps<{
 }
 
 .data-table :deep(td.actions button:hover) {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-overlay-hover);
   color: var(--text);
 }
 

@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { onBeforeMount } from 'vue'
+import { onBeforeMount, onBeforeUnmount } from 'vue'
 import { useNuxtApp } from '#app'
 import ToastService from 'primevue/toastservice'
+import { useTheme } from '~/composables/useTheme'
+
+// Theme (Hell/Dunkel, folgt OS-Default): siehe useTheme.ts fuer die volle
+// Architektur-Erklaerung. `htmlClass`/`htmlDataTheme` sind reaktiv — sobald
+// sich `preference` aendert (User-Toggle) oder die OS-Praeferenz wechselt,
+// aktualisiert unhead <html> automatisch.
+const { htmlClass, htmlDataTheme, initClient, disposeClient } = useTheme()
 
 useHead({
-  htmlAttrs: { class: 'my-app-dark' },
+  htmlAttrs: { class: htmlClass, 'data-theme': htmlDataTheme },
 })
 
 // PrimeVue 4 ToastService explizit registrieren (issue #58).
@@ -31,6 +38,11 @@ onBeforeMount(() => {
   if (!import.meta.client) return
   const { vueApp } = useNuxtApp()
   vueApp.use(ToastService)
+  initClient()
+})
+
+onBeforeUnmount(() => {
+  disposeClient()
 })
 </script>
 
@@ -63,6 +75,10 @@ body {
   min-height: 100%;
   background-color: var(--color-bg-page, #0b0f19);
   color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
 }
 
 body {

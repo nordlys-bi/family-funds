@@ -149,7 +149,7 @@ const containerStyle = computed(() =>
 .bottom-sheet-mask {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--color-bg-backdrop);
   z-index: 1100;
   display: flex;
   align-items: center;
@@ -209,7 +209,7 @@ const containerStyle = computed(() =>
 }
 
 .bottom-sheet__close:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-overlay-hover);
   color: var(--color-text-primary);
 }
 

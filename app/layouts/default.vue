@@ -373,16 +373,16 @@ onBeforeUnmount(() => {
 .layout-wrapper {
   display: flex;
   min-height: 100vh;
-  background-color: #0b0f19;
-  color: #f1f5f9;
+  background-color: var(--color-bg-page);
+  color: var(--color-text-primary);
   font-family: var(--font-family, 'Inter', sans-serif);
 }
 
 /* === Sidebar Desktop-Layout === */
 .sidebar {
   width: 260px;
-  background: #111827;
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg-panel);
+  border-right: 1px solid var(--color-border-subtle);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
@@ -413,7 +413,7 @@ onBeforeUnmount(() => {
 /* === Sidebar intern === */
 .sidebar-header {
   padding: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--color-border-subtle);
 }
 
 .brand-logo {
@@ -424,7 +424,7 @@ onBeforeUnmount(() => {
 
 .brand-logo i {
   font-size: 1.5rem;
-  color: #3b82f6;
+  color: var(--color-accent-primary);
 }
 
 .brand-name {
@@ -442,7 +442,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--color-border-subtle);
   overflow: hidden;
 }
 
@@ -469,7 +469,7 @@ onBeforeUnmount(() => {
 .user-name {
   font-weight: 600;
   font-size: 0.9rem;
-  color: #f1f5f9;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -488,7 +488,7 @@ onBeforeUnmount(() => {
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
-  color: #4b5563;
+  color: var(--color-text-subtle);
   margin-top: 0.35rem;
   margin-bottom: 0.25rem;
   padding-left: 0.75rem;
@@ -498,14 +498,14 @@ onBeforeUnmount(() => {
 /* Issue #93: Trenner zwischen Alltags-Modulen und der "Verwaltung"-Gruppe. */
 .nav-divider {
   height: 1px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-overlay-hover);
   margin: 1rem 0.75rem 0;
 }
 
 /* Issue #93: Haushalts-Setup ist selten genutzt — visuell zuruecknehmen,
    ohne es zu verstecken. Der Active-State (blau) sticht weiterhin durch. */
 .nav-item--muted {
-  color: #6b7280;
+  color: var(--color-text-subtle);
 }
 
 .nav-item--muted .nav-icon {
@@ -518,7 +518,7 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
   padding: 0.75rem 0.75rem;
   border-radius: 10px;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   text-decoration: none;
   font-weight: 500;
   font-size: 0.95rem;
@@ -529,13 +529,13 @@ onBeforeUnmount(() => {
 }
 
 .nav-item:hover:not(.nav-item-disabled) {
-  background: rgba(255, 255, 255, 0.03);
-  color: #f1f5f9;
+  background: var(--color-overlay-subtle);
+  color: var(--color-text-primary);
 }
 
 .nav-item-active {
-  background: rgba(59, 130, 246, 0.1) !important;
-  color: #3b82f6 !important;
+  background: var(--color-accent-primary-soft) !important;
+  color: var(--color-accent-primary) !important;
   font-weight: 600;
 }
 
@@ -552,7 +552,7 @@ onBeforeUnmount(() => {
 
 .sidebar-footer {
   padding: 1rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--color-border-subtle);
 }
 
 .clerk-user-button {
@@ -575,8 +575,8 @@ onBeforeUnmount(() => {
 /* === Header === */
 .header {
   height: 64px;
-  background: #111827;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--color-bg-panel);
+  border-bottom: 1px solid var(--color-border-subtle);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -600,15 +600,15 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--color-overlay-subtle);
+  border: 1px solid var(--color-border-default);
   border-radius: 10px;
   padding: 0.4rem 0.75rem;
-  color: #f1f5f9;
+  color: var(--color-text-primary);
 }
 
 .switcher-icon {
-  color: #3b82f6;
+  color: var(--color-accent-primary);
   font-size: 0.95rem;
 }
 
@@ -634,7 +634,7 @@ onBeforeUnmount(() => {
 .switcher-static__name {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #f8fafc;
+  color: var(--color-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -644,7 +644,7 @@ onBeforeUnmount(() => {
 .switcher-static__currency {
   font-size: 0.78rem;
   font-weight: 500;
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 :deep(.switcher-select.p-select) {
@@ -653,7 +653,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.switcher-select .p-select-label) {
-  color: #f8fafc;
+  color: var(--color-text-primary);
   font-weight: 600;
   /* Lange Haushaltsnamen auf Mobile sauber mit Ellipsis kürzen statt
      umzubrechen oder den Layout-Container zu sprengen. title-Attribut
@@ -666,7 +666,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.switcher-select .p-select-dropdown) {
-  color: #f8fafc;
+  color: var(--color-text-primary);
 }
 
 .header-right {
@@ -709,7 +709,7 @@ onBeforeUnmount(() => {
   flex-grow: 1;
   padding: 2rem;
   overflow-y: auto;
-  background-color: #0b0f19;
+  background-color: var(--color-bg-page);
 }
 
 /* === Mobile+Tablet: Header- & Content-Anpassung === */

@@ -211,7 +211,7 @@ function handleCancel() {
 
 .row-editor__label {
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -220,7 +220,7 @@ function handleCancel() {
 .row-editor__error {
   grid-column: 1 / -2;
   margin: 0;
-  color: #f87171;
+  color: var(--color-accent-danger-text);
   font-size: 0.85rem;
 }
 

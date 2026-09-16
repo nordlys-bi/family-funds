@@ -1,14 +1,24 @@
 /*
- * Global Base Styles — PrimeVue-Component-Overrides, die das Dark-Theme
- * für Inputs, Selects, Dialoge etc. sicherstellen.
+ * Global Base Styles — PrimeVue-Component-Overrides für Inputs, Selects,
+ * Dialoge etc.
  *
  * Architektur:
- *   - `.my-app-dark` sitzt auf dem <html>-Element (gesetzt via useHead in app.vue).
- *     Damit kaskadieren alle hier definierten Variablen und Regeln auch in
- *     Teleport-Ziele (z. B. PrimeVue Dialog wird nach document.body teleportiert).
- *   - Primär: PrimeVue-Semantic-Tokens (--p-*) explizit setzen, damit die
- *     variablenbasierten Defaults aus dem Aura-Preset zuverlässig auf unsere
- *     Dark-Werte gemappt werden.
+ *   - `.my-app` sitzt permanent auf dem <html>-Element (gesetzt via useHead in
+ *     app.vue) und ist theme-neutral — nicht mit PrimeVues eigenem
+ *     `darkModeSelector: '.my-app-dark'` (siehe nuxt.config.ts) verwechseln.
+ *     `.my-app` sorgt nur dafür, dass diese Regeln auch in Teleport-Ziele
+ *     kaskadieren (z. B. PrimeVue Dialog wird nach document.body teleportiert).
+ *   - `.my-app-dark` ist ein zweites, unabhängiges Klassen-Flag: es steuert
+ *     ausschließlich PrimeVues eigenes internes Preset (Aura) für Komponenten-
+ *     Teile, die wir hier nicht explizit überschreiben. Ob es gesetzt ist,
+ *     entscheidet künftig der Theme-Switch (aktuell: immer gesetzt, siehe
+ *     Issue "Theme: OS-Farbschema als Default, manuell umstellbar").
+ *   - Primär: PrimeVue-Semantic-Tokens (--p-*) explizit auf unsere
+ *     `--color-*`-Tokens mappen, die selbst schon hell/dunkel-bewusst sind
+ *     (siehe tokens.css). Dadurch braucht es hier keine eigene Hell/Dunkel-
+ *     Fallunterscheidung mehr — nur die zwei card-row-spezifischen Variablen
+ *     unten (--bg-card-row & Co.) sind lokal zu dieser Datei und bekommen
+ *     ihre eigene Light-Override-Sektion.
  *   - Defensive Layer: klassenbasierte Overrides für die gängigsten Komponenten,
  *     falls ein Token fehlt oder PrimeVue eine Komponente nicht über Tokens stylt.
  *
@@ -22,7 +32,7 @@
  *    sind, fallen die Defaults auf den Light-Wert (weiß) zurück.
  * ============================================================================ */
 
-html.my-app-dark {
+html.my-app {
   /* Form fields (InputText, Select, DatePicker, InputNumber, Textarea) */
   --p-form-field-background: var(--color-bg-input);
   --p-form-field-hover-background: var(--color-bg-input-hover);
@@ -105,6 +115,23 @@ html.my-app-dark {
   --danger: #ef4444;
 }
 
+/* Light-Werte für die card-row-Variablen oben — siehe tokens.css für die
+   generelle Erklärung des data-theme='light'-Mechanismus. --danger bleibt
+   geteilt (gesättigter Mid-Tone, funktioniert auf hell wie dunkel). */
+html.my-app[data-theme='light'] {
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-row-hover: rgba(37, 99, 235, 0.4);
+  --border-muted: rgba(15, 23, 42, 0.14);
+  --border-button-hover: rgba(15, 23, 42, 0.16);
+  --bg-card-row: rgba(255, 255, 255, 0.72);
+  --bg-card-row-hover: rgba(241, 245, 249, 0.95);
+  --bg-card-row-muted: rgba(255, 255, 255, 0.45);
+  --bg-card-button-hover: rgba(15, 23, 42, 0.06);
+  --accent: #2563eb;
+  --text: #0f172a;
+  --text-muted: #64748b;
+}
+
 /* ============================================================================
  * 2. Klassenbasierte Overrides (defensiv)
  *    Greifen, falls PrimeVue-Komponenten nicht über die Semantic-Tokens
@@ -114,8 +141,8 @@ html.my-app-dark {
 /* InputText und InputNumber haben eigenen Border + Background. DatePicker-input
    teilt sich Border/Background mit dem .p-datepicker-Wrapper (siehe unten) und
    bekommt deshalb ein eigenes, schlankeres Styleset. */
-html.my-app-dark .p-inputtext,
-html.my-app-dark .p-inputnumber-input {
+html.my-app .p-inputtext,
+html.my-app .p-inputnumber-input {
   background: var(--color-bg-input);
   color: var(--color-text-primary);
   border: 1px solid var(--color-border-default);
@@ -135,8 +162,8 @@ html.my-app-dark .p-inputnumber-input {
  * zwingen Wrapper + Trigger-Button mit align-self:stretch auf diese Höhe.
  * ============================================================================ */
 
-html.my-app-dark .p-select,
-html.my-app-dark .p-datepicker {
+html.my-app .p-select,
+html.my-app .p-datepicker {
   display: inline-flex;
   align-items: stretch;
   height: var(--form-field-height);
@@ -147,15 +174,15 @@ html.my-app-dark .p-datepicker {
   overflow: hidden;
 }
 
-html.my-app-dark .p-select-label {
+html.my-app .p-select-label {
   display: flex;
   align-items: center;
   padding: 0 var(--p-form-field-padding-x);
   background: transparent;
 }
 
-html.my-app-dark .p-select-dropdown,
-html.my-app-dark .p-datepicker-dropdown {
+html.my-app .p-select-dropdown,
+html.my-app .p-datepicker-dropdown {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -170,7 +197,7 @@ html.my-app-dark .p-datepicker-dropdown {
 /* DatePicker-input füllt den Wrapper transparent aus — der Wrapper hat den
    Border/Background (siehe .p-datepicker oben), der innere Input braucht
    keinen eigenen Rahmen und keine eigene Höhe, nur Padding-X für den Text. */
-html.my-app-dark .p-datepicker-input {
+html.my-app .p-datepicker-input {
   border: 0;
   background: transparent;
   padding: 0 var(--p-form-field-padding-x);
@@ -179,37 +206,37 @@ html.my-app-dark .p-datepicker-input {
   color: var(--color-text-primary);
 }
 
-html.my-app-dark .p-inputtext::placeholder,
-html.my-app-dark .p-inputnumber-input::placeholder,
-html.my-app-dark .p-datepicker-input::placeholder {
+html.my-app .p-inputtext::placeholder,
+html.my-app .p-inputnumber-input::placeholder,
+html.my-app .p-datepicker-input::placeholder {
   color: var(--color-text-subtle);
 }
 
-html.my-app-dark .p-select-label,
-html.my-app-dark .p-inputnumber-input {
+html.my-app .p-select-label,
+html.my-app .p-inputnumber-input {
   color: var(--color-text-primary);
 }
 
-html.my-app-dark .p-inputtext:hover:not(:disabled),
-html.my-app-dark .p-select:hover:not(:disabled),
-html.my-app-dark .p-inputnumber:hover:not(:disabled),
-html.my-app-dark .p-inputnumber-input:hover:not(:disabled),
-html.my-app-dark .p-datepicker:hover:not(:disabled),
-html.my-app-dark .p-datepicker-input:hover:not(:disabled) {
+html.my-app .p-inputtext:hover:not(:disabled),
+html.my-app .p-select:hover:not(:disabled),
+html.my-app .p-inputnumber:hover:not(:disabled),
+html.my-app .p-inputnumber-input:hover:not(:disabled),
+html.my-app .p-datepicker:hover:not(:disabled),
+html.my-app .p-datepicker-input:hover:not(:disabled) {
   border-color: var(--color-accent-primary-hover);
 }
 
-html.my-app-dark .p-inputtext:focus,
-html.my-app-dark .p-inputnumber-input:focus,
-html.my-app-dark .p-datepicker-input:focus {
+html.my-app .p-inputtext:focus,
+html.my-app .p-inputnumber-input:focus,
+html.my-app .p-datepicker-input:focus {
   border-color: var(--color-border-focus);
   box-shadow: var(--p-form-field-focus-ring-shadow, 0 0 0 4px rgba(59, 130, 246, 0.16));
   outline: none;
 }
 
-html.my-app-dark .p-select:focus-within,
-html.my-app-dark .p-inputnumber:focus-within,
-html.my-app-dark .p-datepicker:focus-within {
+html.my-app .p-select:focus-within,
+html.my-app .p-inputnumber:focus-within,
+html.my-app .p-datepicker:focus-within {
   border-color: var(--color-border-focus);
   box-shadow: var(--p-form-field-focus-ring-shadow, 0 0 0 4px rgba(59, 130, 246, 0.16));
   outline: none;
@@ -217,31 +244,31 @@ html.my-app-dark .p-datepicker:focus-within {
 
 /* Dialog — explizit stylen, weil Teleport die Variablen-Kaskade unterbricht,
    falls die Tokens nicht am :root gesetzt sind. */
-html.my-app-dark .p-dialog,
-html.my-app-dark .p-dialog-content,
-html.my-app-dark .p-dialog-header,
-html.my-app-dark .p-dialog-footer {
+html.my-app .p-dialog,
+html.my-app .p-dialog-content,
+html.my-app .p-dialog-header,
+html.my-app .p-dialog-footer {
   background: var(--color-bg-modal);
   color: var(--color-text-primary);
   border-color: var(--color-border-subtle);
 }
 
-html.my-app-dark .p-dialog {
+html.my-app .p-dialog {
   box-shadow:
     0 30px 80px rgba(2, 6, 23, 0.6),
     0 0 0 1px rgba(148, 163, 184, 0.1);
 }
 
-html.my-app-dark .p-dialog-mask {
+html.my-app .p-dialog-mask {
   background: var(--color-bg-backdrop);
 }
 
-html.my-app-dark .p-dialog-title,
-html.my-app-dark .p-dialog-header-label {
+html.my-app .p-dialog-title,
+html.my-app .p-dialog-header-label {
   color: var(--color-text-primary);
 }
 
-html.my-app-dark .p-button {
+html.my-app .p-button {
   border-radius: 14px;
   /* Touch-Target: alle PrimeVue-Buttons mind. 44pt hoch (überschreibt
      PrimeVue-Aura-Default von ~2.25rem / 36px). Auf Mobile garantiert
@@ -273,9 +300,9 @@ html.my-app-dark .p-button {
   color: inherit !important;
 }
 
-html.my-app-dark .p-inputtext,
-html.my-app-dark .p-inputnumber-input,
-html.my-app-dark .p-datepicker-input {
+html.my-app .p-inputtext,
+html.my-app .p-inputnumber-input,
+html.my-app .p-datepicker-input {
   caret-color: var(--color-accent-primary);
 }
 

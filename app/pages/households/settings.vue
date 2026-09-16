@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useTheme, type ThemePreference } from '~/composables/useTheme'
 
 definePageMeta({ layout: 'default' })
+
+const THEME_OPTIONS: { label: string; value: ThemePreference }[] = [
+  { label: 'System', value: 'system' },
+  { label: 'Hell', value: 'light' },
+  { label: 'Dunkel', value: 'dark' },
+]
 
 type HouseholdMember = {
   id: string
@@ -20,6 +27,7 @@ type HouseholdDetail = {
 const { user } = useAppAuth()
 const { activeHouseholdId, fetchHouseholds } = useHousehold()
 const onboarding = useOnboarding()
+const { preference: themePreference, setPreference: setThemePreference } = useTheme()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -156,6 +164,23 @@ const restartOnboarding = async () => {
     </article>
 
     <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
+      <h3 class="settings-help-title">Darstellung</h3>
+      <p class="settings-help-text">
+        Folgt standardmäßig dem Farbschema deines Geräts. Du kannst Hell oder
+        Dunkel aber auch fest einstellen — die Wahl gilt nur auf diesem Gerät.
+      </p>
+      <SelectButton
+        :model-value="themePreference"
+        :options="THEME_OPTIONS"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+        aria-label="Darstellung"
+        @update:model-value="setThemePreference"
+      />
+    </article>
+
+    <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
       <h3 class="settings-help-title">Hilfe</h3>
       <p class="settings-help-text">
         Du kannst die 4-Schritte-Onboarding-Tour jederzeit erneut durchlaufen, um
@@ -198,8 +223,8 @@ const restartOnboarding = async () => {
   gap: 1rem;
   padding: 1.5rem;
   border-radius: 24px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.66));
+  border: 1px solid var(--color-border-subtle);
+  background: linear-gradient(180deg, var(--color-bg-panel), var(--color-bg-panel-soft));
   box-shadow: 0 18px 40px rgba(2, 6, 23, 0.22);
 }
 
@@ -210,12 +235,12 @@ const restartOnboarding = async () => {
   align-items: center;
   padding: 0.85rem 1rem;
   border-radius: 14px;
-  background: rgba(15, 23, 42, 0.4);
-  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: var(--color-bg-panel-soft);
+  border: 1px solid var(--color-border-subtle);
 }
 
 .settings-label {
-  color: #94a3b8;
+  color: var(--color-text-muted);
   font-size: 0.85rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -223,7 +248,7 @@ const restartOnboarding = async () => {
 }
 
 .settings-value {
-  color: #f8fafc;
+  color: var(--color-text-primary);
   font-size: 1rem;
   font-weight: 600;
 }
@@ -231,7 +256,7 @@ const restartOnboarding = async () => {
 .settings-value--mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   font-size: 0.92rem;
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .settings-card--help {
@@ -242,13 +267,13 @@ const restartOnboarding = async () => {
   margin: 0 0 0.5rem;
   font-size: 1rem;
   font-weight: 700;
-  color: #f1f5f9;
+  color: var(--color-text-primary);
 }
 
 .settings-help-text {
   margin: 0 0 1rem;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   line-height: 1.5;
 }
 </style>
