@@ -308,10 +308,13 @@ defineProps<{
   font-size: 0.78rem;
   color: var(--text-muted);
   display: flex;
-  justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
+/* margin-left: auto statt justify-content: space-between auf dem Meta-
+   Container, damit Person auch dann rechtsbuendig bleibt, wenn es kein
+   Budget-Chip links gibt (Einnahmen haben keins) — space-between wuerde
+   das einzige Kind sonst links stehen lassen. */
 .data-table-mobile :deep(.data-table__card-user) {
   display: inline-flex;
   align-items: center;
@@ -320,6 +323,7 @@ defineProps<{
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin-left: auto;
 }
 /* Rein dekorativer Hinweis, dass die Karte tappbar ist — der eigentliche
    Klick-Bereich ist die ganze Karte (.data-table__card-content). */
