@@ -953,8 +953,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
           </tr>
 
           <!-- Mobile (< 768px): Cards statt Tabelle, gruppiert nach Datum.
-               Betrag prominent oben rechts, Bearbeiten/Loeschen per Tap auf
-               die Karte (Floating-Menu) statt permanent sichtbarer Icons. -->
+               Bearbeiten/Loeschen per Tap auf die Karte (Floating-Menu)
+               oder per Swipe (rechts = Bearbeiten, links = Loeschen). -->
           <template #mobile>
             <div v-if="visibleTransactions.length === 0" class="data-table__empty">
               Keine Ausgaben in {{ periodOrMonthLabel }}.
@@ -976,8 +976,16 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   @save="(payload) => saveInlineEdit(transaction.id, payload)"
                   @cancel="cancelInlineEdit"
                 />
-                <div
+                <SwipeableListItem
                   v-else
+                  swipe-right-icon="pi pi-pen-to-square"
+                  swipe-right-label="Bearbeiten"
+                  swipe-left-icon="pi pi-trash"
+                  swipe-left-label="Löschen"
+                  @swipe-right="startInlineEdit(transaction.id)"
+                  @swipe-left="deleteTransaction(transaction)"
+                >
+                <div
                   class="data-table__card-content"
                   role="button"
                   tabindex="0"
@@ -1004,6 +1012,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                     </span>
                   </div>
                 </div>
+                </SwipeableListItem>
               </div>
             </template>
           </template>
@@ -1014,7 +1023,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     <!-- Floating Options-Menu fuer die Mobile-Kartenliste: ein geteiltes
          Menu statt permanent sichtbarer Bearbeiten/Loeschen-Icons pro
          Karte, geoeffnet per Tap auf die Karte (PrimeVue positioniert es
-         am Klickpunkt/Trigger-Element). -->
+         am Klickpunkt/Trigger-Element). Zusaetzlich per Swipe erreichbar
+         (siehe SwipeableListItem oben: rechts = Bearbeiten, links = Loeschen). -->
     <Menu ref="cardMenu" :model="cardMenuItems" popup />
 
     <FormDialog
