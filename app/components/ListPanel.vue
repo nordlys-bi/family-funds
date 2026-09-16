@@ -71,8 +71,8 @@ defineProps<{
   gap: 0.85rem;
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.14), transparent 32%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.85), rgba(10, 14, 24, 0.7));
-  border: 1px solid rgba(148, 163, 184, 0.14);
+    var(--color-bg-panel);
+  border: 1px solid var(--color-border-subtle);
   border-radius: 18px;
   box-shadow: 0 14px 40px rgba(2, 6, 23, 0.3);
 }
@@ -80,7 +80,7 @@ defineProps<{
 .list-panel--primary {
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 28%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(9, 13, 22, 0.85));
+    var(--color-bg-panel);
 }
 
 .list-panel--compact {
@@ -109,7 +109,7 @@ defineProps<{
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
-  color: #f8fafc;
+  color: var(--color-text-primary);
   letter-spacing: -0.02em;
 }
 
@@ -127,9 +127,9 @@ defineProps<{
   font-weight: 700;
   padding: 2px 8px;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  background: rgba(30, 41, 59, 0.6);
-  color: #cbd5e1;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-panel-soft);
+  color: var(--color-text-secondary);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }

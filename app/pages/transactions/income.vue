@@ -679,7 +679,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 
 <style scoped>
 .income-amount {
-  color: #34d399;
+  color: var(--color-accent-success-text);
 }
 
 /* Issue #15: Inline-Edit-Cell (Desktop-Tabellen-Zeile) */
@@ -716,8 +716,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   gap: 0.6rem;
   padding: 0.85rem 1rem;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-panel-soft);
 }
 
 @media (max-width: 480px) {

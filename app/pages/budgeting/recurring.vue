@@ -788,7 +788,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   display: inline-block;
   padding: 1px 7px;
   background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
   font-size: 0.7rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -798,12 +798,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 .row-tag--green {
   background: rgba(52, 211, 153, 0.16);
-  color: #34d399;
+  color: var(--color-accent-success-text);
 }
 
 .row-tag--warning {
   background: rgba(251, 191, 36, 0.16);
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 /* Issue #59: warn/danger-Severity fuer den Coverage-Tag (analog zu
@@ -811,12 +811,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
    wiedererkennt). */
 .row-tag--warn {
   background: rgba(251, 191, 36, 0.18);
-  color: #fbbf24;
+  color: var(--color-accent-warning-text);
 }
 
 .row-tag--danger {
   background: rgba(248, 113, 113, 0.18);
-  color: #f87171;
+  color: var(--color-accent-danger-text);
 }
 
 .row-tag__hint {
@@ -837,7 +837,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 .empty-list {
   padding: 16px;
   border-radius: 10px;
-  border: 1px dashed rgba(148, 163, 184, 0.18);
+  border: 1px dashed var(--color-border-default);
   color: var(--color-text-muted);
   text-align: center;
   font-size: 0.85rem;
@@ -856,7 +856,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   color: var(--color-text-muted, #94a3b8);
   font-size: 0.82rem;
   font-weight: 500;
-  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border: 1px dashed var(--color-border-default);
   border-radius: 8px;
   cursor: pointer;
   font-family: inherit;

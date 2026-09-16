@@ -133,7 +133,7 @@ function transactionsLink(card: PeriodCard) {
   flex-direction: column;
   min-width: 0;
   padding: 0.7rem 0.65rem 0;
-  background: rgba(15, 23, 42, 0.44);
+  background: var(--color-bg-panel-soft);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg);
   overflow: hidden;

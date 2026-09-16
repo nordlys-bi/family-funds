@@ -233,9 +233,9 @@ onBeforeUnmount(() => {
 }
 
 .fab-mini__label {
-  background: rgba(15, 23, 42, 0.94);
-  color: #f8fafc;
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--color-bg-modal);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-default);
   padding: 6px 10px;
   border-radius: 8px;
   font-size: 0.82rem;

@@ -51,7 +51,7 @@ defineProps<{
 .form-field__label {
   font-size: 0.84rem;
   font-weight: 700;
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
 }
 
 /* Subtle-Variante: Label schrumpft auf Helper-Hint-Groesse und wird

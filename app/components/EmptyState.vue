@@ -189,8 +189,8 @@ const resolvedKicker = computed(() => variantCopy[props.variant ?? 'no-data']?.k
   text-align: center;
   background:
     radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 32%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 14, 24, 0.98));
-  border: 1px solid rgba(148, 163, 184, 0.16);
+    var(--color-bg-modal);
+  border: 1px solid var(--color-border-default);
   border-radius: 28px;
   box-shadow:
     0 30px 80px rgba(2, 6, 23, 0.44),
@@ -201,25 +201,25 @@ const resolvedKicker = computed(() => variantCopy[props.variant ?? 'no-data']?.k
 .empty-state__card--first-time {
   background:
     radial-gradient(circle at top right, rgba(96, 165, 250, 0.22), transparent 36%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 14, 24, 0.98));
+    var(--color-bg-modal);
 }
 
 .empty-state__card--no-results {
   background:
     radial-gradient(circle at top right, rgba(148, 163, 184, 0.14), transparent 32%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(10, 14, 24, 0.98));
+    var(--color-bg-modal);
 }
 
 .empty-state__card h2 {
   margin: 0;
   font-size: 1.7rem;
-  color: #f8fafc;
+  color: var(--color-text-primary);
 }
 
 .empty-state__card p {
   margin: 0.75rem auto 0;
   max-width: 48ch;
-  color: #94a3b8;
+  color: var(--color-text-muted);
   line-height: 1.65;
 }
 
@@ -233,27 +233,27 @@ const resolvedKicker = computed(() => variantCopy[props.variant ?? 'no-data']?.k
   border-radius: 18px;
   font-size: 1.8rem;
   background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .empty-state__icon--muted {
   background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
+  color: var(--color-text-secondary);
 }
 
 .empty-state__icon--accent {
   background: rgba(59, 130, 246, 0.18);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
 }
 
 .empty-state__icon--success {
   background: rgba(34, 197, 94, 0.18);
-  color: #86efac;
+  color: var(--color-accent-success-text);
 }
 
 .empty-state__icon--warning {
   background: rgba(245, 158, 11, 0.18);
-  color: #fcd34d;
+  color: var(--color-accent-warning-text);
 }
 
 .empty-state__button {
@@ -272,7 +272,7 @@ const resolvedKicker = computed(() => variantCopy[props.variant ?? 'no-data']?.k
 
 .empty-state__button--secondary {
   background: rgba(148, 163, 184, 0.16);
-  color: #e2e8f0;
+  color: var(--color-text-secondary);
 }
 
 .empty-state__button--success {

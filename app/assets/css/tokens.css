@@ -54,6 +54,12 @@
   --color-accent-danger-soft: rgba(239, 68, 68, 0.12);
   --color-accent-danger-text: #fca5a5;
 
+  /* Neutrale Wash-Overlays für Hover/Resting-States auf Oberflächen
+     (Nav-Items, Zeilen, Buttons) — bewusst am Text-/Foreground-Ton statt
+     an einer festen Farbe, damit sie auf jeder Oberfläche funktionieren. */
+  --color-overlay-subtle: rgba(255, 255, 255, 0.03);
+  --color-overlay-hover: rgba(255, 255, 255, 0.06);
+
   /* Radius */
   --radius-sm: 8px;
   --radius-md: 12px;
@@ -140,4 +146,8 @@
   --color-accent-success-text: #047857;
   --color-accent-warning-text: #b45309;
   --color-accent-danger-text: #b91c1c;
+
+  /* Overlays — auf hellem Untergrund dunkel statt weiß washen */
+  --color-overlay-subtle: rgba(15, 23, 42, 0.03);
+  --color-overlay-hover: rgba(15, 23, 42, 0.05);
 }

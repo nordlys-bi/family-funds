@@ -3,8 +3,13 @@ import { onBeforeMount } from 'vue'
 import { useNuxtApp } from '#app'
 import ToastService from 'primevue/toastservice'
 
+// `my-app` ist theme-neutral (kaskadiert base.css-Regeln in Teleport-Ziele),
+// `my-app-dark` steuert zusätzlich PrimeVues eigenes Dark-Preset (Aura) via
+// `darkModeSelector` in nuxt.config.ts. Aktuell immer beide gesetzt (Default
+// bleibt Dark) — der Theme-Switch (separates Issue) entscheidet künftig, ob
+// `my-app-dark` und/oder `data-theme="light"` gesetzt werden.
 useHead({
-  htmlAttrs: { class: 'my-app-dark' },
+  htmlAttrs: { class: 'my-app my-app-dark' },
 })
 
 // PrimeVue 4 ToastService explizit registrieren (issue #58).
@@ -63,6 +68,10 @@ body {
   min-height: 100%;
   background-color: var(--color-bg-page, #0b0f19);
   color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
 }
 
 body {

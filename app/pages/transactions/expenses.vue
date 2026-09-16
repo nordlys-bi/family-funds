@@ -987,7 +987,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(59, 130, 246, 0.16);
-  color: #93c5fd;
+  color: var(--color-accent-primary-text);
   font-size: 0.74rem;
   font-weight: 700;
   white-space: nowrap;
@@ -995,7 +995,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 
 .budget-pill--muted {
   background: rgba(148, 163, 184, 0.16);
-  color: #94a3b8;
+  color: var(--color-text-muted);
 }
 
 .toolbar-month {
@@ -1043,8 +1043,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   gap: 0.6rem;
   padding: 0.85rem 1rem;
   border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-panel-soft);
 }
 
 @media (max-width: 480px) {
