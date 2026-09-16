@@ -90,7 +90,14 @@ function onPointerMove(event: PointerEvent) {
     lockedAxis = Math.abs(deltaX) > Math.abs(deltaY) ? 'x' : 'y'
     if (lockedAxis === 'x') {
       didHorizontalDrag = true
-      ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+      try {
+        ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+      } catch {
+        // Manche Browser/synthetische Events erlauben kein Capture fuer
+        // diese pointerId — der Swipe funktioniert trotzdem, nur ohne
+        // die Garantie, dass Move-Events ausserhalb des Elements noch
+        // ankommen (in der Praxis unkritisch, da wir eh am Element bleiben).
+      }
     }
   }
 
@@ -181,8 +188,32 @@ function onClickCapture(event: MouseEvent) {
 .swipeable__content {
   position: relative;
   touch-action: pan-y;
-  background: inherit;
   border-radius: inherit;
+  /*
+   * Muss UNDURCHSICHTIG sein: das ist die Vordergrund-Karte, die beim
+   * Wischen den Action-Panel darunter (.swipeable__action) freigibt.
+   * --bg-card-row ist aber selbst nur zu 55% deckend (der "Frosted
+   * Glass"-Look der Karten) — als einziger Hintergrund wuerde die
+   * Aktions-Flaeche darunter die ganze Zeit leicht durchscheinen statt
+   * erst im freigewischten Streifen sichtbar zu werden (genau das vom
+   * User gemeldete Problem). Deshalb zwei Ebenen: die normale
+   * Karten-Tönung obenauf (als "Farbverlauf" mit gleicher Start-/End-
+   * Farbe, weil die background-Shorthand nur EINE echte background-color
+   * erlaubt), darunter eine garantiert deckende Flaeche in der Seiten-
+   * Grundfarbe als Sichtblende.
+   */
+  background:
+    linear-gradient(var(--bg-card-row), var(--bg-card-row)),
+    var(--color-bg-page);
+}
+
+/* Card-Hover-Farbe (siehe ListTable.vue) laeuft normalerweise auf
+   .data-table__card — die liegt jetzt aber unsichtbar UNTER dieser
+   deckenden Flaeche, deshalb hier gespiegelt. */
+.swipeable__content:hover {
+  background:
+    linear-gradient(var(--bg-card-row-hover), var(--bg-card-row-hover)),
+    var(--color-bg-page);
 }
 
 .swipeable__content--animating {
