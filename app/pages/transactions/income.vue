@@ -507,11 +507,9 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     />
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
-      <ListPanel
-        :title="`Einnahmen ${monthLabel}`"
-        compact
-        :badge="formatMoney(summary.incomeTotal)"
-      >
+      <!-- Issue "Ausgabenliste deutlich kompakter gestalten": die Summe steht
+           schon oben im Header-Chip (#summary) — hier nicht nochmal wiederholen. -->
+      <ListPanel :title="`Einnahmen ${monthLabel}`" compact>
         <ListTable dense accent="primary">
           <template #head>
             <th>Datum</th>
@@ -599,33 +597,36 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                     +{{ formatMoney(transaction.amount) }}
                   </span>
                 </div>
-                <div class="data-table__card-meta">
-                  <span>{{ formatDate(transaction.date) }}</span>
-                  <span>·</span>
-                  <span>{{ transaction.user.displayName || transaction.user.email }}</span>
-                </div>
-                <div class="data-table__card-actions">
-                  <Button
-                    icon="pi pi-pen-to-square"
-                    severity="secondary"
-                    outlined
-                    size="small"
-                    text
-                    aria-label="Einnahme inline bearbeiten"
-                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                    @click="startInlineEdit(transaction.id)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    severity="danger"
-                    outlined
-                    size="small"
-                    text
-                    aria-label="Einnahme löschen"
-                    :loading="actionLoadingKey === `income:${transaction.id}`"
-                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                    @click="deleteTransaction(transaction)"
-                  />
+                <!-- Issue "Ausgabenliste deutlich kompakter gestalten": Meta
+                     und Aktionen teilen sich eine Zeile statt einer eigenen,
+                     durch Border+Padding abgesetzten Actions-Zeile. -->
+                <div class="data-table__card-footer">
+                  <div class="data-table__card-meta">
+                    <span>{{ formatDate(transaction.date) }}</span>
+                    <span>·</span>
+                    <span>{{ transaction.user.displayName || transaction.user.email }}</span>
+                  </div>
+                  <div class="data-table__card-actions">
+                    <Button
+                      icon="pi pi-pen-to-square"
+                      severity="secondary"
+                      size="small"
+                      text
+                      aria-label="Einnahme inline bearbeiten"
+                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                      @click="startInlineEdit(transaction.id)"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      severity="danger"
+                      size="small"
+                      text
+                      aria-label="Einnahme löschen"
+                      :loading="actionLoadingKey === `income:${transaction.id}`"
+                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                      @click="deleteTransaction(transaction)"
+                    />
+                  </div>
                 </div>
               </template>
             </div>

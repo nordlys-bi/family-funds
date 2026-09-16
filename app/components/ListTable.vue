@@ -263,6 +263,24 @@ defineProps<{
   font-size: 1rem;
   color: var(--text);
 }
+.data-table-mobile :deep(.data-table__card-name) {
+  font-weight: 600;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+/* Issue "Ausgabenliste deutlich kompakter gestalten": Meta-Infos und
+   Zeilen-Aktionen teilen sich eine Zeile statt einer eigenen, durch
+   Border+Padding abgesetzten Actions-Zeile darunter — spart eine ganze
+   Zeile Hoehe pro Karte. Bewusst flex-start (nicht space-between/flex-end):
+   siehe Issue #92-Kommentar unten — Aktionen duerfen nicht an den rechten
+   Rand wandern, sonst kollidieren sie bei kurzen Listen mit dem fixierten
+   Mobile-FAB Speed-Dial unten rechts. */
+.data-table-mobile :deep(.data-table__card-footer) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
 .data-table-mobile :deep(.data-table__card-meta) {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -271,21 +289,14 @@ defineProps<{
   gap: 4px 10px;
   align-items: center;
 }
-.data-table-mobile :deep(.data-table__card-name) {
-  font-weight: 600;
-  color: var(--text);
-  font-size: 0.92rem;
-}
 /* Issue #92: linksbuendig statt flex-end — der Mobile-FAB Speed-Dial
    sitzt fixiert unten rechts und wuerde rechtsbuendige Zeilen-Aktionen
    (Bearbeiten/Loeschen) bei kurzer Liste verdecken. */
 .data-table-mobile :deep(.data-table__card-actions) {
   display: flex;
   justify-content: flex-start;
-  gap: 4px;
-  margin-top: 4px;
-  border-top: 1px solid var(--border-subtle);
-  padding-top: 8px;
+  gap: 0;
+  flex-shrink: 0;
 }
 .data-table-mobile :deep(.data-table__empty) {
   background: var(--bg-card-row);

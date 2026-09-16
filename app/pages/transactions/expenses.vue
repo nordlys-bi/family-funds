@@ -278,8 +278,12 @@ async function clearAllLocalFilters() {
 
 // === Issue #95: Filter-Leiste ========================================
 // Sekundaere Filter (Person / Budget / ohne Budget) leben hinter einem
-// Toggle. Initial offen, wenn per Deep-Link schon ein Filter aktiv ist.
-const filtersOpen = ref(unassignedOnly.value || hasLocalFilters.value)
+// Toggle. Initial offen, wenn per Deep-Link schon ein Filter aktiv ist —
+// AUSSER im Zeitraum-Modus (Klick auf eine Dashboard-Budget-Karte): der
+// Kontext (Budget + Zeitraum) ist durch den Klick bereits vorgegeben, die
+// Filter-Chips muessen nicht direkt sichtbar sein (Issue "Ausgabenliste
+// deutlich kompakter gestalten").
+const filtersOpen = ref(!isRangeMode.value && (unassignedOnly.value || hasLocalFilters.value))
 const activeFilterCount = computed(
   () =>
     (userIdFilter.value ? 1 : 0) +
@@ -780,11 +784,9 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     />
 
     <template v-if="!txLoading && activeHousehold && currentHousehold && visibleTransactions.length > 0">
-      <ListPanel
-        :title="`Ausgaben ${periodOrMonthLabel}`"
-        compact
-        :badge="formatMoney(summary.expenseTotal)"
-      >
+      <!-- Issue "Ausgabenliste deutlich kompakter gestalten": die Summe steht
+           schon oben im Header-Chip (#summary) — hier nicht nochmal wiederholen. -->
+      <ListPanel :title="`Ausgaben ${periodOrMonthLabel}`" compact>
         <ListTable dense accent="primary">
           <template #head>
             <th>Datum</th>
@@ -879,41 +881,44 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   <span class="data-table__card-name">
                     {{ transaction.description || 'Ausgabe' }}
                   </span>
-                  <span class="data-table__card-amount" style="color: rgb(248, 113, 113);">
+                  <span class="data-table__card-amount expense-amount">
                     −{{ formatMoney(transaction.amount) }}
                   </span>
                 </div>
-                <div class="data-table__card-meta">
-                  <span>{{ formatDate(transaction.date) }}</span>
-                  <span>·</span>
-                  <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
-                    {{ budgetLabel(transaction) }}
-                  </span>
-                  <span>·</span>
-                  <span>{{ transaction.user.displayName || transaction.user.email }}</span>
-                </div>
-                <div class="data-table__card-actions">
-                  <Button
-                    icon="pi pi-pen-to-square"
-                    severity="secondary"
-                    outlined
-                    size="small"
-                    text
-                    aria-label="Ausgabe inline bearbeiten"
-                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                    @click="startInlineEdit(transaction.id)"
-                  />
-                  <Button
-                    icon="pi pi-trash"
-                    severity="danger"
-                    outlined
-                    size="small"
-                    text
-                    aria-label="Ausgabe löschen"
-                    :loading="actionLoadingKey === `expense:${transaction.id}`"
-                    :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
-                    @click="deleteTransaction(transaction)"
-                  />
+                <!-- Issue "Ausgabenliste deutlich kompakter gestalten": Meta
+                     und Aktionen teilen sich eine Zeile statt einer eigenen,
+                     durch Border+Padding abgesetzten Actions-Zeile. -->
+                <div class="data-table__card-footer">
+                  <div class="data-table__card-meta">
+                    <span>{{ formatDate(transaction.date) }}</span>
+                    <span>·</span>
+                    <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
+                      {{ budgetLabel(transaction) }}
+                    </span>
+                    <span>·</span>
+                    <span>{{ transaction.user.displayName || transaction.user.email }}</span>
+                  </div>
+                  <div class="data-table__card-actions">
+                    <Button
+                      icon="pi pi-pen-to-square"
+                      severity="secondary"
+                      size="small"
+                      text
+                      aria-label="Ausgabe inline bearbeiten"
+                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                      @click="startInlineEdit(transaction.id)"
+                    />
+                    <Button
+                      icon="pi pi-trash"
+                      severity="danger"
+                      size="small"
+                      text
+                      aria-label="Ausgabe löschen"
+                      :loading="actionLoadingKey === `expense:${transaction.id}`"
+                      :disabled="editingTransactionId !== null && editingTransactionId !== transaction.id"
+                      @click="deleteTransaction(transaction)"
+                    />
+                  </div>
                 </div>
               </template>
             </div>
@@ -982,6 +987,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </template>
 
 <style scoped>
+.expense-amount {
+  color: var(--color-accent-danger-text);
+}
+
 .budget-pill {
   display: inline-block;
   padding: 2px 8px;
