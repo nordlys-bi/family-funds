@@ -18,9 +18,11 @@ defineProps<{
    */
   kicker?: string
   /**
-   * Section-Titel als grosse Ueberschrift.
+   * Section-Titel als grosse Ueberschrift. Optional — wenn eine Page
+   * die Info schon woanders zeigt (Seiten-H1 + Filter-Chips), kann der
+   * ganze Kopfbereich entfallen (kein leerer <h2>, siehe Template).
    */
-  title: string
+  title?: string
   /**
    * Optionaler Text in einem Pill rechts (z. B. "5 Eintraege").
    */
@@ -45,10 +47,10 @@ defineProps<{
       'list-panel--compact': compact,
     }"
   >
-    <div class="list-panel__head">
-      <div class="list-panel__copy">
+    <div v-if="title || kicker || $slots.subtitle || $slots.actions || badge" class="list-panel__head">
+      <div v-if="title || kicker || $slots.subtitle" class="list-panel__copy">
         <Kicker v-if="kicker">{{ kicker }}</Kicker>
-        <h2>{{ title }}</h2>
+        <h2 v-if="title">{{ title }}</h2>
         <slot name="subtitle" />
       </div>
       <div v-if="$slots.actions || badge" class="list-panel__actions">
