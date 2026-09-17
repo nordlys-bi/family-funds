@@ -157,4 +157,16 @@ const hiddenCount = computed(() => props.activity.length - visible.value.length)
   font-size: 0.78rem;
   color: var(--color-text-muted);
 }
+
+/* ListPanel geht ab 639px edge-to-edge (kein horizontales Padding mehr
+   auf .list-panel__body, siehe ListPanel.vue) — hier selbst nachholen,
+   sonst kleben Icon/Betrag am Bildschirmrand. */
+@media (max-width: 639px) {
+  .empty,
+  .list,
+  .more {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
 </style>
