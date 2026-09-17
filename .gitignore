@@ -34,3 +34,5 @@ logs/
 .idea/
 .vscode/
 .agents/
+.worktrees/
+.claude/
