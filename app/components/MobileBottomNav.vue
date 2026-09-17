@@ -37,7 +37,8 @@ const { logout } = useAppAuth()
 // Default-Ziel, markiert aber den ganzen /transactions/-Bereich als
 // active. "Budgets" markiert /budgeting/* komplett (budgets, recurring,
 // savings sind alle "Budgetierung"). Wer eine "Buchung anlegen" will,
-// nutzt den FAB Speed-Dial (extra Komponente, nicht teil dieser Nav).
+// nutzt den "Erfassen"-Button im Header (auf allen Viewport-Groessen
+// sichtbar, siehe app/layouts/default.vue).
 type NavItem = {
   key: string
   label: string
