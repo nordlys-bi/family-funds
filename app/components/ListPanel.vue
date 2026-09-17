@@ -145,6 +145,7 @@ defineProps<{
 @media (max-width: 639px) {
   .list-panel {
     padding: 1rem 0;
+    margin: 0 -1rem;
     background: none;
     border: none;
     border-radius: 0;
