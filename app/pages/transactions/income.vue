@@ -40,6 +40,15 @@ const transactionDialogOpen = ref(false)
 const transactionLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
 
+// Der mobile FAB ueberlappt bei kurzen Listen die rechtsbuendigen
+// Speichern/Abbrechen-Buttons des Inline-Editors (siehe useInlineEditing.ts).
+// Waehrend eine Zeile bearbeitet wird, blenden wir ihn deshalb aus.
+const inlineEditing = useInlineEditing()
+watch(editingTransactionId, (next, prev) => {
+  if (next !== null && prev === null) inlineEditing.start()
+  else if (next === null && prev !== null) inlineEditing.stop()
+})
+
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => currentHousehold.value?.currency ?? activeHousehold.value?.currency ?? 'EUR')
 
@@ -478,6 +487,7 @@ onBeforeUnmount(() => {
     document.removeEventListener('keydown', onEscapeKey)
   }
   stopUndoTick()
+  if (editingTransactionId.value !== null) inlineEditing.stop()
 })
 watch(activeHouseholdId, async () => { await loadAll() })
 

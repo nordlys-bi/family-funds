@@ -8,7 +8,7 @@ const clerkSecretKey = process.env.NUXT_CLERK_SECRET_KEY || ''
 const clerkWebhookSigningSecret = process.env.NUXT_CLERK_WEBHOOK_SIGNING_SECRET || ''
 const isClerkEnabled = !!(clerkPublishableKey && clerkSecretKey)
 
-const modules: string[] = ['@primevue/nuxt-module']
+const modules: string[] = ['@primevue/nuxt-module', '@vite-pwa/nuxt']
 if (isClerkEnabled) {
   modules.push('@clerk/nuxt')
 }
@@ -30,12 +30,53 @@ export default defineNuxtConfig({
 
   app: {
     head: {
+      meta: [
+        // iOS "Zum Home-Bildschirm" (issue #123): eigener App-Name unabhaengig
+        // vom Browser-<title>, Standalone-Start ohne Safari-UI, Statusleiste
+        // passend zum dunklen Default-Theme. `theme-color` selbst ist
+        // reaktiv und wird in app.vue gesetzt (folgt Hell/Dunkel).
+        { name: 'apple-mobile-web-app-title', content: 'Family Funds' },
+        { name: 'apple-mobile-web-app-capable', content: 'yes' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black' },
+      ],
       script: [
         {
           key: 'theme-init',
           innerHTML: themeInitScript,
         },
       ],
+    },
+  },
+
+  // "Add to Home Screen" (issue #123): Manifest + Icons (Favicon, Apple-Touch-Icon,
+  // Maskable, einfache Splash-Screens) werden aus public/favicon.svg generiert,
+  // siehe pwa-assets.config.ts. Der Service-Worker selbst wird bewusst nicht
+  // registriert (client.registerPlugin: false) - das Issue verlangt nur
+  // Homescreen-Icon + Standalone-Modus, kein Offline-Caching einer App mit
+  // Finanzdaten.
+  pwa: {
+    client: {
+      registerPlugin: false,
+    },
+    devOptions: {
+      enabled: true,
+    },
+    pwaAssets: {
+      config: true,
+    },
+    manifest: {
+      name: 'Family Funds',
+      short_name: 'Family Funds',
+      lang: 'de',
+      display: 'standalone',
+      start_url: '/',
+      background_color: '#0b0f19',
+      // Bewusst KEIN manifest.theme_color: vite-plugin-pwa wuerde daraus
+      // eine statische <meta name="theme-color">-Injektion bauen
+      // (NuxtPwaAssets-Component), die mit der reaktiven Variante in
+      // app.vue (folgt Hell/Dunkel) um denselben Tag konkurriert - je
+      // nach unhead-Dedupe-Reihenfolge gewinnt mal die statische, mal die
+      // reaktive. Ohne diesen Wert bleibt app.vue die einzige Quelle.
     },
   },
 
