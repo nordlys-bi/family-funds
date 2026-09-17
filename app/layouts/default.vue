@@ -5,14 +5,6 @@ const { user, logout } = useAppAuth()
 const { households, activeHousehold, setActiveHousehold } = useHousehold()
 const onboarding = useOnboarding()
 const quickCapture = useQuickCapture()
-// Top-Level-Ref fuers Template (auto-unwrap) — steuert u. a. das
-// Ausblenden des FAB, solange der Erfassen-Dialog offen ist.
-const quickCaptureDialogOpen = quickCapture.isOpen
-// Zusaetzlich ausblenden, waehrend eine Ausgabe/Einnahme inline bearbeitet
-// wird — der FAB (fixed, z-index 1200) ueberlappt sonst bei kurzen Listen
-// die rechtsbuendigen Speichern/Abbrechen-Buttons des Inline-Editors und
-// faengt den Tap ab (siehe useInlineEditing.ts).
-const inlineEditingActive = useInlineEditing().isActive
 const config = useRuntimeConfig()
 const isClerkMode = config.public.authMode === 'clerk'
 
@@ -70,44 +62,6 @@ function syncCompactMode(event: MediaQueryListEvent | MediaQueryList) {
 const toggleDesktopSidebar = () => {
   isDesktopCollapsed.value = !isDesktopCollapsed.value
 }
-
-// === FAB-Aktionen ================================================
-// Mobile-only. Das Desktop-Pendant ist der "Erfassen"-Button im Header.
-//
-// Issue #91: "Ausgabe" und "Einnahme" oeffnen jetzt den globalen
-// Erfassen-Dialog (useQuickCapture / <QuickCaptureRoot>) statt zu
-// /transactions/*?new=1 zu navigieren — Buchen ohne Kontextwechsel.
-// Der page-lokale ?new=1-Trigger (useQueryTrigger) bleibt fuer
-// Deep-Links bestehen.
-//
-// "Sparziel" bleibt bewusst Navigation-only: die Savings-Seite hat drei
-// verschiedene Dialoge (Sparziel anlegen / History pro Goal / Booking
-// pro Goal), es gibt keinen einzelnen primären Create-Flow. Wer ein
-// neues Sparziel anlegen will, klickt auf der Savings-Seite den
-// Inline-CTA. Quick-Add ueber den FAB wäre hier mehrdeutig.
-const fabActions = [
-  {
-    key: 'expense',
-    label: 'Ausgabe',
-    icon: 'pi pi-arrow-up-right',
-    tone: 'danger',
-    onSelect: () => openQuickCapture('expense'),
-  },
-  {
-    key: 'income',
-    label: 'Einnahme',
-    icon: 'pi pi-arrow-down-left',
-    tone: 'success',
-    onSelect: () => openQuickCapture('income'),
-  },
-  {
-    key: 'savings',
-    label: 'Sparziel',
-    icon: 'pi pi-star',
-    tone: 'accent',
-    onSelect: () => navigateTo('/budgeting/savings'),
-  },
-] as const
 
 onMounted(async () => {
   if (import.meta.client) {
@@ -317,10 +271,10 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="header-right">
-          <!-- Issue #91: globales Erfassen. Sichtbar ab 640px — darunter
-               uebernimmt der FAB Speed-Dial (komplementaerer Breakpoint,
-               jede Viewport-Groesse hat genau eine Erfassen-Aktion).
-               Tastenkuerzel "e" macht dasselbe auf Desktop. -->
+          <!-- Issue #91: globales Erfassen, auf allen Viewport-Groessen
+               sichtbar (der FAB Speed-Dial, der das auf Mobile mal
+               uebernommen hat, ist wieder ausgebaut). Tastenkuerzel "e"
+               macht dasselbe auf Desktop. -->
           <Button
             v-if="canQuickCapture"
             class="header-capture-btn"
@@ -348,11 +302,6 @@ onBeforeUnmount(() => {
     <!-- Mobile Bottom-Nav (Mobile+Tablet, < 1024px). Versteckt sich selbst
          via @media auf Desktop. Logout lebt jetzt hier, im Mehr-Bottom-Sheet. -->
     <MobileBottomNav />
-
-    <!-- FAB Speed-Dial (Mobile-only, @media versteckt sich selbst auf Desktop).
-         Issue #91: waehrend der globale Erfassen-Dialog offen ist, ausblenden —
-         sonst pokt der FAB durch die Dialog-Maske. -->
-    <FabSpeedDial v-show="!quickCaptureDialogOpen && !inlineEditingActive" :actions="fabActions" />
 
     <!-- Onboarding-Tour (issue #16): 4-Step-Modal, auto-getriggert fuer
          neue User mit leerem Haushalt. Persistiert pro User, ueberlebt
@@ -680,17 +629,8 @@ onBeforeUnmount(() => {
   gap: 0.75rem;
 }
 
-/* Issue #91: "Erfassen"-Button. Komplementaerer Breakpoint zum FAB
-   Speed-Dial (der ab 640px verschwindet) — unter 640px ausblenden,
-   damit nicht beide Affordances gleichzeitig existieren. */
 .header-capture-btn {
   flex-shrink: 0;
-}
-
-@media (max-width: 639px) {
-  .header-capture-btn {
-    display: none;
-  }
 }
 
 .header-user-button {
@@ -724,12 +664,9 @@ onBeforeUnmount(() => {
   }
   .content {
     padding: 1rem;
-    /* Platz für FAB (6.5rem Offset + 3.5rem Hoehe = 10rem) + Bottom-Nav
-       (~4.75rem) + Safe-Area-Inset. Issue #31 hat den FAB nach oben
-       gesetzt, Issue #92 nochmal (--mobile-nav-bottom-offset), daher
-       muss der Scroll-Bereich hier nachziehen, sonst scrollt der letzte
-       Content unter den FAB. */
-    padding-bottom: calc(10.5rem + env(safe-area-inset-bottom, 0px));
+    /* Platz fuer die fixed Bottom-Nav (~4.75rem), damit der letzte
+       Content nicht darunter verschwindet. */
+    padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px));
   }
   .switcher-select {
     min-width: 0;

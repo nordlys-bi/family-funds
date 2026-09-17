@@ -67,7 +67,7 @@ function transactionsLink(card: PeriodCard) {
       <NuxtLink :to="transactionsLink(card)" class="card__main">
         <div class="card__head">
           <span class="card__name">{{ card.name }}</span>
-          <span class="card__period">{{ formatBudgetPeriodLabel(card.periodStart, card.periodEnd) }}</span>
+          <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>
         </div>
         <div class="card__body">
           <BudgetPeriodRing :percent="card.percentUsed" :severity="card.severity" :size="56" class="card__ring" />
@@ -145,6 +145,7 @@ function transactionsLink(card: PeriodCard) {
    Klick-Handler direkt darunter). */
 .card__main {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 0.5rem;
   padding-bottom: 0.7rem;
@@ -192,8 +193,6 @@ function transactionsLink(card: PeriodCard) {
 .card__period {
   font-size: 0.68rem;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
   color: var(--color-text-muted);
 }
 

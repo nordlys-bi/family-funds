@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { formatBudgetPeriodLabel } from '../planning-format'
 
 /**
- * Tests fuer `formatBudgetPeriodLabel` — kuerzestmoegliches Datumsformat
- * fuer die Perioden-Zeile einer Dashboard-Budget-Karte (issue-request:
- * "1.-30.9.26" statt "Sept. 2026" / "14.-20.9.26" statt "KW 38").
+ * Tests fuer `formatBudgetPeriodLabel` — frequenzabhaengiges Label fuer die
+ * Perioden-Zeile einer Dashboard-Budget-Karte, z. B. "KW 38 (14.-20. Sept.)"
+ * (WEEKLY) / "Sept. 2026" (MONTHLY) / "Q3 2026" (QUARTERLY) / "2026"
+ * (YEARLY) / "seit 27.7.26" (ONCE, offen) / "5.3.-31.7.26" (ONCE mit
+ * Nachfolge-Version).
  *
  * `iso(y, m, d)` baut einen ISO-String ueber eine LOKALE Date-Konstruktion
  * (noon, wie die echte App: `startOfPeriod`/`addPeriod` normalisieren auf
@@ -17,37 +19,41 @@ function iso(year: number, month: number, day: number): string {
 }
 
 describe('formatBudgetPeriodLabel', () => {
-  it('MONTHLY: gleicher Monat -> "1.-30.9.26" (periodEnd exklusiv, 1 Tag abgezogen)', () => {
-    // periodEnd = 1. Oktober (exklusiv) -> angezeigt wird der 30. September.
-    expect(formatBudgetPeriodLabel(iso(2026, 9, 1), iso(2026, 10, 1))).toBe('1.-30.9.26')
+  it('MONTHLY -> "Sept. 2026"', () => {
+    // periodEnd = 1. Oktober (exklusiv) -> Periode ist September.
+    expect(formatBudgetPeriodLabel('MONTHLY', iso(2026, 9, 1), iso(2026, 10, 1))).toBe('Sept. 2026')
   })
 
-  it('WEEKLY: gleicher Monat -> "14.-20.9.26"', () => {
-    expect(formatBudgetPeriodLabel(iso(2026, 9, 14), iso(2026, 9, 21))).toBe('14.-20.9.26')
+  it('MONTHLY: Juni/Juli werden ausgeschrieben (CLDR vermeidet "Jun."/"Jul."-Verwechslung)', () => {
+    expect(formatBudgetPeriodLabel('MONTHLY', iso(2026, 6, 1), iso(2026, 7, 1))).toBe('Juni 2026')
+    expect(formatBudgetPeriodLabel('MONTHLY', iso(2026, 7, 1), iso(2026, 8, 1))).toBe('Juli 2026')
   })
 
-  it('QUARTERLY: unterschiedliche Monate, gleiches Jahr -> "1.4.-30.6.26"', () => {
-    expect(formatBudgetPeriodLabel(iso(2026, 4, 1), iso(2026, 7, 1))).toBe('1.4.-30.6.26')
+  it('WEEKLY: gleicher Monat -> "KW 38 (14.-20. Sept.)"', () => {
+    expect(formatBudgetPeriodLabel('WEEKLY', iso(2026, 9, 14), iso(2026, 9, 21))).toBe('KW 38 (14.-20. Sept.)')
   })
 
-  it('YEARLY: unterschiedliche Monate, gleiches Jahr -> "1.1.-31.12.26"', () => {
-    expect(formatBudgetPeriodLabel(iso(2026, 1, 1), iso(2027, 1, 1))).toBe('1.1.-31.12.26')
+  it('WEEKLY: Monatswechsel -> "KW 44 (26. Okt.-1. Nov.)"', () => {
+    expect(formatBudgetPeriodLabel('WEEKLY', iso(2026, 10, 26), iso(2026, 11, 2))).toBe('KW 44 (26. Okt.-1. Nov.)')
   })
 
-  it('WEEKLY ueber einen Jahreswechsel -> "29.12.25-4.1.26"', () => {
-    expect(formatBudgetPeriodLabel(iso(2025, 12, 29), iso(2026, 1, 5))).toBe('29.12.25-4.1.26')
+  it('WEEKLY ueber einen Jahreswechsel -> "KW 53 (28. Dez. 26-3. Jan. 27)"', () => {
+    expect(formatBudgetPeriodLabel('WEEKLY', iso(2026, 12, 28), iso(2027, 1, 4))).toBe('KW 53 (28. Dez. 26-3. Jan. 27)')
+  })
+
+  it('QUARTERLY -> "Q2 2026"', () => {
+    expect(formatBudgetPeriodLabel('QUARTERLY', iso(2026, 4, 1), iso(2026, 7, 1))).toBe('Q2 2026')
+  })
+
+  it('YEARLY -> "2026"', () => {
+    expect(formatBudgetPeriodLabel('YEARLY', iso(2026, 1, 1), iso(2027, 1, 1))).toBe('2026')
   })
 
   it('ONCE offen (periodEnd null) -> "seit D.M.YY", kein Bindestrich-Range', () => {
-    expect(formatBudgetPeriodLabel(iso(2026, 7, 27), null)).toBe('seit 27.7.26')
+    expect(formatBudgetPeriodLabel('ONCE', iso(2026, 7, 27), null)).toBe('seit 27.7.26')
   })
 
-  it('ONCE mit Nachfolge-Version (periodEnd gesetzt) -> normale Range', () => {
-    expect(formatBudgetPeriodLabel(iso(2026, 3, 5), iso(2026, 8, 1))).toBe('5.3.-31.7.26')
-  })
-
-  it('Ein-Tages-Periode (Start und inklusives Ende identisch)', () => {
-    // periodEnd = naechster Tag (exklusiv) -> ein einzelner Tag Spanne.
-    expect(formatBudgetPeriodLabel(iso(2026, 9, 14), iso(2026, 9, 15))).toBe('14.-14.9.26')
+  it('ONCE mit Nachfolge-Version (periodEnd gesetzt) -> kompakte Zahlen-Range', () => {
+    expect(formatBudgetPeriodLabel('ONCE', iso(2026, 3, 5), iso(2026, 8, 1))).toBe('5.3.-31.7.26')
   })
 })
