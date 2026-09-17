@@ -36,6 +36,16 @@ defineProps<{
    * Kompaktere Padding-Variante fuer dichte Listen.
    */
   compact?: boolean
+  /**
+   * Verhindert auf Mobile das edge-to-edge Bleeden ueber die Content-
+   * Padding hinaus (siehe #130/#131) — der Panel-Rahmen selbst (Card-
+   * Look mit Background/Border/Shadow) bleibt trotzdem ausgeblendet.
+   * Fuer Panels, deren Inhalt keine ItemCard/SwipeableListItem-Zeilen
+   * sind, sondern z. B. ein eigenes Karten-Grid mit eigenem Rand
+   * (DashboardBudgetPeriodGrid) — das braucht seinen eigenen
+   * Randabstand, aber keine zusaetzliche Trennlinie/Box vom Panel.
+   */
+  noBleed?: boolean
 }>()
 </script>
 
@@ -45,6 +55,7 @@ defineProps<{
     :class="{
       'list-panel--primary': variant === 'primary',
       'list-panel--compact': compact,
+      'list-panel--no-bleed': noBleed,
     }"
   >
     <div v-if="title || kicker || $slots.subtitle || $slots.actions || badge" class="list-panel__head">
@@ -160,9 +171,13 @@ defineProps<{
     padding: 0 1rem;
   }
 
-  .list-panel__body {
+  .list-panel:not(.list-panel--no-bleed) .list-panel__body {
     gap: 0;
     border-top: 1px solid var(--color-border-subtle);
+  }
+
+  .list-panel--no-bleed .list-panel__body {
+    padding: 0 1rem;
   }
 }
 </style>

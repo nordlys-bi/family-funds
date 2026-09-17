@@ -209,7 +209,7 @@ watch(quickCaptureSavedTick, loadDashboard)
            Budgets (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
            Kalendermonat — ersetzt die alte, kalendermonats-skalierte
            "Budget-Auslastung"-Liste (DashboardBudgetList). -->
-      <ListPanel title="Budgets" :compact="true">
+      <ListPanel title="Budgets" :compact="true" :no-bleed="true">
         <template #actions>
           <NuxtLink to="/budgeting/budgets">
             <Button
