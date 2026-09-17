@@ -230,7 +230,8 @@ defineProps<{
   .data-table-mobile {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 0;
+    border-top: 1px solid var(--border-subtle);
   }
 }
 
@@ -239,22 +240,23 @@ defineProps<{
    Karte. Voraussetzung: die Page gruppiert schon sortiert nach Datum
    (siehe groupedByDate in expenses.vue/income.vue). */
 .data-table-mobile :deep(.data-table__date-separator) {
-  font-size: 0.72rem;
-  font-weight: 700;
+  font-size: 0.7rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
-  padding: 4px 2px 0;
-}
-.data-table-mobile :deep(.data-table__date-separator:first-child) {
-  padding-top: 0;
+  text-align: center;
+  padding: 10px 2px;
+  background: var(--color-bg-panel-soft);
+  border-bottom: 1px solid var(--border-subtle);
 }
 /* Styling-Hooks für Cards, die der Mobile-Slot rendert.
    Pages legen ihre Card-Markup frei, hier ist nur Spacing + Border. */
 .data-table-mobile :deep(.data-table__card) {
-  background: var(--bg-card-row);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
   transition: background 0.12s ease, border-color 0.12s ease;
 }
 .data-table-mobile :deep(.data-table__card:hover) {

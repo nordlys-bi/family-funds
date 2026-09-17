@@ -144,7 +144,24 @@ defineProps<{
 
 @media (max-width: 639px) {
   .list-panel {
-    padding: 1rem;
+    padding: 1rem 0;
+    background: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .list-panel--compact {
+    padding: 0.85rem 0;
+  }
+
+  .list-panel__head {
+    padding: 0 1rem;
+  }
+
+  .list-panel__body {
+    gap: 0;
+    border-top: 1px solid var(--color-border-subtle);
   }
 }
 </style>
