@@ -190,26 +190,20 @@ function onClickCapture(event: MouseEvent) {
   touch-action: pan-y;
   border-radius: inherit;
   /*
-   * Muss UNDURCHSICHTIG sein: das ist die Vordergrund-Karte, die beim
+   * Muss UNDURCHSICHTIG sein: das ist die Vordergrund-Flaeche, die beim
    * Wischen den Action-Panel darunter (.swipeable__action) freigibt.
-   * --bg-card-row ist aber selbst nur zu 55% deckend (der "Frosted
-   * Glass"-Look der Karten) — als einziger Hintergrund wuerde die
-   * Aktions-Flaeche darunter die ganze Zeit leicht durchscheinen statt
-   * erst im freigewischten Streifen sichtbar zu werden (genau das vom
-   * User gemeldete Problem). Deshalb zwei Ebenen: die normale
-   * Karten-Tönung obenauf (als "Farbverlauf" mit gleicher Start-/End-
-   * Farbe, weil die background-Shorthand nur EINE echte background-color
-   * erlaubt), darunter eine garantiert deckende Flaeche in der Seiten-
-   * Grundfarbe als Sichtblende.
+   * --color-bg-page ist eine flache, deckende Farbe (keine Transparenz)
+   * und macht die Reihe optisch unsichtbar (kein Karten-Look mehr).
    */
-  background:
-    linear-gradient(var(--bg-card-row), var(--bg-card-row)),
-    var(--color-bg-page);
+  background: var(--color-bg-page);
 }
 
-/* Card-Hover-Farbe (siehe ListTable.vue) laeuft normalerweise auf
-   .data-table__card — die liegt jetzt aber unsichtbar UNTER dieser
-   deckenden Flaeche, deshalb hier gespiegelt. */
+/* Hover-Farbe (siehe ListTable.vue .data-table__card:hover) laeuft
+   normalerweise auf .data-table__card — die liegt aber unsichtbar UNTER
+   dieser deckenden Flaeche, deshalb hier gespiegelt. --bg-card-row-hover
+   ist selbst nicht ganz deckend, deshalb als Toenung ueber einer
+   garantiert deckenden Seiten-Grundfarbe (gleiche Technik wie vorher,
+   nur mit flacherer Grundfarbe statt Karten-Toenung im Ruhezustand). */
 .swipeable__content:hover {
   background:
     linear-gradient(var(--bg-card-row-hover), var(--bg-card-row-hover)),

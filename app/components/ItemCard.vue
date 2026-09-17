@@ -106,6 +106,12 @@ withDefaults(
     flex-direction: column;
     align-items: stretch;
     gap: 10px;
+    border-radius: 0;
+    border-top-width: 0;
+    border-right-width: 0;
+    border-left-width: 0;
+    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
   }
 
   .item-card__main,
