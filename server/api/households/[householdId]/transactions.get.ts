@@ -2,7 +2,7 @@ import { createError, defineEventHandler, getQuery } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { getMonthWindow } from '../../../utils/budget-evaluation'
-import { parseUuidParam } from '../../../utils/validation'
+import { parseOptionalUuidQuery, parseUuidParam } from '../../../utils/validation'
 
 const DEFAULT_LIMIT = 200
 const MAX_LIMIT = 500
@@ -37,10 +37,30 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                          der geloeschten Items braucht.
  *   - `?unassigned=1`     Nur Ausgaben ohne Budget-Zuordnung (issue #52,
  *                          Dashboard "Handlungsbedarf"-Link). Setzt
- *                          `budgetId: null` auf dem Expense-Read, lässt
- *                          Income + Summary-Aggregate unveraendert
- *                          (expenseTotal === unassignedExpenseTotal wenn
- *                          aktiv).
+ *                          `budgetId: null` auf dem Expense-Read UND im
+ *                          `expenseTotal`-Aggregate (dort dann
+ *                          expenseTotal === unassignedExpenseTotal). Income
+ *                          ist nicht betroffen (kein Budget-Bezug).
+ *   - `?userId=UUID`      Nur Buchungen dieser Person („Wer hat gebucht?“,
+ *                          issue #55) — gilt fuer Ausgaben UND Einnahmen,
+ *                          in Listen und Aggregaten. Keine UUID -> 400.
+ *   - `?budgetId=UUID`    Nur Ausgaben dieses Budgets (issue #55, u. a.
+ *                          Deep-Link der Dashboard-Budget-Karte). Income
+ *                          ist nicht betroffen (kein Budget-Bezug).
+ *                          Keine UUID -> 400. Zusammen mit `?unassigned=1`
+ *                          (schliesst sich aus) ergibt sich die leere Menge.
+ *
+ * Summary (issue #134): Die Aggregate (`expenseTotal`, `incomeTotal`,
+ * `unassignedExpenseTotal`) spiegeln dieselben Filter wie die Listen
+ * (Zeitraum + userId + budgetId + unassigned) — die Badge oben auf den
+ * Seiten muss zur sichtbaren Liste passen. Der Server ist dafuer die Single
+ * Source of Truth, weil die Liste paginiert ist (`limit`) und eine
+ * clientseitige Summe ueber die geladenen Zeilen bei `hasMore` falsch waere.
+ * `unassignedExpenseTotal` ignoriert bewusst `unassigned` (der "Ohne
+ * Budget"-Chip soll auch ohne aktiven Filter seinen Wert zeigen), beachtet
+ * aber `userId`, damit er zur Person-Filterung passt; mit `?budgetId=` ist er
+ * 0. `netTotal` ist immer `incomeTotal - expenseTotal` der jeweils
+ * gelieferten (gefilterten) Werte.
  *
  * Date-Bereich ist der gewählte Monat (issue-spec #9: spaetere `?from&to`-Range
  * ist eigene Iteration). Cursor ist ein date-only Cursor: das letzte Item des
@@ -155,13 +175,31 @@ export default defineEventHandler(async (event) => {
   const includeDeleted = query.includeDeleted === '1'
   const softDeleteFilter = includeDeleted ? {} : { deletedAt: null }
 
+  // Person- und Budget-Filter (issue #55, Server-seitig seit issue #134).
+  // Die Filter gelten fuer Liste UND Summary-Aggregates, damit die Badge zur
+  // sichtbaren Liste passt (siehe Doc-Kommentar oben).
+  const userIdParam = parseOptionalUuidQuery(query, 'userId')
+  const budgetIdParam = parseOptionalUuidQuery(query, 'budgetId')
+  const userFilter = userIdParam ? { userId: userIdParam } : {}
+
   // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
-  // verlinkt auf ?unassigned=1. Setzt budgetId: null auf dem Expense-Read,
-  // lasst Income-Read unveraendert. Summary-Aggregates beziehen sich weiter
-  // auf den Monat (expenseTotal === unassignedExpenseTotal wenn aktiv),
-  // damit der Monats-Tag oben auf der Expenses-Page konsistent bleibt.
+  // verlinkt auf ?unassigned=1. Setzt budgetId: null auf dem Expense-Read UND
+  // im expenseTotal-Aggregate (dort dann expenseTotal === unassignedExpenseTotal),
+  // laesst Income unveraendert (kein Budget-Bezug).
   const unassignedOnly = query.unassigned === '1'
-  const unassignedFilter = unassignedOnly ? { budgetId: null } : {}
+
+  // `unassigned` (budgetId IS NULL) und `budgetId=X` sind AND-verknuepfte
+  // Filter. Beide zusammen sind ein Widerspruch — die leere Menge, nicht
+  // stillschweigend einer der beiden (die Liste war in dem Fall schon vor
+  // #134 leer, als der Budget-Filter noch im Client lief).
+  const budgetFilter =
+    unassignedOnly && budgetIdParam
+      ? { budgetId: { in: [] as string[] } }
+      : unassignedOnly
+        ? { budgetId: null }
+        : budgetIdParam
+          ? { budgetId: budgetIdParam }
+          : {}
 
   // Basis-Zeitraum als eigener Wert: `monthEnd` ist nur bei explizitem
   // `?from` ohne `?to` (offene ONCE-Periode) null — dann faellt `lt` ganz weg,
@@ -175,7 +213,8 @@ export default defineEventHandler(async (event) => {
   const expenseFilter = {
     householdId,
     ...softDeleteFilter,
-    ...unassignedFilter,
+    ...userFilter,
+    ...budgetFilter,
     date: {
       ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
@@ -184,6 +223,7 @@ export default defineEventHandler(async (event) => {
   const incomeFilter = {
     householdId,
     ...softDeleteFilter,
+    ...userFilter,
     date: {
       ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
@@ -244,22 +284,28 @@ export default defineEventHandler(async (event) => {
       },
     }),
     prisma.incomeTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, date: dateRangeFilter },
+      where: { householdId, ...softDeleteFilter, ...userFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, date: dateRangeFilter },
+      where: { householdId, ...softDeleteFilter, ...userFilter, ...budgetFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
-    prisma.expenseTransaction.aggregate({
-      where: {
-        householdId,
-        ...softDeleteFilter,
-        date: dateRangeFilter,
-        budgetId: null,
-      },
-      _sum: { amount: true },
-    }),
+    // Mit aktivem Budget-Filter kann keine Ausgabe "ohne Budget" sein — 0,
+    // ohne DB-Roundtrip. Ohne Budget-Filter: bewusst OHNE `unassigned`-Filter
+    // (siehe Doc-Kommentar), aber mit `userId`.
+    budgetIdParam
+      ? Promise.resolve({ _sum: { amount: 0 } })
+      : prisma.expenseTransaction.aggregate({
+          where: {
+            householdId,
+            ...softDeleteFilter,
+            ...userFilter,
+            date: dateRangeFilter,
+            budgetId: null,
+          },
+          _sum: { amount: true },
+        }),
   ])
 
   const transactions = [

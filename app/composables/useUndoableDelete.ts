@@ -75,10 +75,11 @@ export type UndoableDeleteOptions<TItem extends { id: string }> = {
    */
   onRestoreLocal: (item: TItem) => void
   /**
-   * Optional: Summary nach Restore neu rechnen, weil sich Betraege
-   * aendern koennten. (Fuer Soft-Delete eher unnoetig, weil das
-   * Item schon vorher im Summary war — aber konsistent mit dem
-   * Inline-Edit-Pattern in expenses.vue.)
+   * Optional: wird nach jeder erfolgreichen serverseitigen Aenderung
+   * aufgerufen — nach dem DELETE UND nach dem Restore —, damit die Page
+   * ihre Summary (Badge) neu vom Server holen kann (issue #134). Bei einem
+   * fehlgeschlagenen Call (Rollback) wird es nicht aufgerufen, weil sich
+   * serverseitig nichts geaendert hat.
    */
   onAfterChange?: () => void
   /**
@@ -200,6 +201,9 @@ export function useUndoableDelete<TItem extends { id: string; kind?: UndoableDel
       })
       return
     }
+
+    // Item ist serverseitig soft-deleted — Summary passt nicht mehr zur Liste.
+    options.onAfterChange?.()
 
     // 5-Sekunden-Timer: danach verschwindet der Banner, kein Hard-Delete.
     const timerId = setTimeout(() => {

@@ -38,3 +38,28 @@ export function parseUuidParam(event: H3Event, paramName: string): string {
 
   return value
 }
+
+/**
+ * Liest einen OPTIONALEN UUID-Query-Parameter (z. B. `?userId=`, `?budgetId=`
+ * als Listenfilter). Fehlt der Param oder ist er leer, kommt `null` zurück —
+ * die Pages normalisieren leere Filter ebenfalls zu "kein Filter". Ein
+ * gesetzter Wert, der keine UUID ist, wirft `400` (aus demselben Grund wie
+ * bei `parseUuidParam`: nicht ungeprüft an Prisma durchreichen).
+ */
+export function parseOptionalUuidQuery(
+  query: Record<string, unknown>,
+  paramName: string,
+): string | null {
+  const raw = query[paramName]
+  if (raw === undefined || raw === null || raw === '') return null
+
+  const value = String(raw)
+  if (!UUID_V4_REGEX.test(value)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: `Invalid ${paramName}: must be a UUID`,
+    })
+  }
+
+  return value
+}

@@ -5,10 +5,11 @@
  * Kapselt:
  *  - month-Filter-State (YYYY-MM, Default = aktueller Monat)
  *  - unassignedOnly-Filter (issue #52) — boolean, Default false
- *  - userIdFilter / budgetIdFilter (issue #55) — string|null, lokal angewendet
- *    auf die bereits geladene Monats-Liste (kein API-Roundtrip)
+ *  - userIdFilter / budgetIdFilter (issue #55) — string|null. Werden als
+ *    `?userId=` / `?budgetId=` an den Server geschickt (issue #134), damit
+ *    Liste UND Summary dieselben Filter sehen — siehe `load()`.
  *  - Lade-Logik gegen `GET /api/households/:id/transactions`
- *  - Transactions-Liste + Summary
+ *  - Transactions-Liste + Summary (Summary kommt immer vom Server)
  *  - Ableitungen: monthOptions, monthLabel, monthStart, monthEnd
  *
  * Beide Pages binden den Monats-Spinner an `month` und rufen `load()` nach
@@ -61,16 +62,16 @@ export type UseTransactionListOptions = {
   initialUnassignedOnly?: boolean
   /**
    * Initialer Person-Filter (issue #55). User-ID des Haushalts-Mitglieds.
-   * Wird lokal auf die geladene Liste angewendet, kein API-Roundtrip.
+   * Wird als `?userId=` an den Server geschickt (issue #134).
    * Default null = kein Filter.
    */
   initialUserIdFilter?: string | null
   /**
    * Initialer Budget-Filter (issue #55). Budget-ID des Haushalts.
-   * Wird lokal auf die geladene Liste angewendet, kein API-Roundtrip.
+   * Wird als `?budgetId=` an den Server geschickt (issue #134).
    * Default null = kein Filter. Fuer Income-Listen nicht relevant
-   * (Income-Transaktionen haben kein Budget), wird aber ignoriert
-   * wenn keine Items ein passendes Budget haben.
+   * (Income-Transaktionen haben kein Budget, der Server ignoriert den
+   * Filter dort).
    */
   initialBudgetIdFilter?: string | null
   /**
@@ -94,10 +95,10 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   const month = ref<string>(options.initialMonth && isValidMonthYYYYMM(options.initialMonth) ? options.initialMonth : currentMonthYYYYMM())
   const unassignedOnly = ref<boolean>(Boolean(options.initialUnassignedOnly))
   // Issue #55: Person- und Budget-Filter. string = aktive ID, null = aus.
-  // Werden LOKAL auf die bereits geladene Monats-Liste angewendet, kein
-  // erneuter API-Call. Begruendung: der Server liefert bereits alle
-  // Transaktionen des Haushalts fuer den Monat; die Filter sind eine
-  // View-Sache, die das Neuladen nicht rechtfertigt.
+  // Seit issue #134 filtert der SERVER (`?userId=` / `?budgetId=`), nicht
+  // mehr der Client: nur so passen die Summary-Aggregates (Badge) zur
+  // gefilterten Liste, auch wenn die Liste paginiert ist. Ein Filterwechsel
+  // braucht deshalb ein `load()` durch den Caller (wie bei unassignedOnly).
   const userIdFilter = ref<string | null>(options.initialUserIdFilter ?? null)
   const budgetIdFilter = ref<string | null>(options.initialBudgetIdFilter ?? null)
   // Expliziter Zeitraum statt Monat (siehe UseTransactionListOptions.initialFrom).
@@ -117,46 +118,50 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   const monthEnd = computed(() => monthRange.value?.end ?? null)
 
   /**
-   * Filtert die geladenen Transaktionen nach `kind` plus den aktiven
-   * issue-#55-Filtern (userIdFilter, budgetIdFilter). Pages rufen das
+   * Filtert die geladenen Transaktionen nach `kind`. Pages rufen das
    * auf, um nur die fuer ihre Liste relevanten Items zu zeigen
    * (expense-Page blendet income-Items aus, und umgekehrt).
    *
-   * Filter-Reihenfolge:
-   *  1. kind (expense/income) — Page-spezifisch
-   *  2. userIdFilter — wenn gesetzt, nur Transaktionen dieses Users
-   *  3. budgetIdFilter — wenn gesetzt, nur Transaktionen mit diesem Budget.
-   *     Fuer Income-Listen bleibt der Filter typischerweise null
-   *     (Income-Transaktionen haben kein Budget, der Filter wuerde
-   *     immer alles aussortieren).
-   *
-   * Local-Filter, kein API-Call: der Server hat bereits alle Items
-   * fuer den Monat geliefert, wir schneiden nur die Sicht zurecht.
+   * Person-/Budget-/Unassigned-Filter wendet der Server an (issue #134) —
+   * `transactions` enthaelt schon nur passende Zeilen. Ein zusaetzlicher
+   * Client-Filter waere nicht nur redundant, sondern wuerde bei Aenderungen
+   * am Filter zwischen zwei `load()`-Calls zu einer Liste fuehren, die nicht
+   * zur (Server-)Summary passt.
    */
   function transactionsByKind(kind: TransactionKind) {
-    return transactions.value.filter((transaction) => {
-      if (transaction.kind !== kind) return false
-      if (userIdFilter.value && transaction.user.id !== userIdFilter.value) return false
-      if (budgetIdFilter.value && transaction.budgetId !== budgetIdFilter.value) return false
-      return true
-    })
+    return transactions.value.filter((transaction) => transaction.kind === kind)
   }
 
+  // Laufende Nummer des juengsten load()-Calls. Filter- und Monatswechsel
+  // koennen mehrere Requests ueberlappen; eine spaet eintreffende, veraltete
+  // Antwort darf Liste + Summary nicht mit den Werten eines frueheren Filters
+  // ueberschreiben (die Badge wuerde sonst wieder nicht zur Liste passen).
+  let latestLoad = 0
+
   /**
-   * Laedt Transaktionen + Summary fuer den aktuellen Monat gegen
-   * `GET /api/households/:id/transactions?month=YYYY-MM[&unassigned=1]`.
+   * Laedt Transaktionen + Summary fuer den aktuellen Zeitraum gegen
+   * `GET /api/households/:id/transactions?month=YYYY-MM[&unassigned=1]
+   * [&userId=…][&budgetId=…]` — alle aktiven Filter gehen an den Server,
+   * damit `summary` zur Liste passt (issue #134).
    *
    * @param householdId - aktiver Haushalt. Wenn `null`, wird der State
    *   auf leer zurueckgesetzt (z. B. wenn der User den Haushalt wechselt).
+   * @param options.silent - Refresh im Hintergrund: `loading` bleibt aus
+   *   (die Liste wird nicht durch den Lade-Zustand ausgeblendet) und bei
+   *   einem Fehler bleibt der bisherige State stehen, nur `error` wird
+   *   gesetzt. Gedacht fuer das Nachziehen der Summary nach Inline-Edit,
+   *   Loeschen und Wiederherstellen.
    */
-  async function load(householdId: string | null | undefined) {
+  async function load(householdId: string | null | undefined, options: { silent?: boolean } = {}) {
+    const requestId = ++latestLoad
     if (!householdId) {
       transactions.value = []
       summary.value = { ...EMPTY_SUMMARY }
       error.value = null
+      loading.value = false
       return
     }
-    loading.value = true
+    if (!options.silent) loading.value = true
     error.value = null
     try {
       // unassignedOnly-Param nur anhängen, wenn aktiv — Default-Reads
@@ -166,6 +171,8 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
         ? { from: range.value.from, ...(range.value.to ? { to: range.value.to } : {}) }
         : { month: month.value }
       if (unassignedOnly.value) params.unassigned = '1'
+      if (userIdFilter.value) params.userId = userIdFilter.value
+      if (budgetIdFilter.value) params.budgetId = budgetIdFilter.value
       const response = await $fetch<{
         transactions: TransactionItem[]
         summary: TransactionSummary
@@ -174,14 +181,18 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
       }>(`/api/households/${householdId}/transactions`, {
         params,
       })
+      if (requestId !== latestLoad) return
       transactions.value = response.transactions
       summary.value = response.summary
     } catch (caught: any) {
+      if (requestId !== latestLoad) return
       error.value = caught?.statusMessage ?? caught?.message ?? 'Unbekannter Fehler'
-      transactions.value = []
-      summary.value = { ...EMPTY_SUMMARY }
+      if (!options.silent) {
+        transactions.value = []
+        summary.value = { ...EMPTY_SUMMARY }
+      }
     } finally {
-      loading.value = false
+      if (requestId === latestLoad) loading.value = false
     }
   }
 
@@ -234,9 +245,10 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
 
   /**
    * Setzt den Person-Filter (issue #55). String = aktive User-ID,
-   * null = kein Filter. Wird lokal in `transactionsByKind` angewendet,
-   * triggert keinen Reload — die Page macht URL-Sync + visuelle
-   * Reaktion selbst. Konsistent mit `setUnassignedOnly`-Pattern.
+   * null = kein Filter. Beim naechsten `load()` geht er als `?userId=` an
+   * den Server (issue #134). Triggert bewusst keinen Reload selbst — der
+   * Caller macht `setUserIdFilter(v); await load(hhId)` plus URL-Sync,
+   * konsistent mit `setUnassignedOnly`.
    */
   function setUserIdFilter(value: string | null) {
     userIdFilter.value = value && value.length > 0 ? value : null
@@ -244,8 +256,9 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
 
   /**
    * Setzt den Budget-Filter (issue #55). String = aktive Budget-ID,
-   * null = kein Filter. Lokale Anwendung, kein Reload. Fuer Income-
-   * Pages typischerweise nie gesetzt (Income-Items haben kein Budget).
+   * null = kein Filter. Gleiches Pattern wie `setUserIdFilter`: Caller
+   * laedt neu. Fuer Income-Pages typischerweise nie gesetzt (Income-Items
+   * haben kein Budget).
    */
   function setBudgetIdFilter(value: string | null) {
     budgetIdFilter.value = value && value.length > 0 ? value : null
@@ -256,6 +269,10 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
    * Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
    * unassignedOnly wird bewusst NICHT mitgenommen — das ist
    * semantisch ein separater Filter (issue #52), nicht ein #55-Filter.
+   * Kein Reload — der Caller laedt danach neu.
+   *
+   * (Historischer Name: "Local" hiess, dass die Filter nur clientseitig
+   * wirkten; seit issue #134 filtert der Server.)
    */
   function clearLocalFilters() {
     userIdFilter.value = null
@@ -263,9 +280,8 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   }
 
   /**
-   * True wenn mindestens einer der #55-Local-Filter aktiv ist.
-   * Praktisch fuer UI-Hints ("X von Y Buchungen werden angezeigt")
-   * und Empty-State-Text-Varianten.
+   * True wenn mindestens einer der #55-Filter (Person/Budget) aktiv ist.
+   * Praktisch fuer Empty-State-Text-Varianten.
    */
   const hasLocalFilters = computed(
     () => userIdFilter.value !== null || budgetIdFilter.value !== null,
@@ -276,10 +292,10 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
    * Liefert die Original-Transaktion zurueck, damit der Caller bei
    * einem Server-Fehler rollbacken kann (issue #15 Inline-Edit).
    *
-   * Aktualisiert KEIN Summary-Aggregat — das wird per Reload oder
-   * lokal im Caller nachgezogen, weil die Summary sich aus mehreren
-   * Feldern zusammensetzt (kind, budgetId, amount) und eine lokal
-   * gebaute Reduktion fehleranfaellig ist.
+   * Aktualisiert KEIN Summary-Aggregat — der Caller zieht sie per
+   * `load(hhId, { silent: true })` vom Server nach (issue #134), weil die
+   * Summary von Filtern, Pagination und mehreren Feldern (kind, budgetId,
+   * amount) abhaengt und eine lokal gebaute Reduktion davon abweichen kann.
    */
   function updateTransactionLocal(
     id: string,
@@ -356,28 +372,6 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     transactions.value = next
   }
 
-  /**
-   * Recompute Summary aus den aktuellen Transactions (issue #15
-   * Optimistic-Update-Helper). Wird nach erfolgreichem Inline-Edit
-   * aufgerufen, damit die Tags oben den neuen Wert zeigen ohne
-   * full reload.
-   */
-  function recomputeSummaryFromLocal(): void {
-    const expenses = transactions.value.filter((t) => t.kind === 'expense')
-    const incomes = transactions.value.filter((t) => t.kind === 'income')
-    const expenseTotal = expenses.reduce((sum, t) => sum + t.amount, 0)
-    const incomeTotal = incomes.reduce((sum, t) => sum + t.amount, 0)
-    const unassignedExpenseTotal = expenses
-      .filter((t) => !t.budgetId)
-      .reduce((sum, t) => sum + t.amount, 0)
-    summary.value = {
-      incomeTotal,
-      expenseTotal,
-      netTotal: incomeTotal - expenseTotal,
-      unassignedExpenseTotal,
-    }
-  }
-
   return {
     month,
     range,
@@ -406,6 +400,5 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     restoreTransactionLocal,
     removeTransactionLocal,
     insertTransactionLocal,
-    recomputeSummaryFromLocal,
   }
 }

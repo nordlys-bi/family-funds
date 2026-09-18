@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createError, type H3Event } from 'h3'
-import { parseUuidParam } from '../validation'
+import { parseOptionalUuidQuery, parseUuidParam } from '../validation'
 
 /**
  * Minimaler Fake für das, was `parseUuidParam` aus `event` liest:
@@ -63,5 +63,33 @@ describe('parseUuidParam', () => {
       expect(e.statusCode).toBe(400)
       expect(e.statusMessage).toContain('membershipId')
     }
+  })
+})
+
+describe('parseOptionalUuidQuery', () => {
+  const uuid = '9bff8d9f-7d2e-4f1a-b3c8-1234567890ab'
+
+  it('returns the value for a valid UUID', () => {
+    expect(parseOptionalUuidQuery({ userId: uuid }, 'userId')).toBe(uuid)
+  })
+
+  it('returns null when the param is absent', () => {
+    expect(parseOptionalUuidQuery({}, 'userId')).toBeNull()
+  })
+
+  it('treats an empty string as "no filter" (Pages normalisieren leere Filter zu null)', () => {
+    expect(parseOptionalUuidQuery({ userId: '' }, 'userId')).toBeNull()
+  })
+
+  it('throws 400 for a value that is not a UUID', () => {
+    expect(() => parseOptionalUuidQuery({ budgetId: 'abc' }, 'budgetId')).toThrowError(
+      expect.objectContaining({ statusCode: 400, statusMessage: expect.stringContaining('budgetId') }),
+    )
+  })
+
+  it('throws 400 for a repeated param (?userId=a&userId=b arrives as an array)', () => {
+    expect(() => parseOptionalUuidQuery({ userId: [uuid, uuid] }, 'userId')).toThrowError(
+      expect.objectContaining({ statusCode: 400 }),
+    )
   })
 })
