@@ -123,6 +123,24 @@ describe('useUndoableDelete — deleteWithUndo', () => {
     )
   })
 
+  it('calls onAfterChange after a successful DELETE so the page can refresh its summary (issue #134)', async () => {
+    fetchMock.mockResolvedValue({ data: { kind: 'expense', deleted: true } })
+    const h = makeHarness()
+
+    await h.deleteWithUndo(makeItem())
+
+    expect(h.onAfterChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not call onAfterChange when the DELETE fails (nothing changed server-side)', async () => {
+    fetchMock.mockRejectedValue(new Error('Network down'))
+    const h = makeHarness()
+
+    await h.deleteWithUndo(makeItem())
+
+    expect(h.onAfterChange).not.toHaveBeenCalled()
+  })
+
   it('does nothing if householdId is null', async () => {
     const h = makeHarness({ householdId: null })
     await h.deleteWithUndo(makeItem())
@@ -188,7 +206,8 @@ describe('useUndoableDelete — undo', () => {
       { method: 'POST' },
     )
     expect(h.onRestoreLocal).toHaveBeenCalledWith(item)
-    expect(h.onAfterChange).toHaveBeenCalled()
+    // Einmal nach dem DELETE, einmal nach dem Restore (issue #134).
+    expect(h.onAfterChange).toHaveBeenCalledTimes(2)
     expect(h.pending.value.has(EXPENSE_ID)).toBe(false)
   })
 

@@ -92,7 +92,6 @@ const updateTransactionLocal = tx.updateTransactionLocal
 const restoreTransactionLocal = tx.restoreTransactionLocal
 const removeTransactionLocal = tx.removeTransactionLocal
 const insertTransactionLocal = tx.insertTransactionLocal
-const recomputeSummaryFromLocal = tx.recomputeSummaryFromLocal
 
 const visibleTransactions = computed(() => transactionsByKind('income'))
 
@@ -150,11 +149,12 @@ function buildRouteQuery(options: { monthOverride?: string } = {}): Record<strin
   return query
 }
 
-// Issue #55: Person-Filter aendern. Schreibt in den lokalen Composable-
-// State (kein Reload noetig, weil der Server bereits alle Items geliefert
-// hat und der Filter nur die View zurechtschneidet) und synct die URL.
+// Issue #55: Person-Filter aendern. Schreibt in den Composable-State, laedt
+// neu (der Server filtert Liste UND Summary, issue #134 — die Badge
+// "Einnahmen" muss zur gefilterten Liste passen) und synct die URL.
 async function onUserIdFilterChange(value: string | null) {
   setUserIdFilter(value)
+  await loadTransactions(activeHouseholdId.value)
   await router.replace({ query: buildRouteQuery() })
 }
 
@@ -162,6 +162,7 @@ async function onUserIdFilterChange(value: string | null) {
 // anzeigen"-Buttons in der Empty-State.
 async function clearAllLocalFilters() {
   clearLocalFilters()
+  await loadTransactions(activeHouseholdId.value)
   await router.replace({ query: buildRouteQuery() })
 }
 
@@ -203,13 +204,17 @@ const activeFilterChips = computed<FilterChip[]>(() => {
 })
 
 // Issue #55: reaktive Sync, wenn der User per Browser-Back / -Forward
-// die URL aendert. KEIN load()-Call noetig, weil die Local-Filter
-// keinen Server-Roundtrip ausloesen.
+// die URL aendert. Neu laden, weil der Server filtert (issue #134). Der
+// Change-Handler oben laedt selbst, bevor er die URL setzt — dann ist
+// `next === userIdFilter.value` und hier passiert nichts (kein Doppel-Load).
 watch(
   () => route.query.userId,
-  (newValue) => {
+  async (newValue) => {
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
-    if (next !== userIdFilter.value) setUserIdFilter(next)
+    if (next !== userIdFilter.value) {
+      setUserIdFilter(next)
+      await loadTransactions(activeHouseholdId.value)
+    }
   },
 )
 
@@ -307,8 +312,10 @@ async function saveInlineEdit(
       },
     })
     editingTransactionId.value = null
-    recomputeSummaryFromLocal()
     notice.value = { severity: 'success', text: 'Einnahme wurde aktualisiert.' }
+    // Summary (Badge) + Liste vom Server nachziehen (issue #134), ohne
+    // Lade-Zustand — siehe expenses.vue.
+    await loadTransactions(activeHouseholdId.value, { silent: true })
   } catch (error: any) {
     // Rollback auf den Original-Wert (issue #15 Acceptance Criteria).
     restoreTransactionLocal(transactionId, original)
@@ -365,7 +372,9 @@ const undoableDelete = useUndoableDelete<{ id: string; description?: string | nu
   onRestoreLocal: (item) => {
     insertTransactionLocal(item as never)
   },
-  onAfterChange: () => recomputeSummaryFromLocal(),
+  // Nach Loeschen UND Wiederherstellen die Summary (Badge) vom Server
+  // nachziehen (issue #134), im Hintergrund ohne Lade-Zustand.
+  onAfterChange: () => { void loadTransactions(activeHouseholdId.value, { silent: true }) },
 })
 
 // pending + undo + dismiss aus dem Composable, damit der <UndoSnackbar />
@@ -501,7 +510,12 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 <template>
   <ListPageShell title="Einnahmen">
     <template #summary>
-      <Tag severity="success" :value="`Einnahmen ${formatMoney(summary.incomeTotal)}`" />
+      <!-- Bei aktivem Person-Filter ist das die Summe der gefilterten Liste,
+           nicht des ganzen Monats (issue #134). -->
+      <Tag
+        severity="success"
+        :value="`${activeFilterCount > 0 ? 'Einnahmen (gefiltert)' : 'Einnahmen'} ${formatMoney(summary.incomeTotal)}`"
+      />
     </template>
 
     <template #toolbar>

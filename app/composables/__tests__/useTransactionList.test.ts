@@ -14,7 +14,9 @@ import { useTransactionList } from '../useTransactionList'
  *  - Error-Path: error.value wird gesetzt, transactions zurueckgesetzt
  *  - `setMonth(valid, hh)` aktualisiert month + reload
  *  - `setMonth(invalid, hh)` setzt error ohne reload
- *  - `transactionsByKind('expense')` filtert korrekt
+ *  - `transactionsByKind('expense')` filtert nach kind
+ *  - Person-/Budget-Filter gehen als Query-Params an den Server (issue #134)
+ *  - `load(hh, { silent: true })` + Schutz vor veralteten Antworten
  *  - `monthOptions` liefert 12 Monate
  */
 
@@ -313,25 +315,25 @@ describe('useTransactionList — unassignedOnly filter (issue #52)', () => {
 })
 
 /**
- * Tests fuer die #55 Local-Filter (Person + Budget).
+ * Tests fuer die #55 Filter (Person + Budget), seit issue #134 Server-seitig.
  *
  * Wichtige Eigenschaften:
- *  - Local-Filter triggern KEINEN API-Roundtrip (die Monats-Liste ist
- *    bereits geladen, wir schneiden nur die Sicht zurecht)
- *  - `transactionsByKind` wendet kind + userId + budgetId in dieser
- *    Reihenfolge an
+ *  - Die Filter gehen als `?userId=` / `?budgetId=` an den Server, damit
+ *    Liste UND Summary (Badge) dieselben Filter sehen
+ *  - `transactionsByKind` filtert nur noch nach kind — die Zeilen in
+ *    `transactions` sind schon vom Server gefiltert
+ *  - Die Setter laden nicht selbst; der Caller ruft danach `load()` (wie
+ *    bei `setUnassignedOnly`)
  *  - Leere Strings werden zu null normalisiert (kein "leerer Filter")
  *  - `clearLocalFilters` leert nur die #55-Filter, nicht unassignedOnly
  *  - `hasLocalFilters` ist true sobald mindestens einer der beiden
  *    #55-Filter aktiv ist
  */
-describe('useTransactionList — local filters (issue #55)', () => {
-  const sampleTransactions = [
-    { id: 'e-1', kind: 'expense' as const, amount: 100, description: 'A', date: '2026-05-10', budgetId: 'b-1', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
-    { id: 'e-2', kind: 'expense' as const, amount: 200, description: 'B', date: '2026-05-08', budgetId: 'b-2', user: { id: 'u-2', displayName: 'Maria', email: 'm@x' } },
-    { id: 'e-3', kind: 'expense' as const, amount: 300, description: 'C', date: '2026-05-05', budgetId: null, user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
-    { id: 'i-1', kind: 'income' as const, amount: 5000, description: 'Gehalt', date: '2026-05-01', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
-  ]
+describe('useTransactionList — person/budget filters (issue #55, server-side since #134)', () => {
+  const emptyResponse = {
+    transactions: [],
+    summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 },
+  }
 
   it('defaults userIdFilter and budgetIdFilter to null', () => {
     const list = useTransactionList()
@@ -350,67 +352,74 @@ describe('useTransactionList — local filters (issue #55)', () => {
     expect(list.hasLocalFilters.value).toBe(true)
   })
 
-  it('does NOT add userId or budgetId to the fetch params (local-only filter)', async () => {
-    fetchMock.mockResolvedValue({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+  it('sends userId and budgetId as fetch params when set', async () => {
+    fetchMock.mockResolvedValue(emptyResponse)
     const list = useTransactionList({
       initialMonth: '2026-05',
       initialUserIdFilter: 'u-1',
       initialBudgetIdFilter: 'b-1',
     })
     await list.load('hh-1')
-    const call = fetchMock.mock.calls[0][1] as { params: Record<string, string> }
-    expect(call.params).toEqual({ month: '2026-05' })
-    expect(call.params.userId).toBeUndefined()
-    expect(call.params.budgetId).toBeUndefined()
+    const call = fetchMock.mock.calls[0]![1] as { params: Record<string, string> }
+    expect(call.params).toEqual({ month: '2026-05', userId: 'u-1', budgetId: 'b-1' })
   })
 
-  it('filters transactionsByKind by userId when set', async () => {
+  it('sends all filters together with a from/to range and unassigned', async () => {
+    fetchMock.mockResolvedValue(emptyResponse)
+    const list = useTransactionList({
+      initialFrom: '2026-09-14T12:00:00.000Z',
+      initialTo: '2026-09-21T12:00:00.000Z',
+      initialUnassignedOnly: true,
+      initialUserIdFilter: 'u-1',
+    })
+    await list.load('hh-1')
+    const call = fetchMock.mock.calls[0]![1] as { params: Record<string, string> }
+    expect(call.params).toEqual({
+      from: '2026-09-14T12:00:00.000Z',
+      to: '2026-09-21T12:00:00.000Z',
+      unassigned: '1',
+      userId: 'u-1',
+    })
+  })
+
+  it('omits userId and budgetId when the filters are off', async () => {
+    fetchMock.mockResolvedValue(emptyResponse)
+    const list = useTransactionList({ initialMonth: '2026-05' })
+    await list.load('hh-1')
+    const call = fetchMock.mock.calls[0]![1] as { params: Record<string, string> }
+    expect(call.params).toEqual({ month: '2026-05' })
+  })
+
+  it('uses the summary from the server as-is (issue #134: Badge = gefilterte Summe)', async () => {
+    // Server hat nach userId gefiltert: die Summe (3000) passt zu den
+    // gelieferten Zeilen, nicht zur Gesamtsumme des Monats.
     fetchMock.mockResolvedValue({
-      transactions: sampleTransactions,
-      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+      transactions: [
+        { id: 'e-1', kind: 'expense', amount: 1000, description: 'A', date: '2026-05-10', budgetId: 'b-1', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+        { id: 'e-3', kind: 'expense', amount: 2000, description: 'C', date: '2026-05-05', budgetId: null, user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+      ],
+      summary: { incomeTotal: 0, expenseTotal: 3000, netTotal: -3000, unassignedExpenseTotal: 2000 },
     })
     const list = useTransactionList({ initialUserIdFilter: 'u-1' })
     await list.load('hh-1')
-    const janExpenses = list.transactionsByKind('expense')
-    expect(janExpenses).toHaveLength(2)
-    expect(janExpenses.every((t) => t.user.id === 'u-1')).toBe(true)
+    expect(list.summary.value.expenseTotal).toBe(3000)
+    expect(list.summary.value.unassignedExpenseTotal).toBe(2000)
   })
 
-  it('filters transactionsByKind by budgetId when set', async () => {
+  it('transactionsByKind filters by kind only — the server already applied person/budget', async () => {
     fetchMock.mockResolvedValue({
-      transactions: sampleTransactions,
-      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
+      transactions: [
+        { id: 'e-1', kind: 'expense', amount: 100, description: 'A', date: '2026-05-10', budgetId: 'b-1', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+        { id: 'i-1', kind: 'income', amount: 5000, description: 'Gehalt', date: '2026-05-01', user: { id: 'u-1', displayName: 'Jan', email: 'j@x' } },
+      ],
+      summary: { incomeTotal: 5000, expenseTotal: 100, netTotal: 4900, unassignedExpenseTotal: 0 },
     })
-    const list = useTransactionList({ initialBudgetIdFilter: 'b-1' })
+    // Filter-State passt bewusst NICHT zur Zeile (u-99 / b-99): ein
+    // zusaetzlicher Client-Filter wuerde die Zeile hier wegschneiden.
+    const list = useTransactionList({ initialUserIdFilter: 'u-99', initialBudgetIdFilter: 'b-99' })
     await list.load('hh-1')
-    // Nur die eine Transaktion mit budgetId=b-1. income-Items ohne
-    // budgetId werden durch den Filter ebenfalls ausgeschlossen
-    // (weil budgetId null !== 'b-1').
-    const matched = list.transactionsByKind('expense')
-    expect(matched).toHaveLength(1)
-    expect(matched[0].id).toBe('e-1')
-  })
-
-  it('combines userId and budgetId filters (AND)', async () => {
-    fetchMock.mockResolvedValue({
-      transactions: sampleTransactions,
-      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
-    })
-    const list = useTransactionList({ initialUserIdFilter: 'u-1', initialBudgetIdFilter: 'b-1' })
-    await list.load('hh-1')
-    const matched = list.transactionsByKind('expense')
-    expect(matched).toHaveLength(1)
-    expect(matched[0].id).toBe('e-1')
-  })
-
-  it('returns empty list when userId does not match', async () => {
-    fetchMock.mockResolvedValue({
-      transactions: sampleTransactions,
-      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
-    })
-    const list = useTransactionList({ initialUserIdFilter: 'u-99' })
-    await list.load('hh-1')
-    expect(list.transactionsByKind('expense')).toHaveLength(0)
+    expect(list.transactionsByKind('expense').map((t) => t.id)).toEqual(['e-1'])
+    expect(list.transactionsByKind('income').map((t) => t.id)).toEqual(['i-1'])
   })
 
   it('setUserIdFilter / setBudgetIdFilter update state', () => {
@@ -473,21 +482,172 @@ describe('useTransactionList — local filters (issue #55)', () => {
     expect(list.hasLocalFilters.value).toBe(false)
   })
 
-  it('does not refetch when local filters change', async () => {
-    fetchMock.mockResolvedValue({
-      transactions: sampleTransactions,
-      summary: { incomeTotal: 5000, expenseTotal: 600, netTotal: 4400, unassignedExpenseTotal: 300 },
-    })
-    const list = useTransactionList()
+  it('setters do not fetch on their own; the next load() sends the changed params', async () => {
+    fetchMock.mockResolvedValue(emptyResponse)
+    const list = useTransactionList({ initialMonth: '2026-05' })
     await list.load('hh-1')
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     list.setUserIdFilter('u-1')
     list.setBudgetIdFilter('b-1')
-    // Kein weiterer API-Call, weil die Filter nur die View zurechtschneiden.
+    // Der Caller (Page) laedt nach dem Setzen selbst neu — wie bei unassigned.
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
-    // transactionsByKind sieht die gefilterte View, ohne dass load() noetig war.
-    expect(list.transactionsByKind('expense')).toHaveLength(1)
+    await list.load('hh-1')
+    const second = fetchMock.mock.calls[1]![1] as { params: Record<string, string> }
+    expect(second.params).toEqual({ month: '2026-05', userId: 'u-1', budgetId: 'b-1' })
+
+    // Filter zuruecksetzen -> naechster Load ist wieder ungefiltert
+    list.clearLocalFilters()
+    await list.load('hh-1')
+    const third = fetchMock.mock.calls[2]![1] as { params: Record<string, string> }
+    expect(third.params).toEqual({ month: '2026-05' })
+  })
+})
+
+/**
+ * `load(hh, { silent: true })` (issue #134): Refresh der Summary nach
+ * Inline-Edit / Loeschen / Wiederherstellen, ohne dass die Liste durch den
+ * Lade-Zustand ausgeblendet wird. Plus: veraltete Antworten werden verworfen.
+ */
+describe('useTransactionList — silent reload + stale responses (issue #134)', () => {
+  const row = (id: string, amount: number) => ({
+    id,
+    kind: 'expense' as const,
+    amount,
+    description: id,
+    date: '2026-05-10',
+    budgetId: 'b-1',
+    user: { id: 'u-1', displayName: 'Jan', email: 'j@x' },
+  })
+
+  it('silent load does not toggle `loading`', async () => {
+    let resolveFetch: (value: any) => void = () => {}
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve }))
+    const list = useTransactionList()
+    const promise = list.load('hh-1', { silent: true })
+    expect(list.loading.value).toBe(false)
+    resolveFetch({ transactions: [], summary: { incomeTotal: 0, expenseTotal: 0, netTotal: 0, unassignedExpenseTotal: 0 } })
+    await promise
+    expect(list.loading.value).toBe(false)
+  })
+
+  it('silent load replaces the summary with the server value after a local edit', async () => {
+    // Ursache 3 aus dem Issue: mehr Ausgaben als die Seite geladen hat.
+    // Lokal summiert waere 1000 — die Server-Summe (99000) ist massgeblich.
+    fetchMock.mockResolvedValueOnce({
+      transactions: [row('e-1', 1000)],
+      summary: { incomeTotal: 0, expenseTotal: 99000, netTotal: -99000, unassignedExpenseTotal: 0 },
+    })
+    const list = useTransactionList()
+    await list.load('hh-1')
+
+    list.updateTransactionLocal('e-1', { amount: 1500 })
+
+    fetchMock.mockResolvedValueOnce({
+      transactions: [row('e-1', 1500)],
+      summary: { incomeTotal: 0, expenseTotal: 99500, netTotal: -99500, unassignedExpenseTotal: 0 },
+    })
+    await list.load('hh-1', { silent: true })
+    expect(list.summary.value.expenseTotal).toBe(99500)
+    expect(list.transactions.value[0]?.amount).toBe(1500)
+  })
+
+  it('silent load keeps list and summary on failure, but reports the error', async () => {
+    fetchMock.mockResolvedValueOnce({
+      transactions: [row('e-1', 1000)],
+      summary: { incomeTotal: 0, expenseTotal: 1000, netTotal: -1000, unassignedExpenseTotal: 0 },
+    })
+    const list = useTransactionList()
+    await list.load('hh-1')
+
+    fetchMock.mockRejectedValueOnce(new Error('Netzwerk weg'))
+    await list.load('hh-1', { silent: true })
+
+    expect(list.error.value).toBe('Netzwerk weg')
+    expect(list.transactions.value).toHaveLength(1)
+    expect(list.summary.value.expenseTotal).toBe(1000)
+  })
+
+  it('a non-silent load failure still clears the list (unchanged behaviour)', async () => {
+    fetchMock.mockResolvedValueOnce({
+      transactions: [row('e-1', 1000)],
+      summary: { incomeTotal: 0, expenseTotal: 1000, netTotal: -1000, unassignedExpenseTotal: 0 },
+    })
+    const list = useTransactionList()
+    await list.load('hh-1')
+
+    fetchMock.mockRejectedValueOnce(new Error('Netzwerk weg'))
+    await list.load('hh-1')
+
+    expect(list.transactions.value).toEqual([])
+    expect(list.summary.value.expenseTotal).toBe(0)
+  })
+
+  it('discards a stale response that arrives after a newer load (Filter schnell gewechselt)', async () => {
+    const resolvers: Array<(value: any) => void> = []
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolvers.push(resolve) }))
+    const list = useTransactionList()
+
+    list.setUserIdFilter('u-1')
+    const first = list.load('hh-1')
+    list.setUserIdFilter('u-2')
+    const second = list.load('hh-1')
+
+    // Die neuere Anfrage (u-2) antwortet zuerst, die aeltere (u-1) danach.
+    resolvers[1]!({
+      transactions: [row('e-u2', 200)],
+      summary: { incomeTotal: 0, expenseTotal: 200, netTotal: -200, unassignedExpenseTotal: 0 },
+    })
+    await second
+    resolvers[0]!({
+      transactions: [row('e-u1', 100)],
+      summary: { incomeTotal: 0, expenseTotal: 100, netTotal: -100, unassignedExpenseTotal: 0 },
+    })
+    await first
+
+    expect(list.transactions.value.map((t) => t.id)).toEqual(['e-u2'])
+    expect(list.summary.value.expenseTotal).toBe(200)
+    expect(list.loading.value).toBe(false)
+  })
+
+  it('a stale failure does not clobber the newer result', async () => {
+    const resolvers: Array<{ resolve: (value: any) => void; reject: (reason: unknown) => void }> = []
+    fetchMock.mockImplementation(() => new Promise((resolve, reject) => { resolvers.push({ resolve, reject }) }))
+    const list = useTransactionList()
+
+    const first = list.load('hh-1')
+    const second = list.load('hh-1')
+
+    resolvers[1]!.resolve({
+      transactions: [row('e-2', 200)],
+      summary: { incomeTotal: 0, expenseTotal: 200, netTotal: -200, unassignedExpenseTotal: 0 },
+    })
+    await second
+    resolvers[0]!.reject(new Error('alt und kaputt'))
+    await first
+
+    expect(list.error.value).toBeNull()
+    expect(list.transactions.value).toHaveLength(1)
+  })
+
+  it('load(null) drops an in-flight response and resets loading', async () => {
+    let resolveFetch: (value: any) => void = () => {}
+    fetchMock.mockImplementation(() => new Promise((resolve) => { resolveFetch = resolve }))
+    const list = useTransactionList()
+
+    const inFlight = list.load('hh-1')
+    expect(list.loading.value).toBe(true)
+    await list.load(null)
+    expect(list.loading.value).toBe(false)
+
+    resolveFetch({
+      transactions: [row('e-1', 100)],
+      summary: { incomeTotal: 0, expenseTotal: 100, netTotal: -100, unassignedExpenseTotal: 0 },
+    })
+    await inFlight
+
+    expect(list.transactions.value).toEqual([])
+    expect(list.summary.value.expenseTotal).toBe(0)
   })
 })
