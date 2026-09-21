@@ -28,6 +28,17 @@ export const useHousehold = () => {
   // ist mit einem TypeError abgebrochen — u.a. das Einladen von Mitgliedern.
   const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 
+  // Zentrale Owner-Pruefung (issue #128). Spiegelt die serverseitigen
+  // `requireHouseholdOwner`-Endpoints (Budgets/Plaene/Sparziele anlegen,
+  // bearbeiten, loeschen; Haushalt, Mitglieder, Einladungen) — die UI
+  // bietet diese Aktionen MEMBERn gar nicht erst an, statt sie erst beim
+  // Speichern mit 403 scheitern zu lassen. NICHT damit sperren: Buchungen,
+  // Sparziel-Einzahlungen/-Entnahmen und "als bezahlt markieren" — die
+  // duerfen alle Mitglieder (`requireHouseholdMembership`). Die Rolle kommt
+  // aus `/api/households` und steht damit schon vor dem ersten Seiten-Fetch
+  // fest (im Gegensatz zur Rolle aus dem Mitglieder-Detail der Seiten).
+  const canManageHousehold = computed(() => activeHousehold.value?.role === 'OWNER')
+
   // Persist the active household ID in a cookie
   const activeHouseholdIdCookie = useCookie<string | null>('active_household_id', {
     path: '/',
@@ -91,6 +102,7 @@ export const useHousehold = () => {
     households,
     activeHousehold,
     activeHouseholdId,
+    canManageHousehold,
     loading,
     fetchHouseholds,
     setActiveHousehold,

@@ -18,8 +18,7 @@ type HouseholdDetail = {
   invitations: { id: string }[]
 }
 
-const { user } = useAppAuth()
-const { activeHousehold, loading: householdsLoading, fetchHouseholds, setActiveHousehold } = useHousehold()
+const { activeHousehold, canManageHousehold, loading: householdsLoading, fetchHouseholds, setActiveHousehold } = useHousehold()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -35,10 +34,6 @@ const createForm = ref({ name: '' })
 const FIXED_CURRENCY = 'EUR'
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
-const canManageHousehold = computed(() => {
-  const role = currentHousehold.value?.members.find((member) => member.user.id === user.value?.id)?.role
-  return role === 'OWNER'
-})
 
 const openCreateHouseholdDialog = () => {
   createForm.value = { name: '' }

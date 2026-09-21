@@ -28,7 +28,7 @@ type HouseholdDetail = {
 }
 
 const { user } = useAppAuth()
-const { activeHousehold, activeHouseholdId, fetchHouseholds } = useHousehold()
+const { activeHousehold, activeHouseholdId, canManageHousehold, fetchHouseholds } = useHousehold()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
 const currentLoading = ref(false)
@@ -39,11 +39,6 @@ const inviteDialogOpen = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
 const inviteForm = ref({ email: '', role: 'MEMBER' as 'OWNER' | 'MEMBER' })
-
-const canManageHousehold = computed(() => {
-  const role = currentHousehold.value?.members.find((member) => member.user.id === user.value?.id)?.role
-  return role === 'OWNER'
-})
 
 // First-Time-Logik (issue #13): nur ein Mitglied = der User selbst = first-time.
 const isFirstRunHousehold = computed(() => isFirstRun(activeHousehold.value))

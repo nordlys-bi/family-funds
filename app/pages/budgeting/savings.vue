@@ -47,7 +47,7 @@ type PlanningHousehold = {
 type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
-const { activeHousehold, fetchHouseholds } = useHousehold()
+const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
 const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -320,10 +320,17 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     </template>
 
     <template #toolbar>
-      <Button label="Sparziel anlegen" icon="pi pi-plus" severity="success" @click="openSavingsDialog" />
+      <Button v-if="canManageHousehold" label="Sparziel anlegen" icon="pi pi-plus" severity="success" @click="openSavingsDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
+
+    <!-- OWNER-only Erklaerung (issue #128): Sparziele anlegen/bearbeiten/
+         loeschen sind serverseitig Owner-only. Einzahlen/Entnehmen/Bewegungen
+         duerfen dagegen alle Mitglieder (seit #36) und bleiben sichtbar. -->
+    <Message v-if="activeHousehold && !canManageHousehold" severity="warn" variant="simple">
+      Nur Owner können Sparziele anlegen, bearbeiten und löschen. Einzahlen und Entnehmen können alle Mitglieder.
+    </Message>
 
     <EmptyState
       :loading="loading"
@@ -337,8 +344,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-star"
       icon-tone="warning"
       headline="Noch keine Sparziele"
-      description="Definiere dein erstes Sparziel, um zu sehen, wie viel du monatlich zurücklegen musst."
-      :cta="{ label: 'Sparziel anlegen', onClick: openSavingsDialog, severity: 'warning' }"
+      :description="canManageHousehold
+        ? 'Definiere dein erstes Sparziel, um zu sehen, wie viel du monatlich zurücklegen musst.'
+        : 'Ein Owner des Haushalts kann Sparziele anlegen, um zu sehen, wie viel monatlich zurückgelegt werden muss.'"
+      :cta="canManageHousehold
+        ? { label: 'Sparziel anlegen', onClick: openSavingsDialog, severity: 'warning' }
+        : undefined"
     />
     <EmptyState
       v-else-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length === 0"
@@ -346,7 +357,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-star"
       icon-tone="muted"
       headline="Keine Sparziele"
-      description="Plane eins, sobald du ein konkretes Ziel hast — z. B. Urlaub, Notgroschen, neues Gerät."
+      :description="canManageHousehold
+        ? 'Plane eins, sobald du ein konkretes Ziel hast — z. B. Urlaub, Notgroschen, neues Gerät.'
+        : 'Ein Owner des Haushalts kann Sparziele anlegen — z. B. Urlaub, Notgroschen, neues Gerät.'"
     />
 
     <template v-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length > 0">
@@ -355,7 +368,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${currentHousehold.savingsGoals.length} Einträge`"
       >
-        <template #actions>
+        <template v-if="canManageHousehold" #actions>
           <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
         </template>
 
@@ -491,8 +504,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               :aria-label="`Bewegungen fuer ${goal.name} anzeigen`"
               @click="openHistoryDialog(goal.id)"
             />
-            <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
+            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
+              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               text
