@@ -1,18 +1,21 @@
 <!--
   MobileBottomNav — primäre Navigation auf Mobile und Tablet (< 1024px).
 
-  Vier primäre Items (Dashboard, Buchungen, Budgets, Sparziele) +
-  "Mehr"-Aktion, die ein Bottom-Sheet mit den sekundären Items öffnet
-  (Haushalte, Mitglieder, Wiederkehrend, Einstellungen, Abmelden).
-  Active-State wird route-basiert über `route.path.startsWith`
-  ermittelt — Items können ein eigenes `matchPrefix` haben, falls die
-  exakte Route zu eng ist (z. B. /transactions soll auch fuer
-  /transactions/expenses active sein).
+  Vier primäre Items (Dashboard, Buchungen, Budgets, Mehr) — Sparziele
+  ist im "Mehr"-Bottom-Sheet, an erster Stelle der sekundären Items
+  (Sparziele, Haushalte, Mitglieder, Wiederkehrend, Einstellungen,
+  Abmelden). Active-State wird route-basiert über
+  `route.path.startsWith` ermittelt — primäre Items können ein eigenes
+  `matchPrefix` haben, falls die exakte Route zu eng ist (z. B.
+  /transactions soll auch fuer /transactions/expenses active sein).
+  "Budgets" hat bewusst kein `matchPrefix`: es ist nur auf
+  /budgeting/budgets active, sonst leuchtet "Mehr" (siehe #136).
 
   Verwendet das Design-System:
   - PrimeIcons via <i class="pi ..."> + Label
   - Akzentfarbe aus dem globalen Theme
-  - Safe-Area-Insets fuer iPhone-Notch (padding-bottom + env())
+  - Safe-Area-Insets fuer iPhone-Notch (padding-bottom + env(),
+    padding-inline links/rechts für abgerundete Display-Ecken)
 
   Verwendung:
   <MobileBottomNav />
@@ -23,6 +26,12 @@
   Mitglieder, Einstellungen) wandern in das "Mehr"-Sheet. Logout
   wandert aus dem Sheet-Footer in die Liste als destructive Item —
   einheitliche Optik mit den anderen sekundären Aktionen.
+
+  Issue #136: Fünf Spalten waren auf Mobildisplays mit abgerundeten
+  Ecken zu breit ("Dashboard"/"Mehr" wurden vom Display-Radius
+  angeschnitten). Sparziele wandert deshalb ins "Mehr"-Sheet (an
+  Position 1, häufigstes Sekundär-Ziel) — die Leiste hat jetzt 4 statt
+  5 Spalten.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
@@ -33,12 +42,13 @@ const router = useRouter()
 const { logout } = useAppAuth()
 
 // === Primäre Items ====================================================
-// 4 Slots + Mehr. "Buchungen" linkt auf /transactions/expenses als
-// Default-Ziel, markiert aber den ganzen /transactions/-Bereich als
-// active. "Budgets" markiert /budgeting/* komplett (budgets, recurring,
-// savings sind alle "Budgetierung"). Wer eine "Buchung anlegen" will,
-// nutzt den "Erfassen"-Button im Header (auf allen Viewport-Groessen
-// sichtbar, siehe app/layouts/default.vue).
+// 4 Slots (3 Items + Mehr). "Buchungen" linkt auf /transactions/expenses
+// als Default-Ziel, markiert aber den ganzen /transactions/-Bereich als
+// active. "Budgets" markiert nur /budgeting/budgets — /budgeting/savings
+// und /budgeting/recurring liegen im "Mehr"-Sheet und aktivieren dort
+// "Mehr" statt "Budgets" (siehe isMoreActive). Wer eine "Buchung
+// anlegen" will, nutzt den "Erfassen"-Button im Header (auf allen
+// Viewport-Groessen sichtbar, siehe app/layouts/default.vue).
 type NavItem = {
   key: string
   label: string
@@ -58,14 +68,7 @@ const primaryItems: NavItem[] = [
     to: '/transactions/expenses',
     matchPrefix: '/transactions',
   },
-  {
-    key: 'budgets',
-    label: 'Budgets',
-    icon: 'pi pi-wallet',
-    to: '/budgeting/budgets',
-    matchPrefix: '/budgeting',
-  },
-  { key: 'savings', label: 'Sparziele', icon: 'pi pi-star', to: '/budgeting/savings' },
+  { key: 'budgets', label: 'Budgets', icon: 'pi pi-wallet', to: '/budgeting/budgets' },
 ]
 
 // === Sekundäre Items (Mehr-Bottom-Sheet) ==============================
@@ -89,6 +92,7 @@ const navigateAndClose = (to: string) => {
 }
 
 const secondaryItems: SecondaryItem[] = [
+  { key: 'savings', label: 'Sparziele', icon: 'pi pi-star', to: '/budgeting/savings' },
   { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   { key: 'members', label: 'Mitglieder', icon: 'pi pi-user-plus', to: '/households/members' },
   { key: 'recurring', label: 'Wiederkehrend', icon: 'pi pi-sync', to: '/budgeting/recurring' },
@@ -185,13 +189,15 @@ const isMoreActive = computed(() => {
     bottom: 0;
     z-index: 100;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     background: var(--color-bg-panel);
     backdrop-filter: blur(12px);
     border-top: 1px solid var(--color-border-default);
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.32);
     /* iPhone-Notch: Bottom-Inset für Home-Indicator */
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    /* Abstand der äußeren Labels von abgerundeten Display-Ecken */
+    padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px));
   }
 }
 
