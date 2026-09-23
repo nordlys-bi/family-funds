@@ -21,6 +21,12 @@
   Swipe wird per Capture-Listener unterdrueckt, ein normaler Tap ohne
   Bewegung feuert wie gewohnt durch.
 
+  `disabled` reicht nur den Slot durch — kein Wrapper, keine Pointer-Handler,
+  kein deckender Hintergrund. Damit laesst sich dieselbe Zeile ab Tablet/
+  Desktop oder fuer User ohne die passende Berechtigung (z. B. MEMBER bei
+  Owner-only-Aktionen, issue #132) unveraendert rendern. Siehe
+  `useListSwipe` fuer die gemeinsame Entscheidung auf den Planungs-Listen.
+
   Verwendung:
     <SwipeableListItem
       swipe-right-icon="pi pi-pen-to-square" swipe-right-label="Bearbeiten"
@@ -44,11 +50,14 @@ const props = withDefaults(
     swipeLeftSeverity?: 'danger' | 'warning'
     /** Ab wieviel Pixel Verschiebung eine Geste als "vollzogen" zaehlt. */
     threshold?: number
+    /** Swipe abschalten: rendert nur den Slot-Inhalt, ohne Wrapper. */
+    disabled?: boolean
   }>(),
   {
     swipeRightSeverity: 'primary',
     swipeLeftSeverity: 'danger',
     threshold: 76,
+    disabled: false,
   },
 )
 
@@ -143,7 +152,8 @@ function onClickCapture(event: MouseEvent) {
 </script>
 
 <template>
-  <div class="swipeable">
+  <slot v-if="disabled" />
+  <div v-else class="swipeable">
     <div
       v-if="offset > 0 && swipeRightLabel"
       class="swipeable__action swipeable__action--start"

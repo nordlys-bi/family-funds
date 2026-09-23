@@ -63,6 +63,8 @@ import { isFirstRun } from '~/utils/household-age'
 import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel, parseMonthRange } from '~/utils/month-filter'
 
 const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
+// Swipe (rechts = bearbeiten, links = loeschen) nur mobil und nur fuer Owner (issue #132).
+const { swipeDisabled } = useListSwipe()
 const confirm = useAskConfirm()
 const route = useRoute()
 const router = useRouter()
@@ -428,6 +430,15 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       :badge="`${visibleBudgets.length} Einträge`"
     >
       <template v-for="budget in visibleBudgets" :key="budget.id">
+      <SwipeableListItem
+        :disabled="swipeDisabled"
+        swipe-right-icon="pi pi-pen-to-square"
+        swipe-right-label="Bearbeiten"
+        swipe-left-icon="pi pi-trash"
+        swipe-left-label="Löschen"
+        @swipe-right="editBudget(budget)"
+        @swipe-left="deletePlanningItem(budget)"
+      >
       <ItemCard variant="primary">
         <template #main>
           <span class="row-title">{{ budget.name }}</span>
@@ -449,7 +460,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             :label="`${formatMoney(getBudgetOverviewItem(budget.id).spentAmount)} / ${formatMoney(getBudgetOverviewItem(budget.id).plannedAmount)}`"
           />
         </template>
-        <template v-if="canManageHousehold" #actions>
+        <!-- Bearbeiten/Loeschen nur ab 640px als Buttons; mobil ersetzt durch
+             Swipe (issue #132), siehe #actions-desktop in ItemCard. -->
+        <template v-if="canManageHousehold" #actions-desktop>
           <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Budget bearbeiten" @click="editBudget(budget)" />
           <Button
             icon="pi pi-trash"
@@ -463,6 +476,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
           />
         </template>
       </ItemCard>
+      </SwipeableListItem>
 
       <!-- Issue #82: Wochen-Detail fuer WEEKLY-Budgets auf der Detail-Seite.
            Anders als auf dem Dashboard hier IMMER aufgeklappt — Detail-Kontext,

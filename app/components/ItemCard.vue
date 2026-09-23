@@ -7,7 +7,14 @@
     - #progress:     optionaler Progress-Bar-Slot zwischen Main und Actions
     - #meta:         zusaetzliche Meta-Info unter dem Main-Inhalt
     - #actions:      rechte Seite, Buttons (default unsichtbar, sichtbar bei Row-Hover)
+    - #actions-desktop: wie #actions, aber nur ab 640px sichtbar. Fuer Aktionen,
+                     die mobil durch eine Swipe-Geste ersetzt werden (Bearbeiten/
+                     Loeschen, issue #132). Gibt es mobil keine #actions, entfaellt
+                     auch die Footer-Zeile komplett.
     - #aside:        optionaler Aside-Block zwischen Meta und Actions (z. B. Amount)
+    - #details:      optionaler, aufgeklappter Bereich in voller Breite UNTER der
+                     Zeile (issue #100). Gehoert visuell zur Karte (gleiche Flaeche,
+                     gleicher Rahmen); die Page steuert per `v-if`, ob er da ist.
 
   Props:
     - variant:        'default' | 'primary' (Border-Left-Akzent) | 'muted' (Sonstiges-Bucket)
@@ -50,7 +57,11 @@ withDefaults(
 <template>
   <article
     class="item-card"
-    :class="[`item-card--${variant}`, `item-card--${density}`, { 'item-card--hover-actions': hoverActions }]"
+    :class="[
+      `item-card--${variant}`,
+      `item-card--${density}`,
+      { 'item-card--hover-actions': hoverActions, 'item-card--has-details': $slots.details },
+    ]"
   >
     <div v-if="$slots.main || $slots.default" class="item-card__main">
       <slot name="main">
@@ -69,8 +80,19 @@ withDefaults(
       <slot name="aside" />
     </div>
 
-    <div v-if="$slots.actions" class="item-card__actions">
+    <div
+      v-if="$slots.actions || $slots['actions-desktop']"
+      class="item-card__actions"
+      :class="{ 'item-card__actions--desktop-only': !$slots.actions }"
+    >
       <slot name="actions" />
+      <span v-if="$slots['actions-desktop']" class="item-card__actions-desktop">
+        <slot name="actions-desktop" />
+      </span>
+    </div>
+
+    <div v-if="$slots.details" class="item-card__details">
+      <slot name="details" />
     </div>
   </article>
 </template>
@@ -228,6 +250,48 @@ withDefaults(
   align-items: center;
   opacity: 1;
   transition: opacity 0.12s ease;
+}
+
+/* #details: eigene Zeile in voller Breite unter main/progress/aside/actions.
+   Ab 640px ist die Karte eine Flex-ROW; damit #details in die naechste Zeile
+   rutscht, darf umgebrochen werden. Der Main-Block bekommt dafuer flex-basis 0,
+   sonst wuerde er (basis: auto) selbst schon bei wenig Platz umbrechen statt
+   zu schrumpfen. Mobil ist die Karte eine Spalte, dort stapelt #details ohnehin
+   als letztes Kind. */
+.item-card__details {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .item-card--has-details {
+    flex-wrap: wrap;
+  }
+
+  .item-card--has-details .item-card__main {
+    flex: 1 1 0;
+  }
+
+  .item-card__details {
+    flex: 1 1 100%;
+  }
+}
+
+/* Die Desktop-only-Gruppe sitzt im selben Flex-Container wie #actions und
+   nimmt kein eigenes Layout-Element ein. */
+.item-card__actions-desktop {
+  display: contents;
+}
+
+/* #actions-desktop: mobil ersetzt durch Swipe (issue #132). Ist es die
+   einzige Action-Gruppe, faellt auch die Footer-Zeile samt Trennlinie weg.
+   Steht bewusst HINTER den display-Basis-Regeln (.item-card__actions,
+   .item-card__actions-desktop), sonst gewinnt bei gleicher Spezifitaet
+   deren spaetere Deklaration. */
+@media (max-width: 639px) {
+  .item-card__actions-desktop,
+  .item-card__actions--desktop-only {
+    display: none;
+  }
 }
 
 /* Hover-Actions-Variante: Actions per Default versteckt, auf Row-Hhover sichtbar */

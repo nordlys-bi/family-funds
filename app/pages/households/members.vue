@@ -396,6 +396,24 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 </template>
 
 <style scoped>
+/* Mobile-Karten (ListTable-`#mobile`, nur < 768px sichtbar) — issue #132.
+   Seit #130 sind die Karten flach/randlos; das Innenpadding kommt in der
+   Ausgabenliste vom `.data-table__card-content`-Wrapper (tappbar, mit Menu).
+   Mitglieder-/Einladungs-Karten haben keinen solchen Wrapper und sind bewusst
+   nicht tappbar, sonst klebten Avatar, E-Mail und Rollen-Tag direkt am
+   Bildschirmrand. Gleiches Padding/Gap wie dort (10px 14px / 6px). */
+.data-table__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+}
+
+.data-table__card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .member-cell {
   display: inline-flex;
   align-items: center;

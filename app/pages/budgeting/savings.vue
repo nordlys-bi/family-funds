@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 
 import { isFirstRun } from '~/utils/household-age'
 import { todayDateHelperText } from '~/utils/form-helpers'
+import { goalProgressDisplay } from '~/utils/savings-progress'
 import { useEmojiLookup } from '~/composables/useEmojiLookup'
 import { useBookingDialog } from '~/composables/useBookingDialog'
 
@@ -48,6 +49,8 @@ type Notice = { severity: 'success' | 'warn' | 'error'; text: string }
 type DateFormValue = Date | null
 
 const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
+// Swipe (rechts = bearbeiten, links = loeschen) nur mobil und nur fuer Owner (issue #132).
+const { swipeDisabled } = useListSwipe()
 const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -131,8 +134,6 @@ const monthlySavingsRateTotal = computed(
 // ignoriert — jetzt kommt der Wert aus dem Backend (groupBy ueber alle
 // SavingsGoalExecution.amount pro Goal, keine N+1).
 const goalCurrentAmount = (goal: SavingsGoalItem) => goal.currentAmount ?? 0
-const goalProgressPercent = (goal: SavingsGoalItem) => goal.progressPercent ?? 0
-const isGoalReached = (goal: SavingsGoalItem) => goalCurrentAmount(goal) >= goal.targetAmount && goal.targetAmount > 0
 
 // === Issue #56: monatliche Plan-vs-Ist-Anzeige =====================
 
@@ -187,9 +188,10 @@ function hasPositivePlan(goal: SavingsGoalItem): boolean {
 }
 
 /**
- * "Plan-vs-Ist"-Block eines Goals auf-/zuklappbar. Pro Goal
- * separat, damit mehrere Cards unabhaengig expandiert sein koennen.
- * Set speichert nur Goal-IDs der aktuell geoeffneten Goals.
+ * Aufgeklappter Bereich (#details) eines Goals: Monatsrate, Zeitraum,
+ * Plan-vs-Ist, 3-Monats-Verlauf, Bewegungen. Pro Goal separat, damit
+ * mehrere Cards unabhaengig expandiert sein koennen. Set speichert nur
+ * Goal-IDs der aktuell geoeffneten Goals.
  */
 const expandedGoals = ref<Set<string>>(new Set())
 function toggleGoalExpanded(goalId: string) {
@@ -205,6 +207,21 @@ function toggleGoalExpanded(goalId: string) {
 }
 function isGoalExpanded(goalId: string): boolean {
   return expandedGoals.value.has(goalId)
+}
+
+/**
+ * Tap auf die Zeile klappt sie auf/zu (issue #100). Klicks auf Buttons/Links
+ * in der Zeile (Einzahlen, Entnehmen, Bearbeiten, Loeschen) sind eigene
+ * Aktionen und duerfen das Aufklappen nicht mitausloesen; ebenso Klicks im
+ * aufgeklappten Bereich selbst (Text markieren soll nicht zuklappen). Der
+ * Titel-Button `.goal-toggle` ist bewusst ausgenommen: Enter/Space darauf
+ * loest einen Klick aus, der hier als Toggle ankommt. Nach einem Swipe
+ * unterdrueckt SwipeableListItem den Klick bereits in der Capture-Phase.
+ */
+function onGoalRowClick(event: MouseEvent, goalId: string) {
+  const target = event.target as HTMLElement | null
+  if (target?.closest('button:not(.goal-toggle), a, .goal-details')) return
+  toggleGoalExpanded(goalId)
 }
 
 const resetSavingsForm = () => {
@@ -383,98 +400,51 @@ useQueryTrigger({
         compact
         :badge="`${currentHousehold.savingsGoals.length} Einträge`"
       >
-        <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)" :hover-actions="false">
+        <SwipeableListItem
+          v-for="goal in currentHousehold.savingsGoals"
+          :key="goal.id"
+          :disabled="swipeDisabled"
+          swipe-right-icon="pi pi-pen-to-square"
+          swipe-right-label="Bearbeiten"
+          swipe-left-icon="pi pi-trash"
+          swipe-left-label="Löschen"
+          @swipe-right="editSavingsGoal(goal)"
+          @swipe-left="deletePlanningItem(goal)"
+        >
+        <!-- Issue #100: zweistufige Zeile. Zugeklappt fuehrt der Fortschritt
+             (aktuell / Ziel + Balken); Monatsrate, Plan-vs-Ist, Zeitraum und
+             Verlauf stehen im aufgeklappten #details-Bereich. Tap auf die Zeile
+             klappt auf (onGoalRowClick), der Titel-Button ist der Tastatur-/
+             Screenreader-Zugang dazu. -->
+        <ItemCard
+          class="goal-card"
+          :hover-actions="false"
+          @click="onGoalRowClick($event, goal.id)"
+        >
           <template #main>
-            <span class="row-title">
+            <button
+              type="button"
+              class="goal-toggle"
+              :aria-expanded="isGoalExpanded(goal.id)"
+              :aria-controls="`goal-details-${goal.id}`"
+            >
               <span class="row-emoji" aria-hidden="true">{{ lookupEmoji(goal.name) }}</span>
-              {{ goal.name }}
-              <span class="row-tag row-tag--green">{{ formatMoney(goal.monthlyRate) }}/Monat</span>
-            </span>
-            <span class="row-sub">
-              <span class="row-tag" :class="{ 'row-tag--green': isGoalReached(goal) }">
-                {{ goalProgressPercent(goal) }}% erreicht
-              </span>
-              <!-- Issue #56: monatlicher Plan-vs-Ist-Tag (aktueller
-                   Monat). Wird nur gerendert, wenn das Backend einen
-                   Eintrag liefert. Severity je nach percentUsed.
-                   Bei monthlyRate <= 0 wird statt der Prozent nur die
-                   Ist-Summe gezeigt (Plan-Vergleich nicht sinnvoll). -->
-              <template v-if="currentMonthProgress(goal)">
-                <span
-                  v-if="hasPositivePlan(goal)"
-                  class="row-tag"
-                  :class="{
-                    'row-tag--green': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'success',
-                    'row-tag--warn': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'warning',
-                    'row-tag--danger': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'danger',
-                  }"
-                  :title="`Geplant ${formatMoney(currentMonthProgress(goal)!.planned)}, real ${formatMoney(currentMonthProgress(goal)!.actual)}`"
-                >
-                  {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ currentMonthProgress(goal)!.percentUsed.toFixed(0) }}%
-                </span>
-                <span
-                  v-else
-                  class="row-tag row-tag--muted"
-                  :title="`Ist-Buchungen diesen Monat`"
-                >
-                  {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ formatMoney(currentMonthProgress(goal)!.actual) }}
-                </span>
-              </template>
-              <span>Ziel {{ formatMoney(goal.targetAmount) }}</span>
-              <span>· {{ formatDate(goal.startDate) }} – {{ formatDate(goal.endDate) }}</span>
-              <span v-if="goalCurrentAmount(goal) === 0" class="row-tag row-tag--muted">
-                Noch keine Sparbuchungen
-              </span>
-              <!-- Issue #56: Toggle fuer den 3-Monats-Verlauf. Wird
-                   nur gerendert, wenn das Backend ueberhaupt Daten
-                   hat (sonst leerer Klapp-Block). Per Goal expandiert,
-                   damit mehrere Cards unabhaengig offen sein koennen. -->
-              <button
-                v-if="goal.monthlyProgress && goal.monthlyProgress.length > 0"
-                type="button"
-                class="row-history-toggle"
-                :aria-expanded="isGoalExpanded(goal.id)"
-                :aria-label="`Plan-vs-Ist-Verlauf fuer ${goal.name} ${isGoalExpanded(goal.id) ? 'ausblenden' : 'anzeigen'}`"
-                @click="toggleGoalExpanded(goal.id)"
-              >
-                <i
-                  :class="['pi', isGoalExpanded(goal.id) ? 'pi-chevron-up' : 'pi-chevron-down', 'row-history-toggle__icon']"
-                  aria-hidden="true"
-                />
-                {{ isGoalExpanded(goal.id) ? 'Verlauf ausblenden' : '3-Monats-Verlauf' }}
-              </button>
-            </span>
-            <!-- Issue #56: Aufklappbarer 3-Monats-Verlauf. Bewusst
-                 ein einfacher Block ohne Tabelle — die 3 Zeilen
-                 passen gut als Text-Liste, das ist schneller zu
-                 scannen als eine Mini-Tabelle. -->
-            <ul v-if="isGoalExpanded(goal.id) && goal.monthlyProgress" class="row-history">
-              <li
-                v-for="entry in goal.monthlyProgress"
-                :key="entry.month"
-                class="row-history__entry"
-              >
-                <span class="row-history__month">{{ monthLabel(entry.month) }}</span>
-                <span class="row-history__values">
-                  <template v-if="hasPositivePlan(goal)">
-                    geplant {{ formatMoney(entry.planned) }} · real {{ formatMoney(entry.actual) }}
-                    <span
-                      class="row-history__pct"
-                      :class="{
-                        'row-history__pct--green': severityForPercent(entry.percentUsed) === 'success',
-                        'row-history__pct--warn': severityForPercent(entry.percentUsed) === 'warning',
-                        'row-history__pct--danger': severityForPercent(entry.percentUsed) === 'danger',
-                      }"
-                    >
-                      ({{ entry.percentUsed.toFixed(0) }}%)
-                    </span>
-                  </template>
-                  <template v-else>
-                    {{ formatMoney(entry.actual) }}
-                  </template>
-                </span>
-              </li>
-            </ul>
+              <span class="goal-toggle__name">{{ goal.name }}</span>
+              <i
+                :class="['pi', isGoalExpanded(goal.id) ? 'pi-chevron-up' : 'pi-chevron-down', 'goal-toggle__icon']"
+                aria-hidden="true"
+              />
+            </button>
+          </template>
+          <template #progress>
+            <!-- Ueber 100 % (mehr gespart als geplant) nicht als roter Overflow
+                 zeigen — bei Sparzielen ist das kein Fehler. Blau = unterwegs,
+                 Gruen = Ziel erreicht. -->
+            <ListProgressBar
+              :percent="goalProgressDisplay(goal).percent"
+              :tone="goalProgressDisplay(goal).tone"
+              :label="goalProgressDisplay(goal).label"
+            />
           </template>
           <template #aside>
             <div>
@@ -488,7 +458,8 @@ useQueryTrigger({
             <!-- Issue #38: Booking-Actions (Einzahlen / Entnehmen).
                  Bewusst immer sichtbar (`hoverActions=false` am ItemCard),
                  weil das der primaere Use-Case auf der Sparziel-Seite ist.
-                 Edit/Delete bleiben daneben, leicht abgegraut. -->
+                 Edit/Delete stehen ab 640px daneben (#actions-desktop),
+                 mobil ersetzt durch Swipe (issue #132). -->
             <Button
               icon="pi pi-plus-circle"
               severity="success"
@@ -505,19 +476,11 @@ useQueryTrigger({
               :aria-label="`Aus Sparziel ${goal.name} entnehmen`"
               @click="bookingDialog.open(goal.id, 'withdraw')"
             />
+          </template>
+          <template v-if="canManageHousehold" #actions-desktop>
             <span class="goal-card-actions-divider" aria-hidden="true" />
-            <!-- Issue #39: History-Button pro Card. -->
+            <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
             <Button
-              icon="pi pi-list"
-              severity="secondary"
-              text
-              size="small"
-              :aria-label="`Bewegungen fuer ${goal.name} anzeigen`"
-              @click="openHistoryDialog(goal.id)"
-            />
-            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Sparziel bearbeiten" @click="editSavingsGoal(goal)" />
-            <Button
-              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               text
@@ -527,7 +490,97 @@ useQueryTrigger({
               @click="deletePlanningItem(goal)"
             />
           </template>
+          <template v-if="isGoalExpanded(goal.id)" #details>
+            <div :id="`goal-details-${goal.id}`" class="goal-details">
+              <dl class="goal-details__facts">
+                <div class="goal-details__fact">
+                  <dt>Monatsrate</dt>
+                  <dd>{{ formatMoney(goal.monthlyRate) }} / Monat</dd>
+                </div>
+                <div class="goal-details__fact">
+                  <dt>Zeitraum</dt>
+                  <dd>{{ formatDate(goal.startDate) }} – {{ formatDate(goal.endDate) }}</dd>
+                </div>
+                <!-- Issue #56: monatlicher Plan-vs-Ist-Tag (aktueller Monat).
+                     Wird nur gerendert, wenn das Backend einen Eintrag liefert.
+                     Severity je nach percentUsed. Bei monthlyRate <= 0 wird statt
+                     der Prozent nur die Ist-Summe gezeigt (Plan-Vergleich nicht
+                     sinnvoll). -->
+                <div v-if="currentMonthProgress(goal)" class="goal-details__fact">
+                  <dt>Plan vs. Ist</dt>
+                  <dd>
+                    <span
+                      v-if="hasPositivePlan(goal)"
+                      class="row-tag"
+                      :class="{
+                        'row-tag--green': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'success',
+                        'row-tag--warn': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'warning',
+                        'row-tag--danger': severityForPercent(currentMonthProgress(goal)!.percentUsed) === 'danger',
+                      }"
+                      :title="`Geplant ${formatMoney(currentMonthProgress(goal)!.planned)}, real ${formatMoney(currentMonthProgress(goal)!.actual)}`"
+                    >
+                      {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ currentMonthProgress(goal)!.percentUsed.toFixed(0) }}%
+                    </span>
+                    <span
+                      v-else
+                      class="row-tag row-tag--muted"
+                      :title="`Ist-Buchungen diesen Monat`"
+                    >
+                      {{ monthLabel(currentMonthProgress(goal)!.month) }}: {{ formatMoney(currentMonthProgress(goal)!.actual) }}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+              <p v-if="goalCurrentAmount(goal) === 0" class="goal-details__hint">
+                Noch keine Sparbuchungen
+              </p>
+              <!-- Issue #56: 3-Monats-Verlauf. Bewusst ein einfacher Block ohne
+                   Tabelle — die 3 Zeilen passen gut als Text-Liste, das ist
+                   schneller zu scannen als eine Mini-Tabelle. Gehoert seit #100
+                   zum allgemeinen Aufklappen (kein eigener Toggle mehr). -->
+              <ul v-if="goal.monthlyProgress && goal.monthlyProgress.length > 0" class="row-history">
+                <li
+                  v-for="entry in goal.monthlyProgress"
+                  :key="entry.month"
+                  class="row-history__entry"
+                >
+                  <span class="row-history__month">{{ monthLabel(entry.month) }}</span>
+                  <span class="row-history__values">
+                    <template v-if="hasPositivePlan(goal)">
+                      geplant {{ formatMoney(entry.planned) }} · real {{ formatMoney(entry.actual) }}
+                      <span
+                        class="row-history__pct"
+                        :class="{
+                          'row-history__pct--green': severityForPercent(entry.percentUsed) === 'success',
+                          'row-history__pct--warn': severityForPercent(entry.percentUsed) === 'warning',
+                          'row-history__pct--danger': severityForPercent(entry.percentUsed) === 'danger',
+                        }"
+                      >
+                        ({{ entry.percentUsed.toFixed(0) }}%)
+                      </span>
+                    </template>
+                    <template v-else>
+                      {{ formatMoney(entry.actual) }}
+                    </template>
+                  </span>
+                </li>
+              </ul>
+              <!-- Issue #39: Bewegungen (History-Dialog) — Mitglieder-Aktion, fuer
+                   alle sichtbar. Frueher Icon in der Aktionsleiste. -->
+              <div class="goal-details__actions">
+                <Button
+                  label="Bewegungen anzeigen"
+                  icon="pi pi-list"
+                  severity="secondary"
+                  text
+                  size="small"
+                  @click="openHistoryDialog(goal.id)"
+                />
+              </div>
+            </div>
+          </template>
         </ItemCard>
+        </SwipeableListItem>
 
         <div v-if="currentHousehold.savingsGoals.length === 0" class="empty-list">Noch keine Sparziele angelegt.</div>
       </ListPanel>
@@ -625,24 +678,6 @@ useQueryTrigger({
 </template>
 
 <style scoped>
-.row-title {
-  font-weight: 600;
-  font-size: 0.92rem;
-  color: var(--color-text-primary);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.row-sub {
-  color: var(--color-text-muted);
-  font-size: 0.78rem;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-
 .row-tag {
   display: inline-block;
   padding: 1px 7px;
@@ -679,40 +714,91 @@ useQueryTrigger({
   color: var(--color-accent-danger-text);
 }
 
-/* Issue #56: Inline-Toggle fuer den 3-Monats-Verlauf. Bewusst als
-   <button> (nicht <a> oder <div>), damit er per Tastatur + Screenreader
-   korrekt funktioniert. Sieht aus wie ein Tag, verhaelt sich wie ein
-   Button. */
-.row-history-toggle {
+/* Issue #100: Titel-Button der Zeile. Sieht aus wie der alte Titel, ist aber ein
+   echter <button> (Tastatur, aria-expanded). Die ganze Karte ist tappbar
+   (onGoalRowClick); der Button ist nur der Fokus-/Screenreader-Anker. */
+.goal-card {
+  cursor: pointer;
+}
+
+.goal-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 7px;
-  background: rgba(59, 130, 246, 0.10);
-  color: var(--color-accent-primary-text);
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.goal-toggle:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.goal-toggle__icon {
   font-size: 0.7rem;
+  color: var(--color-text-muted);
+}
+
+/* Aufgeklappter Bereich (#details von ItemCard): Kennzahlen als Label/Wert-Paare,
+   darunter Hinweis, 3-Monats-Verlauf und der Bewegungen-Button. */
+.goal-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--color-border-subtle);
+  cursor: default;
+}
+
+.goal-details__facts {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.goal-details__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.goal-details__fact dt {
+  font-size: 0.68rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease;
+  color: var(--color-text-muted);
 }
 
-.row-history-toggle:hover {
-  background: rgba(59, 130, 246, 0.20);
-  border-color: rgba(96, 165, 250, 0.32);
+.goal-details__fact dd {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
-.row-history-toggle__icon {
-  font-size: 0.65rem;
+.goal-details__hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
 }
 
-/* Issue #56: Aufklappbarer 3-Monats-Verlauf. Kompakte Liste,
-   eingerueckt unter dem Goal-Subtitle, damit der User den
-   Monats-Kontext nicht aus den Augen verliert. */
+.goal-details__actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* Issue #56: 3-Monats-Verlauf im aufgeklappten Bereich. Kompakte Liste, damit
+   der User den Monats-Kontext nicht aus den Augen verliert. */
 .row-history {
   list-style: none;
   padding: 0.5rem 0 0;
