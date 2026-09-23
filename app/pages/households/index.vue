@@ -35,6 +35,13 @@ const FIXED_CURRENCY = 'EUR'
 
 const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 
+// Issue #99: "ein Anlegen-Affordance pro Seite" — solange die Kein-
+// Haushalt-Karte (mit eigenem "Neuen Haushalt erstellen"-Button) sichtbar
+// ist, wird der Toolbar-Button ausgeblendet.
+const showNoHouseholdCard = computed(
+  () => !currentLoading.value && !householdsLoading.value && !currentHousehold.value,
+)
+
 const openCreateHouseholdDialog = () => {
   createForm.value = { name: '' }
   createDialogOpen.value = true
@@ -93,7 +100,9 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
 <template>
   <ListPageShell title="Haushalte">
     <template #toolbar>
-      <Button label="Neuer Haushalt" icon="pi pi-plus" severity="success" @click="openCreateHouseholdDialog" />
+      <!-- Issue #99: nur ausblenden, nicht die ganze Toolbar — Mitglieder/
+           Settings bleiben erreichbar, auch wenn kein Haushalt aktiv ist. -->
+      <Button v-if="!showNoHouseholdCard" label="Neuer Haushalt" icon="pi pi-plus" severity="success" @click="openCreateHouseholdDialog" />
       <NuxtLink to="/households/members">
         <Button label="Mitglieder" icon="pi pi-users" severity="secondary" outlined />
       </NuxtLink>
@@ -112,7 +121,7 @@ watch(activeHouseholdId, async () => { await loadCurrentHousehold() })
       </div>
     </section>
 
-    <section v-if="!currentLoading && !householdsLoading && !currentHousehold" class="empty-state-empty">
+    <section v-if="showNoHouseholdCard" class="empty-state-empty">
       <div class="empty-card">
         <Kicker>Kein Haushalt aktiv</Kicker>
         <h2>Erstelle oder wähle zuerst einen Haushalt aus</h2>

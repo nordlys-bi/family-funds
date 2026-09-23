@@ -449,7 +449,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       </div>
     </template>
 
-    <template v-if="canManageHousehold" #toolbar>
+    <!-- Issue #99: Toolbar-Buttons nur, wenn nicht schon der First-Time-
+         EmptyState seine eigenen CTAs zeigt ("ein Anlegen-Affordance pro
+         Seite"). -->
+    <template v-if="canManageHousehold && !showFirstTimeEmpty" #toolbar>
       <Button label="Einnahmenplan" icon="pi pi-plus" severity="success" @click="openIncomeDialog" />
       <Button label="Fixkostenplan" icon="pi pi-plus" severity="secondary" outlined @click="openFixedCostDialog" />
     </template>
@@ -479,10 +482,22 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       :description="canManageHousehold
         ? 'Plane z. B. dein Gehalt, deine Miete oder Versicherungen — so siehst du, was am Monatsende wirklich übrig bleibt.'
         : 'Ein Owner des Haushalts kann z. B. Gehalt, Miete oder Versicherungen einplanen — so sieht man, was am Monatsende wirklich übrig bleibt.'"
-      :cta="canManageHousehold
-        ? { label: 'Plan anlegen', onClick: openIncomeDialog, severity: 'primary' }
-        : undefined"
-    />
+    >
+      <!-- Issue #99: recurring.vue hat zwei Anlegen-Aktionen (Einnahmen-
+           und Fixkostenplan) — die generische Einzel-`cta`-Prop von
+           EmptyState reicht nicht, beide muessen im First-Time-Zustand
+           erreichbar bleiben. Eigener `variant-cta`-Slot statt `cta`-Prop. -->
+      <template v-if="canManageHousehold" #variant-cta>
+        <div class="recurring-empty-cta">
+          <button type="button" class="recurring-empty-cta__button" @click="openIncomeDialog">
+            Einnahmenplan anlegen
+          </button>
+          <button type="button" class="recurring-empty-cta__button recurring-empty-cta__button--secondary" @click="openFixedCostDialog">
+            Fixkostenplan anlegen
+          </button>
+        </div>
+      </template>
+    </EmptyState>
     <EmptyState
       v-else-if="!loading && activeHousehold && currentHousehold && noRecurringPlans"
       variant="no-data"
@@ -904,5 +919,35 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
 
 .mark-error {
   margin-bottom: 0.6rem;
+}
+
+/* Issue #99: Zwei CTAs im First-Time-EmptyState (Einnahmen- + Fixkosten-
+   plan). Slot-Inhalt traegt den Scope dieser Komponente, nicht den von
+   EmptyState.vue — daher hier dupliziert statt `.empty-state__button`
+   wiederzuverwenden (dessen scoped Styles hier nicht greifen wuerden). */
+.recurring-empty-cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+}
+
+.recurring-empty-cta__button {
+  display: inline-flex;
+  padding: 0.85rem 1.1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #2563eb, #60a5fa);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.95rem;
+  font-family: inherit;
+  border: none;
+  cursor: pointer;
+}
+
+.recurring-empty-cta__button--secondary {
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-secondary);
 }
 </style>
