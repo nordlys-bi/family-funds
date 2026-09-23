@@ -60,7 +60,7 @@ type PlanningHousehold = {
 
 import { isFirstRun } from '~/utils/household-age'
 
-const { activeHousehold, fetchHouseholds } = useHousehold()
+const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
 const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -449,12 +449,20 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       </div>
     </template>
 
-    <template #toolbar>
+    <template v-if="canManageHousehold" #toolbar>
       <Button label="Einnahmenplan" icon="pi pi-plus" severity="success" @click="openIncomeDialog" />
       <Button label="Fixkostenplan" icon="pi pi-plus" severity="secondary" outlined @click="openFixedCostDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
+
+    <!-- OWNER-only Erklaerung (issue #128): Einnahmen-/Fixkostenplaene anlegen,
+         bearbeiten und loeschen sind serverseitig Owner-only. "Als erhalten/
+         bezahlt markieren" ist eine normale Buchung und bleibt fuer alle
+         Mitglieder sichtbar. -->
+    <Message v-if="activeHousehold && !canManageHousehold" severity="warn" variant="simple">
+      Nur Owner können Einnahmen- und Fixkostenpläne anlegen, bearbeiten und löschen. Als erhalten oder bezahlt markieren können alle Mitglieder.
+    </Message>
 
     <EmptyState
       :loading="loading"
@@ -468,8 +476,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-sync"
       icon-tone="accent"
       headline="Noch keine wiederkehrenden Posten"
-      description="Plane z. B. dein Gehalt, deine Miete oder Versicherungen — so siehst du, was am Monatsende wirklich übrig bleibt."
-      :cta="{ label: 'Plan anlegen', onClick: openIncomeDialog, severity: 'primary' }"
+      :description="canManageHousehold
+        ? 'Plane z. B. dein Gehalt, deine Miete oder Versicherungen — so siehst du, was am Monatsende wirklich übrig bleibt.'
+        : 'Ein Owner des Haushalts kann z. B. Gehalt, Miete oder Versicherungen einplanen — so sieht man, was am Monatsende wirklich übrig bleibt.'"
+      :cta="canManageHousehold
+        ? { label: 'Plan anlegen', onClick: openIncomeDialog, severity: 'primary' }
+        : undefined"
     />
     <EmptyState
       v-else-if="!loading && activeHousehold && currentHousehold && noRecurringPlans"
@@ -477,7 +489,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-sync"
       icon-tone="muted"
       headline="Keine Pläne"
-      description="Lege einen Einnahmen- oder Fixkostenplan an, um Monats-Vorschauen zu sehen."
+      :description="canManageHousehold
+        ? 'Lege einen Einnahmen- oder Fixkostenplan an, um Monats-Vorschauen zu sehen.'
+        : 'Ein Owner des Haushalts kann einen Einnahmen- oder Fixkostenplan anlegen, um Monats-Vorschauen zu sehen.'"
     />
 
     <!-- Beide ListPanels rendern unabhaengig — wenn nur eine der beiden
@@ -538,8 +552,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               aria-label="Einnahmen als erhalten markieren"
               @click="openMarkDialog('income', plan.id)"
             />
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahmenplan bearbeiten" @click="editIncomePlan(plan)" />
+            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahmenplan bearbeiten" @click="editIncomePlan(plan)" />
             <Button
+              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               outlined
@@ -604,8 +619,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               aria-label="Fixkosten als bezahlt markieren"
               @click="openMarkDialog('fixedCost', plan.id)"
             />
-            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Fixkostenplan bearbeiten" @click="editFixedCostPlan(plan)" />
+            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Fixkostenplan bearbeiten" @click="editFixedCostPlan(plan)" />
             <Button
+              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               outlined

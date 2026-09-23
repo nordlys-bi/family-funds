@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 const { user, logout } = useAppAuth()
-const { households, activeHousehold, setActiveHousehold } = useHousehold()
+const { households, activeHousehold, canManageHousehold, setActiveHousehold } = useHousehold()
 const onboarding = useOnboarding()
 const quickCapture = useQuickCapture()
 const config = useRuntimeConfig()
@@ -63,6 +63,13 @@ const toggleDesktopSidebar = () => {
   isDesktopCollapsed.value = !isDesktopCollapsed.value
 }
 
+// Issue #128: Die Tour richtet einen Haushalt ein (Haushalt benennen, Mitglied
+// einladen, erstes Budget anlegen) — das sind Owner-Aktionen, die MEMBERn
+// serverseitig verwehrt sind. Also startet sie nur fuer Owner. Ohne aktiven
+// Haushalt bleibt sie an: dort legt der User gerade seinen ersten Haushalt an
+// und wird dessen Owner.
+const canStartOnboarding = computed(() => !activeHousehold.value || canManageHousehold.value)
+
 onMounted(async () => {
   if (import.meta.client) {
     compactQuery = window.matchMedia('(max-width: 1023px)')
@@ -73,7 +80,7 @@ onMounted(async () => {
   // Onboarding-Auto-Trigger (issue #16): Wenn der User eingeloggt ist
   // UND der Haushalt "leer" wirkt (keine Mitglieder/Budgets/Transaktionen)
   // UND der User nicht explizit geskippt hat → Tour starten.
-  if (user.value) {
+  if (user.value && canStartOnboarding.value) {
     await onboarding.load()
     if (activeHousehold.value) {
       try {
@@ -101,7 +108,7 @@ watch(
   () => user.value?.id,
   async (newId, oldId) => {
     // Nur beim Login-Transition triggern (id-Wechsel von undefined/other auf Wert).
-    if (newId && newId !== oldId) {
+    if (newId && newId !== oldId && canStartOnboarding.value) {
       await onboarding.load()
       onboarding.start() // visibility-Check passiert in shouldAutoTrigger
     }

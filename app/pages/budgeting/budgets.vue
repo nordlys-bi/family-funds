@@ -62,7 +62,7 @@ type PlanningHousehold = {
 import { isFirstRun } from '~/utils/household-age'
 import { currentMonthYYYYMM, isValidMonthYYYYMM, formatMonthLabel, parseMonthRange } from '~/utils/month-filter'
 
-const { activeHousehold, fetchHouseholds } = useHousehold()
+const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
 const confirm = useAskConfirm()
 const route = useRoute()
 const router = useRouter()
@@ -365,10 +365,17 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       <!-- Monatswechsler (issue #34 / #96): deep-linkbar via ?month=YYYY-MM,
            aktueller Monat mit grünem 'Jetzt'-Badge. -->
       <MonthSwitcher :model-value="month" :loading="budgetLoading" @update:model-value="onMonthChange" />
-      <Button label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
+      <Button v-if="canManageHousehold" label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
+
+    <!-- OWNER-only Erklaerung (issue #128): Budgets anlegen/bearbeiten/loeschen
+         sind serverseitig Owner-only. MEMBER sehen die Aktionen gar nicht erst;
+         der Hinweis sagt ihnen, warum. Muster wie auf households/members.vue. -->
+    <Message v-if="activeHousehold && !canManageHousehold" severity="warn" variant="simple">
+      Nur Owner können Budgets anlegen, bearbeiten und löschen. Bitte an einen Haushalts-Owner wenden, wenn etwas geändert werden soll.
+    </Message>
 
     <EmptyState
       :loading="loading"
@@ -383,8 +390,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-chart-line"
       icon-tone="accent"
       headline="Noch keine Budgets"
-      description="Lege dein erstes Budget an, um Ausgaben pro Kategorie zu planen — z. B. Lebensmittel, Miete, Freizeit."
-      :cta="{ label: 'Budget anlegen', onClick: openBudgetDialog, severity: 'primary' }"
+      :description="canManageHousehold
+        ? 'Lege dein erstes Budget an, um Ausgaben pro Kategorie zu planen — z. B. Lebensmittel, Miete, Freizeit.'
+        : 'Ein Owner des Haushalts kann Budgets anlegen, um Ausgaben pro Kategorie zu planen.'"
+      :cta="canManageHousehold
+        ? { label: 'Budget anlegen', onClick: openBudgetDialog, severity: 'primary' }
+        : undefined"
     />
     <EmptyState
       v-else-if="!loading && activeHousehold && currentHousehold && currentHousehold.budgets.length === 0"
@@ -392,7 +403,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-chart-line"
       icon-tone="muted"
       headline="Keine Budgets"
-      description="Lege ein Budget an, um Auswertungen pro Kategorie zu sehen."
+      :description="canManageHousehold
+        ? 'Lege ein Budget an, um Auswertungen pro Kategorie zu sehen.'
+        : 'Ein Owner des Haushalts kann ein Budget anlegen, um Auswertungen pro Kategorie zu sehen.'"
     />
     <EmptyState
       v-else-if="!loading && activeHousehold && currentHousehold && visibleBudgets.length === 0"
@@ -400,7 +413,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       icon="pi pi-calendar"
       icon-tone="muted"
       headline="Keine Budgets in diesem Monat"
-      :description="`Deine ${currentHousehold.budgets.length} Budgets sind erst ab einem späteren Zeitpunkt gültig. Blättere vorwärts oder lege ein neues Budget mit früherem \`validFrom\` an.`"
+      :description="canManageHousehold
+        ? `Deine ${currentHousehold.budgets.length} Budgets sind erst ab einem späteren Zeitpunkt gültig. Blättere vorwärts oder lege ein neues Budget mit früherem \`validFrom\` an.`
+        : `Die ${currentHousehold.budgets.length} Budgets des Haushalts sind erst ab einem späteren Zeitpunkt gültig. Blättere vorwärts.`"
     />
 
     <ListPanel
@@ -431,7 +446,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             :label="`${formatMoney(getBudgetOverviewItem(budget.id).spentAmount)} / ${formatMoney(getBudgetOverviewItem(budget.id).plannedAmount)}`"
           />
         </template>
-        <template #actions>
+        <template v-if="canManageHousehold" #actions>
           <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Budget bearbeiten" @click="editBudget(budget)" />
           <Button
             icon="pi pi-trash"

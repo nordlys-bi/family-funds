@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useTheme, type ThemePreference } from '~/composables/useTheme'
 
 definePageMeta({ layout: 'default' })
@@ -24,8 +24,7 @@ type HouseholdDetail = {
   invitations: { id: string }[]
 }
 
-const { user } = useAppAuth()
-const { activeHouseholdId, fetchHouseholds } = useHousehold()
+const { activeHouseholdId, canManageHousehold, fetchHouseholds } = useHousehold()
 const onboarding = useOnboarding()
 const { preference: themePreference, setPreference: setThemePreference } = useTheme()
 
@@ -41,11 +40,6 @@ const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | n
 // wird sie als nicht-editierbarer Hinweis angezeigt.
 const editForm = ref({ name: '' })
 const FIXED_CURRENCY = 'EUR'
-
-const canManageHousehold = computed(() => {
-  const role = currentHousehold.value?.members.find((member) => member.user.id === user.value?.id)?.role
-  return role === 'OWNER'
-})
 
 const syncEditForm = () => {
   if (!currentHousehold.value) return

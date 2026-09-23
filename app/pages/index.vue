@@ -96,7 +96,7 @@ type DashboardData = {
   }
 }
 
-const { activeHousehold } = useHousehold()
+const { activeHousehold, canManageHousehold } = useHousehold()
 const snapshot = ref<DashboardData | null>(null)
 // SSR-Initial-Render-Fix: `loading` startet auf `true`, damit EmptyState
 // beim ersten Render den Spinner zeigt, BEVOR `loadDashboard` in onMounted
@@ -323,7 +323,8 @@ watch(quickCaptureSavedTick, loadDashboard)
            currentAmount / targetAmount + monthlyRate. -->
       <ListPanel title="Sparziele" :compact="true">
         <template #actions>
-          <NuxtLink to="/budgeting/savings">
+          <!-- Sparziele anlegen ist Owner-only (issue #128). -->
+          <NuxtLink v-if="canManageHousehold" to="/budgeting/savings">
             <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
           </NuxtLink>
           <NuxtLink to="/budgeting/savings">
