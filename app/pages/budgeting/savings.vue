@@ -311,6 +311,16 @@ onMounted(async () => {
   await loadPlanning()
 })
 watch(activeHouseholdId, async () => { await loadPlanning() })
+
+// Issue #99: Dashboard-Panel "Sparziel anlegen" navigiert hierher mit
+// ?new=1 (Pattern wie expenses.vue, issue #29). Der Trigger oeffnet den
+// Dialog nur fuer Owner — Sparziele anlegen ist serverseitig Owner-only
+// (issue #128), ein Member wuerde sonst einen Dialog sehen, dessen
+// Submit serverseitig 403't.
+useQueryTrigger({
+  queryKey: 'new',
+  onTrigger: () => { if (canManageHousehold.value) openSavingsDialog() },
+})
 </script>
 
 <template>
@@ -320,7 +330,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     </template>
 
     <template #toolbar>
-      <Button v-if="canManageHousehold" label="Sparziel anlegen" icon="pi pi-plus" severity="success" @click="openSavingsDialog" />
+      <!-- Issue #99: Toolbar-Button nur, wenn nicht schon der First-Time-
+           EmptyState seine eigene CTA zeigt ("ein Anlegen-Affordance pro
+           Seite"). -->
+      <Button v-if="canManageHousehold && !showFirstTimeEmpty" label="Sparziel anlegen" icon="pi pi-plus" severity="success" @click="openSavingsDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
@@ -363,15 +376,13 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
     />
 
     <template v-if="!loading && activeHousehold && currentHousehold && currentHousehold.savingsGoals.length > 0">
+      <!-- Issue #99: kein "Neu"-Button im Panel-Header mehr — die Toolbar
+           oben ist der einzige Anlegen-Affordance. -->
       <ListPanel
         title="Auf dem Weg zum Zielbetrag"
         compact
         :badge="`${currentHousehold.savingsGoals.length} Einträge`"
       >
-        <template v-if="canManageHousehold" #actions>
-          <Button label="Neu" icon="pi pi-plus" severity="secondary" size="small" outlined @click="openSavingsDialog" />
-        </template>
-
         <ItemCard v-for="goal in currentHousehold.savingsGoals" :key="goal.id" :progress="goalProgressPercent(goal)" :hover-actions="false">
           <template #main>
             <span class="row-title">

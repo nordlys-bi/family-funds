@@ -365,7 +365,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       <!-- Monatswechsler (issue #34 / #96): deep-linkbar via ?month=YYYY-MM,
            aktueller Monat mit grünem 'Jetzt'-Badge. -->
       <MonthSwitcher :model-value="month" :loading="budgetLoading" @update:model-value="onMonthChange" />
-      <Button v-if="canManageHousehold" label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
+      <!-- Issue #99: Toolbar-Button nur, wenn nicht schon der First-Time-
+           EmptyState seine eigene CTA zeigt ("ein Anlegen-Affordance pro
+           Seite"). Nur den Button ausblenden, der MonthSwitcher bleibt. -->
+      <Button v-if="canManageHousehold && !showFirstTimeEmpty" label="Budget anlegen" icon="pi pi-plus" severity="success" @click="openBudgetDialog" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>

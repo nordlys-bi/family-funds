@@ -173,8 +173,8 @@ watch(() => activeHousehold.value?.id, loadDashboard)
 
 // Issue #91: der globale Erfassen-Dialog kann von hier aus eine Buchung
 // anlegen — dann die Dashboard-Kennzahlen neu holen.
-const { savedTick: quickCaptureSavedTick } = useQuickCapture()
-watch(quickCaptureSavedTick, loadDashboard)
+const quickCapture = useQuickCapture()
+watch(quickCapture.savedTick, loadDashboard)
 </script>
 
 <template>
@@ -295,9 +295,10 @@ watch(quickCaptureSavedTick, loadDashboard)
           </NuxtLink>
         </template>
         <template #actions>
-          <NuxtLink to="/transactions/expenses">
-            <Button label="Ausgabe erfassen" icon="pi pi-plus" size="small" severity="primary" />
-          </NuxtLink>
+          <!-- Issue #99: oeffnet den globalen Quick-Capture-Dialog direkt
+               (statt nur auf die Listenseite zu verlinken) — konsistent
+               mit "Sparziel anlegen" darunter. -->
+          <Button label="Ausgabe erfassen" icon="pi pi-plus" size="small" severity="primary" @click="quickCapture.open('expense')" />
           <!-- Issue #53: Sekundaere "Alle anzeigen"-Action, die auf die
                volle Monatsliste der Ausgaben springt. Pattern-konsistent
                mit dem Budget- und Sparziele-Panel, deren sekundaere
@@ -323,9 +324,12 @@ watch(quickCaptureSavedTick, loadDashboard)
            currentAmount / targetAmount + monthlyRate. -->
       <ListPanel title="Sparziele" :compact="true">
         <template #actions>
-          <!-- Sparziele anlegen ist Owner-only (issue #128). -->
-          <NuxtLink v-if="canManageHousehold" to="/budgeting/savings">
-            <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="secondary" outlined />
+          <!-- Sparziele anlegen ist Owner-only (issue #128). Issue #99:
+               ?new=1 oeffnet den Sparziel-Dialog direkt auf der Zielseite
+               (useQueryTrigger in savings.vue) — gleicher Button-Style wie
+               "Ausgabe erfassen" oben. -->
+          <NuxtLink v-if="canManageHousehold" to="/budgeting/savings?new=1">
+            <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="primary" />
           </NuxtLink>
           <NuxtLink to="/budgeting/savings">
             <Button
