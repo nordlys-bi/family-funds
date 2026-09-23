@@ -16,8 +16,12 @@ withDefaults(
   defineProps<{
     /** Prozentwert (0-100+). Werte > 100 sind erlaubt fuer Over-Budget. */
     percent: number
-    /** Farbabstufung. 'auto' waehlt nach Schwellen: <80 ok, 80-100 warning, >100 over. */
-    tone?: 'auto' | 'ok' | 'warning' | 'over'
+    /**
+     * Farbabstufung. 'auto' waehlt nach Schwellen: <80 ok, 80-100 warning, >100 over.
+     * 'accent' (blau) ist fuer "unterwegs zu einem Ziel" gedacht (Sparziele, issue
+     * #100): 'ok' (gruen) bleibt dort dem erreichten Ziel vorbehalten.
+     */
+    tone?: 'auto' | 'ok' | 'warning' | 'over' | 'accent'
     /** Breite (CSS). Default 100%. */
     width?: string
     /** Inline-Label rechts (z. B. "18,06 € / 1.000,00 €"). */
@@ -85,6 +89,9 @@ withDefaults(
 }
 .progress__bar--ok .progress__fill {
   background: #34d399;
+}
+.progress__bar--accent .progress__fill {
+  background: var(--color-accent-primary, #3b82f6);
 }
 .progress__bar--warning .progress__fill {
   background: #fbbf24;

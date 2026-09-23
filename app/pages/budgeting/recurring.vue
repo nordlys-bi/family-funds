@@ -61,6 +61,8 @@ type PlanningHousehold = {
 import { isFirstRun } from '~/utils/household-age'
 
 const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
+// Swipe (rechts = bearbeiten, links = loeschen) nur mobil und nur fuer Owner (issue #132).
+const { swipeDisabled } = useListSwipe()
 const confirm = useAskConfirm()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -518,11 +520,18 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${visiblePlans(currentHousehold.incomePlans).length} fällig${nonDueIncomeCount > 0 ? ` · ${nonDueIncomeCount} diesen Monat nicht relevant` : ''}`"
       >
-        <ItemCard
+        <SwipeableListItem
           v-for="plan in visiblePlans(currentHousehold.incomePlans)"
           :key="plan.id"
-          :hover-actions="false"
+          :disabled="swipeDisabled"
+          swipe-right-icon="pi pi-pen-to-square"
+          swipe-right-label="Bearbeiten"
+          swipe-left-icon="pi pi-trash"
+          swipe-left-label="Löschen"
+          @swipe-right="editIncomePlan(plan)"
+          @swipe-left="deletePlanningItem('incomePlan', plan)"
         >
+        <ItemCard :hover-actions="false">
           <template #main>
             <span class="row-title">
               {{ plan.name }}
@@ -554,12 +563,13 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               <span class="amount-secondary">pro {{ frequencyLabel(plan.frequency) }}</span>
             </div>
           </template>
-          <template #actions>
-            <!-- Issue #59: "Als erhalten markieren" nur, wenn der Plan
-                 in diesem Monat fällig ist. Non-Due-Plaene bekommen
-                 den Button nicht (sonst wäre der Klick irreführend). -->
+          <!-- Issue #59: "Als erhalten markieren" nur, wenn der Plan
+               in diesem Monat fällig ist. Non-Due-Plaene bekommen
+               den Button nicht (sonst wäre der Klick irreführend).
+               Der Slot selbst haengt an der Bedingung, damit mobil keine
+               leere Footer-Zeile stehen bleibt (issue #132). -->
+          <template v-if="plan.coverage.due > 0 && plan.coverage.percent < 100" #actions>
             <Button
-              v-if="plan.coverage.due > 0 && plan.coverage.percent < 100"
               icon="pi pi-check-circle"
               severity="success"
               text
@@ -567,9 +577,12 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               aria-label="Einnahmen als erhalten markieren"
               @click="openMarkDialog('income', plan.id)"
             />
-            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahmenplan bearbeiten" @click="editIncomePlan(plan)" />
+          </template>
+          <!-- Bearbeiten/Loeschen nur ab 640px als Buttons; mobil ersetzt
+               durch Swipe (issue #132). -->
+          <template v-if="canManageHousehold" #actions-desktop>
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Einnahmenplan bearbeiten" @click="editIncomePlan(plan)" />
             <Button
-              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               outlined
@@ -581,6 +594,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             />
           </template>
         </ItemCard>
+        </SwipeableListItem>
 
         <div v-if="currentHousehold.incomePlans.length === 0" class="empty-list">Noch keine Einnahmenpläne angelegt.</div>
       </ListPanel>
@@ -590,11 +604,18 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         compact
         :badge="`${visiblePlans(currentHousehold.fixedCosts).length} fällig${nonDueFixedCount > 0 ? ` · ${nonDueFixedCount} diesen Monat nicht relevant` : ''}`"
       >
-        <ItemCard
+        <SwipeableListItem
           v-for="plan in visiblePlans(currentHousehold.fixedCosts)"
           :key="plan.id"
-          :hover-actions="false"
+          :disabled="swipeDisabled"
+          swipe-right-icon="pi pi-pen-to-square"
+          swipe-right-label="Bearbeiten"
+          swipe-left-icon="pi pi-trash"
+          swipe-left-label="Löschen"
+          @swipe-right="editFixedCostPlan(plan)"
+          @swipe-left="deletePlanningItem('fixedCostPlan', plan)"
         >
+        <ItemCard :hover-actions="false">
           <template #main>
             <span class="row-title">
               {{ plan.name }}
@@ -624,9 +645,8 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               <span class="amount-secondary">pro {{ frequencyLabel(plan.frequency) }}</span>
             </div>
           </template>
-          <template #actions>
+          <template v-if="plan.coverage.due > 0 && plan.coverage.percent < 100" #actions>
             <Button
-              v-if="plan.coverage.due > 0 && plan.coverage.percent < 100"
               icon="pi pi-check-circle"
               severity="primary"
               text
@@ -634,9 +654,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               aria-label="Fixkosten als bezahlt markieren"
               @click="openMarkDialog('fixedCost', plan.id)"
             />
-            <Button v-if="canManageHousehold" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Fixkostenplan bearbeiten" @click="editFixedCostPlan(plan)" />
+          </template>
+          <template v-if="canManageHousehold" #actions-desktop>
+            <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Fixkostenplan bearbeiten" @click="editFixedCostPlan(plan)" />
             <Button
-              v-if="canManageHousehold"
               icon="pi pi-trash"
               severity="danger"
               outlined
@@ -648,6 +669,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             />
           </template>
         </ItemCard>
+        </SwipeableListItem>
 
         <div v-if="currentHousehold.fixedCosts.length === 0" class="empty-list">Noch keine Fixkostenpläne angelegt.</div>
       </ListPanel>
