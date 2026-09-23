@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { isTransactionsPath } from '~/utils/transaction-nav'
 
+const route = useRoute()
 const { user, logout } = useAppAuth()
 const { households, activeHousehold, canManageHousehold, setActiveHousehold } = useHousehold()
 const onboarding = useOnboarding()
@@ -179,13 +181,18 @@ onBeforeUnmount(() => {
           <i class="pi pi-chart-bar nav-icon"></i>
           <span>Dashboard</span>
         </NuxtLink>
-        <NuxtLink to="/transactions/expenses" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-arrow-down nav-icon"></i>
-          <span>Ausgaben</span>
-        </NuxtLink>
-        <NuxtLink to="/transactions/income" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-arrow-up nav-icon"></i>
-          <span>Einnahmen</span>
+        <!-- Issue #101: Ausgaben und Einnahmen sind EIN Bereich "Buchungen"
+             (Segment-Control auf den Seiten). Aktiv-Zustand manuell, weil
+             active-class von NuxtLink auf /transactions/income sonst nicht
+             greift (Ziel ist /transactions/expenses). -->
+        <NuxtLink
+          to="/transactions/expenses"
+          class="nav-item"
+          :class="{ 'nav-item-active': isTransactionsPath(route.path) }"
+          :aria-current="isTransactionsPath(route.path) ? 'page' : undefined"
+        >
+          <i class="pi pi-list nav-icon"></i>
+          <span>Buchungen</span>
         </NuxtLink>
         <NuxtLink to="/budgeting/budgets" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-wallet nav-icon"></i>

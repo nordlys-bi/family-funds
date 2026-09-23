@@ -143,6 +143,8 @@ const latestEntry = computed(() => recentActivity.value[0] ?? null)
 const DASHBOARD_LIST_LIMIT = 3
 
 const balanceTone = computed(() => ((summary.value?.balance ?? 0) >= 0 ? 'primary' : 'danger'))
+// Issue #101: Einnahmen bei 0 € im Monatsstreifen gedaempft statt gruen.
+const incomeIsZero = computed(() => (summary.value?.income ?? 0) === 0)
 
 async function loadDashboard() {
   if (!activeHousehold.value) {
@@ -262,13 +264,17 @@ watch(quickCapture.savedTick, loadDashboard)
           <span class="month-strip__balance">{{ formatMoney(summary?.balance) }}</span>
         </div>
         <dl class="month-strip__aside">
-          <div class="month-strip__pair">
-            <dt>Einnahmen</dt>
-            <dd class="month-strip__pos">{{ formatMoney(summary?.income) }}</dd>
-          </div>
+          <!-- Issue #101: Ausgaben sind das taegliche Signal und stehen vorn.
+               Einnahmen (~1x im Monat) bleiben immer sichtbar — kein Layout-
+               Sprung beim ersten Gehaltseingang —, sind aber bei 0 € gedaempft
+               statt gruen. -->
           <div class="month-strip__pair">
             <dt>Ausgaben</dt>
             <dd class="month-strip__neg">{{ formatMoney(summary?.expenses) }}</dd>
+          </div>
+          <div class="month-strip__pair">
+            <dt>Einnahmen</dt>
+            <dd :class="incomeIsZero ? 'month-strip__muted' : 'month-strip__pos'">{{ formatMoney(summary?.income) }}</dd>
           </div>
           <!-- Issue #60 / ADR 0003: Voraussicht auf Monatsende — nur bei
                Abweichung vom Plan (warning/over), nicht im Normalfall. -->
@@ -460,6 +466,12 @@ watch(quickCapture.savedTick, loadDashboard)
 
 .month-strip__aside dd.month-strip__neg {
   color: var(--color-accent-danger-text, #f87171);
+}
+
+/* Issue #101: Einnahmen ohne Betrag (die meiste Zeit des Monats) nicht
+   prominent gruen, sondern gedaempft. */
+.month-strip__aside dd.month-strip__muted {
+  color: var(--color-text-muted, #94a3b8);
 }
 
 /* Issue #60 / ADR 0003: Voraussicht nur bei Abweichung vom Plan. */

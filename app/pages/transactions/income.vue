@@ -508,7 +508,11 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
 <template>
-  <ListPageShell title="Einnahmen">
+  <ListPageShell title="Buchungen">
+    <template #segment>
+      <TransactionTypeSwitch />
+    </template>
+
     <template #summary>
       <!-- Bei aktivem Person-Filter ist das die Summe der gefilterten Liste,
            nicht des ganzen Monats (issue #134). -->

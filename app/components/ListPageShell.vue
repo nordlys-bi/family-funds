@@ -27,6 +27,12 @@ defineProps<{
       </div>
     </header>
 
+    <!-- Optionales Segment-Control (z. B. Ausgaben | Einnahmen, issue #101),
+         steht ueber der Toolbar und damit ueber allen Filtern. -->
+    <div v-if="$slots.segment" class="list-page-shell__segment">
+      <slot name="segment" />
+    </div>
+
     <div v-if="$slots.toolbar" class="list-page-shell__toolbar">
       <slot name="toolbar" />
     </div>
@@ -89,6 +95,11 @@ defineProps<{
   min-width: 0;
 }
 
+.list-page-shell__segment {
+  display: flex;
+  padding: 0 0.1rem;
+}
+
 .list-page-shell__toolbar {
   display: flex;
   justify-content: space-between;
@@ -136,6 +147,7 @@ defineProps<{
 
   .list-page-shell__summary::-webkit-scrollbar { display: none; }
 
+  .list-page-shell__segment,
   .list-page-shell__toolbar {
     padding: 0;
   }
