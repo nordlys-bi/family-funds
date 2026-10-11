@@ -24,7 +24,7 @@
   nutzt inputmode="decimal" fuer numerische Tastatur auf Mobile.
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { TransactionItem } from '~/composables/useTransactionList'
 
 export type TransactionEditPayload = {
@@ -38,7 +38,7 @@ const props = defineProps<{
   transaction: TransactionItem
   /** Optionen fuer das Budget-Dropdown (nur fuer Expenses relevant).
    *  Bei Income kann leer gelassen werden — Editor rendert das Feld nicht. */
-  budgetOptions?: Array<{ label: string; value: string }>
+  budgetOptions?: Array<{ label: string; value: string; closedAt?: string | null }>
   /** Waehrungscode fuer den MoneyInput. */
   currency: string
   /** Saving-State — true waehrend PATCH läuft, disablest Inputs + Save. */
@@ -73,6 +73,16 @@ function formatDateForInput(value: string): string {
   if (value.includes('T')) return value.split('T')[0] ?? ''
   return value
 }
+
+// ADR-0004: Geschlossene Budgets nur anbieten, wenn das Entwurfs-Datum vor
+// ihrem Stichtag liegt. Das aktuell gesetzte Budget bleibt sichtbar, damit
+// der Select nicht leer wirkt — speichern mit Datum ab Stichtag lehnt der
+// Server ab und der Fehler erscheint unten.
+const availableBudgetOptions = computed(() =>
+  props.budgetOptions?.filter((option) =>
+    option.value === (draft.value.budgetId ?? '') || isBudgetOpenOn(option, draft.value.date),
+  ),
+)
 
 // Wenn Parent eine andere Transaktion in den Editor legt (z. B. nach
 // Cancel + neuer Klick auf Edit), reset das Draft auf die neuen Werte.
@@ -153,7 +163,7 @@ function handleCancel() {
       <Select
         :input-id="`tx-edit-budget-${transaction.id}`"
         v-model="draft.budgetId"
-        :options="budgetOptions"
+        :options="availableBudgetOptions"
         option-label="label"
         option-value="value"
         placeholder="Sonstiges"

@@ -18,7 +18,7 @@ import { computed, ref, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { todayDateHelperText } from '~/utils/form-helpers'
 
-type BudgetItem = { id: string; name: string }
+type BudgetItem = { id: string; name: string; closedAt?: string | null }
 
 const { isOpen, kind, budgetId: prefillBudgetId, close, setKind, markSaved } = useQuickCapture()
 const { activeHousehold } = useHousehold()
@@ -56,10 +56,20 @@ const saving = ref(false)
 const errorMessage = ref<string | null>(null)
 
 const budgets = ref<BudgetItem[]>([])
+// ADR-0004: Geschlossene Budgets nur bis zu ihrem Stichtag anbieten.
 const budgetSelectOptions = computed(() => [
   { label: 'Sonstiges', value: '' },
-  ...budgets.value.map((budget) => ({ label: budget.name, value: budget.id })),
+  ...budgetsOpenOn(budgets.value, form.value.date).map((budget) => ({ label: budget.name, value: budget.id })),
 ])
+
+// Faellt das gewaehlte Budget durch einen Datumswechsel weg, auf
+// "Sonstiges" zuruecksetzen statt eine Auswahl zu behalten, die der Server
+// mit 400 ablehnt.
+watch(budgetSelectOptions, (options) => {
+  if (form.value.budgetId && !options.some((option) => option.value === form.value.budgetId)) {
+    form.value.budgetId = ''
+  }
+})
 
 function formatDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(

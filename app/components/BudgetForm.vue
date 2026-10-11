@@ -13,6 +13,9 @@
   - frequency (Frequency)
   - validFrom (Date)
 
+  `frequencyLocked` (ADR-0004): Beim Bearbeiten ist die Frequenz fest — eine
+  andere Periodizitaet heisst neues Budget anlegen und das alte schliessen.
+
   Eine Zeile weniger als RecurringPlanForm: Budgets haben kein Enddatum,
   dafür muss `validFrom` reaktiv an die Frequency angepasst werden, wenn ein
   neuer Budget angelegt wird (im Page-Watcher, der das Formular umgibt).
@@ -30,6 +33,7 @@ export type BudgetFormData = {
 const props = defineProps<{
   modelValue: BudgetFormData
   currency: string
+  frequencyLocked?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -69,7 +73,11 @@ function patch<K extends keyof BudgetFormData>(
       :options="frequencySelectOptions()"
       optionLabel="label"
       optionValue="value"
+      :disabled="frequencyLocked"
     />
+    <small v-if="frequencyLocked" class="budget-form__hint">
+      Frequenz ist fest. Für eine andere Frequenz ein neues Budget anlegen und dieses hinein schließen.
+    </small>
   </FormFieldRow>
   <FormFieldRow label="Gültig ab" htmlFor="budget-valid-from">
     <DatePicker
@@ -81,3 +89,12 @@ function patch<K extends keyof BudgetFormData>(
     />
   </FormFieldRow>
 </template>
+
+<style scoped>
+.budget-form__hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+</style>
