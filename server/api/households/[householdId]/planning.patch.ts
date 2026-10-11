@@ -11,6 +11,7 @@ import {
 } from '../../../utils/planning'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
+import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
 
 type PlanningUpdateBody = {
   kind: string
@@ -70,13 +71,6 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      if (!body.frequency) {
-        throw createError({
-          statusCode: 400,
-          statusMessage: 'Frequency is required.',
-        })
-      }
-
       if (!body.validFrom) {
         throw createError({
           statusCode: 400,
@@ -84,9 +78,22 @@ export default defineEventHandler(async (event) => {
         })
       }
 
-      const frequency = assertFrequency(body.frequency)
+      // ADR-0004: Die Frequenz ist nach dem Anlegen unveraenderlich — eine
+      // andere Periodizitaet heisst neues Budget + altes schliessen. Das
+      // Feld wird nur noch toleriert, wenn es zur Budget-Frequenz passt
+      // (aeltere Clients schicken es weiter mit).
+      if (body.frequency && body.frequency !== existing.frequency) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Frequency cannot be changed. Create a new budget and close this one instead.',
+        })
+      }
+
       const validFrom = parseDateInput(body.validFrom, 'Valid from')
-      assertPeriodStart(validFrom, frequency, 'Valid from')
+      assertPeriodStart(validFrom, existing.frequency, 'Valid from')
+      // Ab dem Stichtag eines geschlossenen Budgets gibt es keine
+      // Zuteilungen mehr — eine Version dort waere wirkungslos.
+      assertBudgetOpenOn(existing, validFrom)
       const amount = parseMoneyToCents(body.amount, 'Amount')
 
       const item = await prisma.$transaction(async (tx) => {
@@ -99,7 +106,7 @@ export default defineEventHandler(async (event) => {
 
         // upsert statt create: zwei parallele PATCHes mit demselben validFrom
         // würden sonst P2002 werfen -> 500. Upsert nimmt das vorhandene Row
-        // und merged amount/frequency statt zu kollidieren.
+        // und merged amount statt zu kollidieren.
         return tx.budgetVersion.upsert({
           where: {
             budgetId_validFrom: {
@@ -110,12 +117,10 @@ export default defineEventHandler(async (event) => {
           create: {
             budgetId: body.id,
             amount,
-            frequency,
             validFrom,
           },
           update: {
             amount,
-            frequency,
           },
         })
       })

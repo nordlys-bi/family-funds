@@ -191,10 +191,9 @@ describe('buildAggregatedForecast', () => {
 })
 
 // === Integrations-Test: buildBudgetOverview liefert forecast =========
-import { buildBudgetOverview } from '../budget-evaluation'
-import type { BudgetVersion } from '@prisma/client'
+import { buildBudgetOverview, type EvaluationVersion } from '../budget-evaluation'
 
-function makeVersion(overrides: Partial<BudgetVersion> & { amount: number; frequency: BudgetVersion['frequency']; validFrom: Date }): BudgetVersion {
+function makeVersion(overrides: Partial<EvaluationVersion> & { budgetId?: string; amount: number; frequency: EvaluationVersion['frequency']; validFrom: Date }): EvaluationVersion & { budgetId: string } {
   return {
     id: overrides.id ?? `version-${Math.random().toString(36).slice(2)}`,
     budgetId: overrides.budgetId ?? 'budget-1',

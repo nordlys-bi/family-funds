@@ -123,3 +123,22 @@ describe('POST /transactions — expense budget assignment (regression guard)', 
     expect(data.budgetId).toBe('b-1')
   })
 })
+
+describe('POST /transactions — geschlossene Budgets (ADR-0004)', () => {
+  it('rejects an expense dated on or after the closing date', async () => {
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: 'b-1', closedAt: new Date(2026, 9, 5, 12) })
+
+    await expect(
+      handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-05', budgetId: 'b-1' })),
+    ).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.expenseTransaction.create).not.toHaveBeenCalled()
+  })
+
+  it('still allows late bookings dated before the closing date', async () => {
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: 'b-1', closedAt: new Date(2026, 9, 5, 12) })
+
+    await handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-04', budgetId: 'b-1' }))
+
+    expect(prismaMocks.expenseTransaction.create).toHaveBeenCalledTimes(1)
+  })
+})

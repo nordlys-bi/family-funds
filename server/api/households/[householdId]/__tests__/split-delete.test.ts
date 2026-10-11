@@ -26,9 +26,10 @@ import type { H3Event } from 'h3'
 const prismaMocks = vi.hoisted(() => ({
   // issue #58: Transaction-DELETE ist Soft-Delete (update mit deletedAt),
   // nicht Hard-Delete. Mock spiegelt die echte Prisma-Client-API.
-  expenseTransaction: { findFirst: vi.fn(), update: vi.fn() },
+  expenseTransaction: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
   incomeTransaction: { findFirst: vi.fn(), update: vi.fn() },
-  budget: { findFirst: vi.fn(), delete: vi.fn() },
+  budget: { findFirst: vi.fn(), delete: vi.fn(), count: vi.fn() },
+  savingsGoalExecution: { count: vi.fn() },
   incomePlan: { findFirst: vi.fn(), delete: vi.fn() },
   fixedCostPlan: { findFirst: vi.fn(), delete: vi.fn() },
   savingsGoal: { findFirst: vi.fn(), delete: vi.fn() },
@@ -80,6 +81,10 @@ function mockOwner() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // ADR-0004: Default = Budget ohne Spuren (loeschbar).
+  prismaMocks.expenseTransaction.count.mockResolvedValue(0)
+  prismaMocks.savingsGoalExecution.count.mockResolvedValue(0)
+  prismaMocks.budget.count.mockResolvedValue(0)
 })
 
 describe('DELETE /households/:id/expenses/:expenseId', () => {
@@ -194,6 +199,27 @@ describe('DELETE /households/:id/budgets/:budgetId (owner-only)', () => {
     mockOwner()
     prismaMocks.budget.findFirst.mockResolvedValue(null)
     await expect(budgetHandler(makeEvent())).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  // ADR-0004: Budgets mit Spuren werden geschlossen, nicht geloescht.
+  it.each([
+    ['expenses (incl. soft-deleted)', () => prismaMocks.expenseTransaction.count.mockResolvedValue(1)],
+    ['savings transfers', () => prismaMocks.savingsGoalExecution.count.mockResolvedValue(1)],
+    ['a closed predecessor', () => prismaMocks.budget.count.mockResolvedValue(1)],
+  ])('throws 409 when the budget has %s', async (_label, arrange) => {
+    mockOwner()
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: ITEM_ID })
+    arrange()
+    await expect(budgetHandler(makeEvent())).rejects.toMatchObject({ statusCode: 409 })
+    expect(prismaMocks.budget.delete).not.toHaveBeenCalled()
+  })
+
+  it('counts soft-deleted expenses too (no deletedAt filter)', async () => {
+    mockOwner()
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: ITEM_ID })
+    prismaMocks.budget.delete.mockResolvedValue({ id: ITEM_ID })
+    await budgetHandler(makeEvent())
+    expect(prismaMocks.expenseTransaction.count).toHaveBeenCalledWith({ where: { budgetId: ITEM_ID } })
   })
 })
 

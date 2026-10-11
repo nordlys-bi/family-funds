@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { BudgetVersion, Frequency } from '@prisma/client'
+import type { Frequency } from '@prisma/client'
 import {
   addPeriod,
   attachPeriodSpending,
@@ -11,12 +11,14 @@ import {
   getOverallBudgetPeriodWindow,
   startOfPeriod,
   type BudgetCurrentPeriodWindow,
+  type EvaluationVersion,
+  withVersionFrequency,
 } from '../budget-evaluation'
 
 /**
  * Build a BudgetVersion fixture. `amount` is in cents, `validFrom` is a Date.
  */
-function makeVersion(overrides: Partial<BudgetVersion> & { amount: number; frequency: Frequency; validFrom: Date }): BudgetVersion {
+function makeVersion(overrides: Partial<EvaluationVersion> & { budgetId?: string; amount: number; frequency: Frequency; validFrom: Date }): EvaluationVersion & { budgetId: string } {
   return {
     id: overrides.id ?? `version-${Math.random().toString(36).slice(2)}`,
     budgetId: overrides.budgetId ?? 'budget-1',
@@ -28,7 +30,7 @@ function makeVersion(overrides: Partial<BudgetVersion> & { amount: number; frequ
   }
 }
 
-function makeBudget(id: string, key: string, name: string, versions: BudgetVersion[]) {
+function makeBudget(id: string, key: string, name: string, versions: EvaluationVersion[]) {
   return { id, key, name, versions }
 }
 
@@ -972,5 +974,36 @@ describe('buildCurrentBudgetPeriods', () => {
     expect(item.remainingAmount).toBe(90000)
     expect(item.percentUsed).toBe(25)
     expect(item.severity).toBe('ok')
+  })
+})
+describe('geschlossene Budgets (ADR-0004)', () => {
+  const weeklyVersion = makeVersion({ amount: 10000, frequency: 'WEEKLY', validFrom: new Date(2026, 5, 1, 12) })
+
+  it('plant im Monatsbericht nur Wochen vor dem Stichtag', () => {
+    const budget = { ...makeBudget('budget-1', 'FOOD', 'Lebensmittel', [weeklyVersion]), closedAt: new Date(2026, 9, 12, 12) }
+    const overview = buildBudgetOverview([budget], [], new Date(2026, 9, 1, 12), new Date(2026, 9, 20, 12))
+    // Oktober-Wochen: 5.10. (vor Stichtag), 12./19./26.10. nicht mehr
+    expect(overview.budgets[0].plannedAmount).toBe(10000)
+    expect(overview.budgets[0].periods.map((period) => period.start.getDate())).toEqual([5])
+  })
+
+  it('plant ab einem Monat nach dem Stichtag nichts mehr', () => {
+    const budget = { ...makeBudget('budget-1', 'FOOD', 'Lebensmittel', [weeklyVersion]), closedAt: new Date(2026, 9, 5, 12) }
+    const overview = buildBudgetOverview([budget], [], new Date(2026, 10, 1, 12), new Date(2026, 10, 2, 12))
+    expect(overview.budgets[0].plannedAmount).toBe(0)
+    expect(overview.budgets[0].currentAmount).toBeNull()
+  })
+
+  it('hat ab dem Stichtag keine laufende Periode mehr', () => {
+    const budget = { ...makeBudget('budget-1', 'FOOD', 'Lebensmittel', [weeklyVersion]), closedAt: new Date(2026, 9, 12, 12) }
+    expect(getCurrentBudgetPeriodWindows([budget], new Date(2026, 9, 11, 9))).toHaveLength(1)
+    expect(getCurrentBudgetPeriodWindows([budget], new Date(2026, 9, 12, 9))).toHaveLength(0)
+  })
+})
+
+describe('withVersionFrequency', () => {
+  it('haengt die Budget-Frequenz an jede Version', () => {
+    const result = withVersionFrequency({ id: 'b', frequency: 'WEEKLY' as const, versions: [{ amount: 1 }, { amount: 2 }] })
+    expect(result.versions).toEqual([{ amount: 1, frequency: 'WEEKLY' }, { amount: 2, frequency: 'WEEKLY' }])
   })
 })

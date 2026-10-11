@@ -25,6 +25,7 @@ import { requireHouseholdMembership } from '../../../../../../utils/household-ac
 import { parseDateInput, parseExecutionAmount } from '../../../../../../utils/planning'
 import { defineApiResponse } from '../../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../../utils/validation'
+import { assertBudgetOpenOn } from '../../../../../../utils/budget-lifecycle'
 
 type UpdateExecutionBody = {
   amount?: number | string
@@ -50,7 +51,7 @@ export default defineEventHandler(async (event) => {
       savingsGoalId: goalId,
       savingsGoal: { householdId },
     },
-    select: { id: true },
+    select: { id: true, sourceBudget: { select: { closedAt: true } } },
   })
   if (!existing) {
     throw createError({
@@ -80,6 +81,12 @@ export default defineEventHandler(async (event) => {
     } else {
       note = null
     }
+  }
+
+  // ADR-0004: Eine Umbuchung darf nicht hinter den Stichtag ihres
+  // (inzwischen geschlossenen) Quell-Budgets verschoben werden.
+  if (date && existing.sourceBudget) {
+    assertBudgetOpenOn(existing.sourceBudget, date)
   }
 
   const item = await prisma.savingsGoalExecution.update({

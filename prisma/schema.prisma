@@ -94,12 +94,35 @@ model Budget {
   householdId  String
   key          String
   name         String
+  // ADR-0004: Die Frequenz gehoert fest zum Budget (nicht zur Version) und
+  // ist nach dem Anlegen unveraenderlich — ein Frequenzwechsel ist ein
+  // neues Budget, in das das alte geschlossen wird. So ist ueber die
+  // budgetId jeder Buchung eindeutig, gegen welches Periodenraster sie zaehlt.
+  frequency    Frequency
+  // ADR-0004: Ab hier zaehlen Zuteilungen und Buchungen in den Saldo.
+  // Immer ein Periodenbeginn der Frequenz.
+  balanceSince DateTime
+  // ADR-0004: Stichtag (exklusiv, Periodenbeginn) — ab hier keine
+  // Zuteilungen und keine Buchungen mehr. null = offen.
+  closedAt     DateTime?
+  // ADR-0004: Pflicht-Ziel beim Schliessen. Kein festgeschriebener Betrag,
+  // sondern ein Verweis: der Saldo des Ziels enthaelt immer den aktuellen
+  // Endsaldo dieses Budgets. Ein Ziel darf nicht geloescht werden, sonst
+  // verschwindet der Endsaldo. NoAction statt Restrict: Restrict prueft
+  // sofort und wuerde auch das Cascade-Loeschen des ganzen Haushalts
+  // (Vorgaenger + Ziel im selben Statement) blockieren; NoAction prueft
+  // erst am Statement-Ende.
+  carryoverToBudgetId String?
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  carryoverTo  Budget?           @relation("BudgetCarryover", fields: [carryoverToBudgetId], references: [id], onDelete: NoAction)
+  predecessors Budget[]          @relation("BudgetCarryover")
   versions     BudgetVersion[]
   expenses     ExpenseTransaction[]
+  // ADR-0004: Umbuchungen Budget <-> Spartopf.
+  savingsTransfers SavingsGoalExecution[]
   // Issue #59 polish: Rueckwaerts-Pointer auf Recurring-Plaene, die
   // dieses Budget als Default verwenden. Budget-Loeschen hebt die
   // Verknuepfung auf den Plaenen auf (setzt budgetId=null), die Plaene
@@ -115,7 +138,6 @@ model BudgetVersion {
   id           String            @id @default(uuid())
   budgetId     String
   amount       Int               // Cent value
-  frequency    Frequency
   validFrom    DateTime
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
@@ -280,8 +302,16 @@ model SavingsGoalExecution {
   // (issue #39) sichtbar. Nullable, damit bestehende Buchungen und
   // Quick-Booking ohne Notiz moeglich bleiben.
   note          String?
+  // ADR-0004: Umbuchung Budget <-> Spartopf. Gesetzt = der Betrag kommt
+  // aus dem Saldo dieses Budgets (positiv) bzw. geht dorthin (negativ).
+  // Bewusst eine Zeile statt Doppelbuchung (kein Geldabfluss aus dem
+  // Haushalt, darf nicht in Ausgaben-Reports auftauchen).
+  sourceBudgetId String?
   createdAt     DateTime          @default(now())
   updatedAt     DateTime          @updatedAt
 
   savingsGoal   SavingsGoal       @relation(fields: [savingsGoalId], references: [id], onDelete: Cascade)
+  sourceBudget  Budget?           @relation(fields: [sourceBudgetId], references: [id], onDelete: SetNull)
+
+  @@index([sourceBudgetId, date])
 }

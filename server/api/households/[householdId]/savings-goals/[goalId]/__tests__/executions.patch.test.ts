@@ -112,7 +112,7 @@ describe('PATCH /households/:id/savings-goals/:goalId/executions/:execId — Iss
         savingsGoalId: GOAL_ID,
         savingsGoal: { householdId: HH_ID },
       },
-      select: { id: true },
+      select: { id: true, sourceBudget: { select: { closedAt: true } } },
     })
     expect(prismaMocks.savingsGoalExecution.update).toHaveBeenCalledWith({
       where: { id: EXEC_ID },
@@ -223,5 +223,22 @@ describe('PATCH /households/:id/savings-goals/:goalId/executions/:execId — Iss
       handler(makeEvent(HH_ID, GOAL_ID, 'not-a-uuid')),
     ).rejects.toMatchObject({ statusCode: 400 })
     expect(prismaMocks.savingsGoalExecution.findFirst).not.toHaveBeenCalled()
+  })
+})
+
+describe('PATCH executions — Umbuchung aus geschlossenem Budget (ADR-0004)', () => {
+  it('lehnt ein Datum ab dem Stichtag des Quell-Budgets mit 400 ab', async () => {
+    authMocks.requireHouseholdMembership.mockResolvedValue({
+      user: { id: 'user-1' },
+      membership: { id: 'm-1', role: 'MEMBER' },
+    })
+    prismaMocks.savingsGoalExecution.findFirst.mockResolvedValue({
+      id: EXEC_ID,
+      sourceBudget: { closedAt: new Date(2026, 9, 1, 12) },
+    })
+    readBodyMock.mockResolvedValueOnce({ date: '2026-10-01' })
+
+    await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.savingsGoalExecution.update).not.toHaveBeenCalled()
   })
 })

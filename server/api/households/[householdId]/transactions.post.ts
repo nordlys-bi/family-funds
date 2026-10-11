@@ -5,6 +5,7 @@ import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
+import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
 
 type TransactionCreateBody = {
   kind: string
@@ -80,7 +81,7 @@ export default defineEventHandler(async (event) => {
           id: budgetId,
           householdId,
         },
-        select: { id: true },
+        select: { id: true, closedAt: true },
       })
 
       if (!budget) {
@@ -89,6 +90,9 @@ export default defineEventHandler(async (event) => {
           statusMessage: 'Budget not found.',
         })
       }
+
+      // ADR-0004: keine Ausgaben ab dem Stichtag eines geschlossenen Budgets.
+      assertBudgetOpenOn(budget, date)
     }
 
     const item = await prisma.expenseTransaction.create({
