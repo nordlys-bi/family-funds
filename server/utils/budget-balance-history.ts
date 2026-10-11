@@ -54,11 +54,34 @@ export type BalanceHistoryEvent = {
   fromBudgetId?: string
 }
 
+/**
+ * Eine Zeile der Ereignisliste: jede Bewegung im Zeitraum mit ihrer
+ * Wirkung auf den Saldo (`amount` vorzeichenbehaftet: + erhoeht, − senkt).
+ * Anders als `events` (nur die seltenen Marker im Chart) enthaelt sie auch
+ * jede Zuteilung und jede Ausgabe.
+ */
+export type BalanceHistoryEntry = {
+  type: 'allocation' | 'expense' | 'transfer' | 'carryover'
+  date: string
+  amount: number
+  budgetId: string
+  /** expense/transfer: Id der Buchung bzw. Execution, sofern geladen. */
+  id?: string
+  /** expense: Beschreibung, transfer: Notiz. */
+  text?: string | null
+  /** transfer: Spartopf. */
+  savingsGoal?: { id: string; name: string } | null
+  /** carryover: der geschlossene Vorgaenger. */
+  fromBudgetId?: string
+}
+
 export type BalanceHistory = {
   from: string
   to: string
   points: BalanceHistoryPoint[]
   events: BalanceHistoryEvent[]
+  /** Chronologisch aufsteigend. */
+  entries: BalanceHistoryEntry[]
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -185,6 +208,7 @@ export function computeBudgetBalanceHistory(
 
   const eventDays = new Set<number>()
   const events: BalanceHistoryEvent[] = []
+  const entries: BalanceHistoryEntry[] = []
 
   for (const budget of chain) {
     const sinceKey = dayKey(budget.balanceSince)
@@ -198,7 +222,10 @@ export function computeBudgetBalanceHistory(
       const isChange = previousAmount !== null && allocation.amount !== previousAmount
       previousAmount = allocation.amount
       if (!inRange(key)) continue
-      if (allocation.amount !== 0) eventDays.add(key)
+      if (allocation.amount !== 0) {
+        eventDays.add(key)
+        entries.push({ type: 'allocation', date: formatDayKey(key), amount: allocation.amount, budgetId: budget.id })
+      }
       if (isChange) {
         events.push({ type: 'version', date: formatDayKey(key), amount: allocation.amount, budgetId: budget.id })
       }
@@ -207,7 +234,16 @@ export function computeBudgetBalanceHistory(
     for (const expense of expenses) {
       if (expense.budgetId !== budget.id) continue
       const key = dayKey(expense.date)
-      if (key >= sinceKey && inRange(key)) eventDays.add(key)
+      if (key < sinceKey || !inRange(key)) continue
+      eventDays.add(key)
+      entries.push({
+        type: 'expense',
+        date: formatDayKey(key),
+        amount: -expense.amount,
+        budgetId: budget.id,
+        id: expense.id,
+        text: expense.description,
+      })
     }
 
     for (const transfer of transfers) {
@@ -216,6 +252,15 @@ export function computeBudgetBalanceHistory(
       if (key < sinceKey || !inRange(key)) continue
       eventDays.add(key)
       events.push({ type: 'transfer', date: formatDayKey(key), amount: transfer.amount, budgetId: budget.id })
+      entries.push({
+        type: 'transfer',
+        date: formatDayKey(key),
+        amount: -transfer.amount,
+        budgetId: budget.id,
+        id: transfer.id,
+        text: transfer.note,
+        savingsGoal: transfer.savingsGoal,
+      })
     }
 
     for (const predecessor of budgets) {
@@ -233,6 +278,13 @@ export function computeBudgetBalanceHistory(
         budgetId: budget.id,
         fromBudgetId: predecessor.id,
       })
+      entries.push({
+        type: 'carryover',
+        date: formatDayKey(inflowKey),
+        amount: carried?.balance ?? 0,
+        budgetId: budget.id,
+        fromBudgetId: predecessor.id,
+      })
     }
   }
 
@@ -244,8 +296,12 @@ export function computeBudgetBalanceHistory(
   if (days.at(-1) !== toKey) points.push({ date: formatDayKey(toKey), balance: balanceAt(toKey) })
 
   events.sort((left, right) => left.date.localeCompare(right.date))
+  // Stabil sortiert: am selben Tag erst Zuteilung/Uebertrag, dann Abgaenge —
+  // die Reihenfolge, in der man es auf einem Kontoauszug erwartet.
+  const entryOrder: Record<BalanceHistoryEntry['type'], number> = { allocation: 0, carryover: 1, expense: 2, transfer: 3 }
+  entries.sort((left, right) => left.date.localeCompare(right.date) || entryOrder[left.type] - entryOrder[right.type])
 
-  return { from: formatDayKey(fromKey), to: formatDayKey(toKey), points, events }
+  return { from: formatDayKey(fromKey), to: formatDayKey(toKey), points, events, entries }
 }
 
 /**

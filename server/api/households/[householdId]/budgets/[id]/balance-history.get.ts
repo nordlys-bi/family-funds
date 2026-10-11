@@ -79,7 +79,7 @@ export default defineEventHandler(async (event) => {
   // Die Kette ist unter Vorgaengern abgeschlossen — mehr braucht der
   // Kettensaldo nicht, also auch nur deren Buchungen laden.
   const chain = getBudgetChain(budgets, budgetId)
-  const { expenses, transfers } = await loadBudgetBalanceInputs(householdId, chain)
+  const { expenses, transfers } = await loadBudgetBalanceInputs(householdId, chain, { details: true })
   const history = computeBudgetBalanceHistory(chain, expenses, transfers, budgetId, from, to)
   const names = new Map(budgets.map((budget) => [budget.id, budget.name]))
 
@@ -89,6 +89,11 @@ export default defineEventHandler(async (event) => {
     // Namen fuer Ereignis-Beschriftungen ("Übertrag aus Lebensmittel (wöchentlich)").
     chain: chain.map((budget) => ({ id: budget.id, name: names.get(budget.id) ?? '' })),
     events: history.events.map((item) => ({
+      ...item,
+      budgetName: names.get(item.budgetId) ?? null,
+      fromBudgetName: item.fromBudgetId ? names.get(item.fromBudgetId) ?? null : undefined,
+    })),
+    entries: history.entries.map((item) => ({
       ...item,
       budgetName: names.get(item.budgetId) ?? null,
       fromBudgetName: item.fromBudgetId ? names.get(item.fromBudgetId) ?? null : undefined,

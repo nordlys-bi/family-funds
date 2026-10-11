@@ -13,10 +13,11 @@
   (useQuickCapture, issue #91) mit vorausgewaehltem Budget — kein
   eigener Dialog noetig.
 
-  Issue-Request: Klick auf die Karte (oberhalb des "Erfassen"-Buttons)
-  oeffnet die Buchungsliste, gefiltert nach genau diesem Budget UND der
-  exakten Perioden-Spanne (nicht dem Kalendermonat) — siehe
-  `?from&to`-Support in `server/api/households/[householdId]/transactions.get.ts`.
+  Klick auf die Karte (oberhalb des "Erfassen"-Buttons) oeffnet die
+  Budget-Detailseite (ADR-0004: Saldo + Verlauf sind dort die Hauptansicht).
+  Frueher fuehrte er direkt in die nach Budget und Perioden-Spanne
+  gefilterte Buchungsliste — dieser Link ("Buchungen dieser Periode")
+  sitzt jetzt auf der Detailseite.
 -->
 <script setup lang="ts">
 import type { Frequency } from '~/types/planning'
@@ -50,15 +51,8 @@ function captureExpense(budgetId: string) {
   quickCapture.open('expense', { budgetId })
 }
 
-function transactionsLink(card: PeriodCard) {
-  return {
-    path: '/transactions/expenses',
-    query: {
-      budgetId: card.budgetId,
-      from: card.periodStart,
-      ...(card.periodEnd ? { to: card.periodEnd } : {}),
-    },
-  }
+function detailLink(card: PeriodCard) {
+  return `/budgeting/budgets/${card.budgetId}`
 }
 </script>
 
@@ -68,7 +62,7 @@ function transactionsLink(card: PeriodCard) {
   </div>
   <div v-else class="grid">
     <article v-for="card in cards" :key="card.budgetId" class="card" :class="`card--${card.severity}`">
-      <NuxtLink :to="transactionsLink(card)" class="card__main">
+      <NuxtLink :to="detailLink(card)" class="card__main">
         <div class="card__head">
           <span class="card__name">{{ card.name }}</span>
           <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>

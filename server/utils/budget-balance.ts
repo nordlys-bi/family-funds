@@ -33,12 +33,19 @@ export type BalanceExpense = {
   budgetId: string | null
   amount: number
   date: Date
+  /** Nur fuer die Ereignisliste im Verlauf geladen (`details`). */
+  id?: string
+  description?: string | null
 }
 
 export type BalanceTransfer = {
   sourceBudgetId: string | null
   amount: number
   date: Date
+  /** Nur fuer die Ereignisliste im Verlauf geladen (`details`). */
+  id?: string
+  note?: string | null
+  savingsGoal?: { id: string; name: string } | null
 }
 
 export type BudgetBalance = {

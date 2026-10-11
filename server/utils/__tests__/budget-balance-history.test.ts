@@ -76,6 +76,23 @@ describe('computeBudgetBalanceHistory', () => {
     ])
   })
 
+  it('lists every movement with its signed effect as entries', () => {
+    const expenses = [{ budgetId: 'm', amount: 3000, date: day(2026, 9, 5), id: 'e1', description: 'Rewe' }]
+    const transfers = [{
+      sourceBudgetId: 'm', amount: 500, date: day(2026, 9, 5), id: 't1', note: null, savingsGoal: { id: 'g1', name: 'Urlaub' },
+    }]
+    const history = computeBudgetBalanceHistory([monthly], expenses, transfers, 'm', day(2026, 9, 1), day(2026, 10, 11))
+    expect(history.entries).toEqual([
+      { type: 'allocation', date: '2026-09-01', amount: 10000, budgetId: 'm' },
+      { type: 'expense', date: '2026-09-05', amount: -3000, budgetId: 'm', id: 'e1', text: 'Rewe' },
+      { type: 'transfer', date: '2026-09-05', amount: -500, budgetId: 'm', id: 't1', text: null, savingsGoal: { id: 'g1', name: 'Urlaub' } },
+      { type: 'allocation', date: '2026-10-01', amount: 15000, budgetId: 'm' },
+    ])
+    // Summe der Bewegungen = Endsaldo minus Startsaldo
+    const delta = history.entries.reduce((sum, entry) => sum + entry.amount, 0)
+    expect(delta).toBe(history.points.at(-1)!.balance - history.points[0]!.balance)
+  })
+
   it('ends at the same value as computeBudgetBalances', () => {
     const expenses = [{ budgetId: 'm', amount: 4200, date: day(2026, 10, 3) }]
     const history = computeBudgetBalanceHistory([monthly], expenses, [], 'm', day(2026, 9, 15), day(2026, 10, 11))

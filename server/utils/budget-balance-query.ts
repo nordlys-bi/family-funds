@@ -29,6 +29,9 @@ export const budgetBalanceSelect = {
 export async function loadBudgetBalanceInputs(
   householdId: string,
   budgets: BalanceBudget[],
+  // Beschreibung/Notiz/Spartopf nur fuer die Ereignisliste des Verlaufs —
+  // Saldo und Dashboard brauchen sie nicht und sollen schlank bleiben.
+  options: { details?: boolean } = {},
 ): Promise<{ expenses: BalanceExpense[]; transfers: BalanceTransfer[] }> {
   const earliest = getEarliestBalanceSince(budgets)
   if (!earliest) return { expenses: [], transfers: [] }
@@ -48,14 +51,24 @@ export async function loadBudgetBalanceInputs(
         date: { gte: from },
         deletedAt: null,
       },
-      select: { budgetId: true, amount: true, date: true },
+      select: {
+        budgetId: true,
+        amount: true,
+        date: true,
+        ...(options.details ? { id: true, description: true } : {}),
+      },
     }),
     prisma.savingsGoalExecution.findMany({
       where: {
         sourceBudgetId: { in: budgets.map((budget) => budget.id) },
         date: { gte: from },
       },
-      select: { sourceBudgetId: true, amount: true, date: true },
+      select: {
+        sourceBudgetId: true,
+        amount: true,
+        date: true,
+        ...(options.details ? { id: true, note: true, savingsGoal: { select: { id: true, name: true } } } : {}),
+      },
     }),
   ])
 
