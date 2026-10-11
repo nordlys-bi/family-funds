@@ -25,6 +25,8 @@ import {
   groupEntriesByPeriod,
   periodStartDay,
   projectedPeriodEndBalance,
+  showsPeriodForecast,
+  trendVersusPreviousPeriod,
 } from '~/utils/budget-detail'
 
 definePageMeta({ layout: 'default' })
@@ -83,8 +85,10 @@ const closingDateLabel = computed(() => formatPlanningDate(budget.value?.closedA
 const predecessors = computed(() => budgets.value.filter((item) => item.carryoverToBudgetId === budgetId.value))
 const period = computed(() => (isClosed.value ? null : budget.value?.currentPeriod ?? null))
 // Auf ganze Betraege gerundet: eine Hochrechnung mit Cent-Stellen taeuscht
-// eine Genauigkeit vor, die sie nicht hat.
+// eine Genauigkeit vor, die sie nicht hat. Am letzten Periodentag keine
+// Prognose — da zaehlt ADR-0003 heute als vollen Resttag (siehe Helper).
 const projectedEnd = computed(() => {
+  if (!period.value || !showsPeriodForecast(period.value.end, isoDay(new Date()))) return null
   const value = projectedPeriodEndBalance(balance.value, period.value)
   return value === null ? null : Math.round(value / 100) * 100
 })
@@ -204,7 +208,20 @@ function chainSuffix(item: { budgetId: string; budgetName: string | null }) {
   return item.budgetId === budgetId.value || !item.budgetName ? '' : ` (${item.budgetName})`
 }
 
-const trend = computed(() => balanceTrendOf(history.value?.points ?? []))
+// Trendzeile nur mit eigener Information: offene Budgets gegenueber dem Ende
+// der Vorperiode. Ohne laufende Periode (geschlossen) die Veraenderung im
+// Zeitraum — aber nicht, wenn der Zeitraum bei 0 beginnt, dann waere sie
+// nur der Saldo noch einmal.
+const trend = computed<{ delta: number; text: string } | null>(() => {
+  const points = history.value?.points ?? []
+  if (period.value && budget.value) {
+    const previous = trendVersusPreviousPeriod(points, period.value.start, budget.value.frequency)
+    return previous ? { delta: previous.delta, text: previous.label } : null
+  }
+  const range = balanceTrendOf(points)
+  if (!range || points[0]?.balance === 0) return null
+  return { delta: range.delta, text: `seit ${shortDate(range.since)}` }
+})
 const rangeHeading = computed(() =>
   months.value === 0 ? 'gesamter Verlauf' : months.value === 1 ? 'letzter Monat' : `letzte ${months.value} Monate`,
 )
@@ -440,29 +457,45 @@ function onDeleted(id: string) {
               <span v-if="isClosed" class="tag tag--closed">geschlossen</span>
             </div>
           </div>
-          <Button
-            icon="pi pi-ellipsis-h"
-            text
-            rounded
-            severity="secondary"
-            class="detail-head__more"
-            aria-label="Weitere Aktionen"
-            aria-haspopup="true"
-            :aria-controls="actionMenuId"
-            @click="toggleActionMenu"
-          />
-          <Menu :id="actionMenuId" ref="actionMenu" :model="actionItems" popup>
-            <template #item="{ item, props: itemProps }">
-              <a v-bind="itemProps.action" class="action-menu__item" :class="{ 'action-menu__item--danger': item.danger && !item.disabled }">
-                <i :class="item.icon" aria-hidden="true" />
-                <span class="action-menu__text">
-                  <span>{{ item.label }}</span>
-                  <small v-if="item.hint" class="action-menu__hint">{{ item.hint }}</small>
-                </span>
-              </a>
-            </template>
-          </Menu>
+          <div class="detail-head__actions">
+            <!-- Desktop: Umbuchen oben rechts im Kopf; mobil unter dem Diagramm -->
+            <Button
+              v-if="!isClosed"
+              label="Umbuchen"
+              icon="pi pi-arrow-right-arrow-left"
+              class="primary-action__button primary-action--head"
+              :disabled="!canTransfer"
+              :aria-describedby="canTransfer ? undefined : 'transfer-hint-head'"
+              @click="openTransfer"
+            />
+            <Button
+              icon="pi pi-ellipsis-h"
+              text
+              rounded
+              severity="secondary"
+              class="detail-head__more"
+              aria-label="Weitere Aktionen"
+              aria-haspopup="true"
+              :aria-controls="actionMenuId"
+              @click="toggleActionMenu"
+            />
+            <Menu :id="actionMenuId" ref="actionMenu" :model="actionItems" popup>
+              <template #item="{ item, props: itemProps }">
+                <a v-bind="itemProps.action" class="action-menu__item" :class="{ 'action-menu__item--danger': item.danger && !item.disabled }">
+                  <i :class="item.icon" aria-hidden="true" />
+                  <span class="action-menu__text">
+                    <span>{{ item.label }}</span>
+                    <small v-if="item.hint" class="action-menu__hint">{{ item.hint }}</small>
+                  </span>
+                </a>
+              </template>
+            </Menu>
+          </div>
         </div>
+        <p v-if="!isClosed && !canTransfer" id="transfer-hint-head" class="primary-action__hint primary-action--head">
+          Lege zuerst einen Spartopf an, um umzubuchen.
+          <NuxtLink to="/budgeting/savings">Zu den Spartöpfen</NuxtLink>
+        </p>
 
         <div class="detail-head__balance">
           <span class="detail-head__balance-label">{{ balanceLabel }}</span>
@@ -473,14 +506,16 @@ function onDeleted(id: string) {
           <span v-if="trend" class="detail-head__trend" :class="{ 'is-up': trend.delta > 0, 'is-down': trend.delta < 0 }">
             <span aria-hidden="true">{{ trend.delta > 0 ? '▲' : trend.delta < 0 ? '▼' : '■' }}</span>
             <span class="sr-only">{{ trend.delta > 0 ? 'gestiegen um' : trend.delta < 0 ? 'gesunken um' : 'unverändert' }}</span>
-            {{ signedMoney(trend.delta) }} seit {{ shortDate(trend.since) }}
+            {{ signedMoney(trend.delta) }} {{ trend.text }}
           </span>
           <span v-else-if="historyLoading" class="skeleton skeleton--line" aria-hidden="true" />
         </div>
 
         <p v-if="overdrawn" class="detail-head__overdrawn">
           <i class="pi pi-exclamation-circle" aria-hidden="true" />
-          <span>überzogen um {{ formatMoney(-balance) }}</span>
+          <!-- Betrag steht gross im Saldo — hier nur fuer Screenreader wiederholt -->
+          <span>Überzogen<span class="sr-only"> um {{ formatMoney(-balance) }}</span></span>
+          <span v-if="savingsGoals.length > 0" aria-hidden="true">·</span>
           <button v-if="savingsGoals.length > 0" type="button" class="link-button" @click="openBalanceFix">
             Aus Spartopf ausgleichen
           </button>
@@ -514,72 +549,74 @@ function onDeleted(id: string) {
         <template v-else>ein anderes Budget</template>
       </Message>
 
+      <!-- Saldo-Verlauf -->
+      <article class="panel" :aria-busy="historyLoading">
+        <div class="panel__head">
+          <h2>Saldo-Verlauf</h2>
+          <div class="ranges" role="group" aria-label="Zeitraum">
+            <button
+              v-for="range in RANGES"
+              :key="range.months"
+              type="button"
+              class="ranges__item"
+              :class="{ 'is-active': months === range.months }"
+              :aria-pressed="months === range.months"
+              @click="months = range.months"
+            >
+              {{ range.label }}
+            </button>
+          </div>
+        </div>
+        <div v-if="historyError" class="panel__error">
+          <span>{{ historyError }}</span>
+          <Button label="Erneut versuchen" icon="pi pi-refresh" size="small" text @click="loadHistory" />
+        </div>
+        <div v-else-if="!history" class="skeleton skeleton--chart" aria-hidden="true" />
+        <div v-else-if="historyEmpty" class="chart-empty">
+          <i class="pi pi-chart-line" aria-hidden="true" />
+          <p>Noch keine Bewegung im gewählten Zeitraum – der Saldo steht bei {{ formatMoney(0) }}.</p>
+          <button v-if="months !== 0" type="button" class="link-button" @click="months = 0">Ganzen Verlauf zeigen</button>
+        </div>
+        <template v-else>
+          <BudgetBalanceChart
+            :class="{ 'is-loading': historyLoading }"
+            :points="history.points"
+            :events="chartEvents"
+            :range="{ from: history.from, to: history.to }"
+            :frequency="budget.frequency"
+            :format-money="formatMoney"
+            @select="onChartSelect"
+          />
+          <ul v-if="chartEvents.length > 0" class="legend" aria-hidden="true">
+            <li class="legend__item legend__item--transfer">Umbuchung</li>
+            <li class="legend__item legend__item--version">Neuer Betrag</li>
+            <li class="legend__item legend__item--carryover">Übertrag</li>
+          </ul>
+          <p v-if="predecessorNames.length > 0" class="panel__note">
+            Enthält den Verlauf von {{ predecessorNames.map((name) => `„${name}“`).join(', ') }} vor dem Übertrag.
+          </p>
+        </template>
+      </article>
+
+      <!-- Einzige Primaeraktion: Umbuchen (fuer alle Mitglieder). Mobil
+           unter dem Diagramm; ab 900 px steht sie stattdessen im Kopf. -->
+      <div v-if="!isClosed" class="primary-action primary-action--body">
+        <Button
+          label="Umbuchen"
+          icon="pi pi-arrow-right-arrow-left"
+          class="primary-action__button"
+          :disabled="!canTransfer"
+          :aria-describedby="canTransfer ? undefined : 'transfer-hint-body'"
+          @click="openTransfer"
+        />
+        <p v-if="!canTransfer" id="transfer-hint-body" class="primary-action__hint">
+          Lege zuerst einen Spartopf an, um umzubuchen.
+          <NuxtLink to="/budgeting/savings">Zu den Spartöpfen</NuxtLink>
+        </p>
+      </div>
+
       <div class="detail-layout">
         <div class="detail-main">
-          <!-- Saldo-Verlauf -->
-          <article class="panel" :aria-busy="historyLoading">
-            <div class="panel__head">
-              <h2>Saldo-Verlauf</h2>
-              <div class="ranges" role="group" aria-label="Zeitraum">
-                <button
-                  v-for="range in RANGES"
-                  :key="range.months"
-                  type="button"
-                  class="ranges__item"
-                  :class="{ 'is-active': months === range.months }"
-                  :aria-pressed="months === range.months"
-                  @click="months = range.months"
-                >
-                  {{ range.label }}
-                </button>
-              </div>
-            </div>
-            <div v-if="historyError" class="panel__error">
-              <span>{{ historyError }}</span>
-              <Button label="Erneut versuchen" icon="pi pi-refresh" size="small" text @click="loadHistory" />
-            </div>
-            <div v-else-if="!history" class="skeleton skeleton--chart" aria-hidden="true" />
-            <div v-else-if="historyEmpty" class="chart-empty">
-              <i class="pi pi-chart-line" aria-hidden="true" />
-              <p>Noch keine Bewegung im gewählten Zeitraum – der Saldo steht bei {{ formatMoney(0) }}.</p>
-              <button v-if="months !== 0" type="button" class="link-button" @click="months = 0">Ganzen Verlauf zeigen</button>
-            </div>
-            <template v-else>
-              <BudgetBalanceChart
-                :class="{ 'is-loading': historyLoading }"
-                :points="history.points"
-                :events="chartEvents"
-                :range="{ from: history.from, to: history.to }"
-                :format-money="formatMoney"
-                @select="onChartSelect"
-              />
-              <ul v-if="chartEvents.length > 0" class="legend" aria-hidden="true">
-                <li class="legend__item legend__item--transfer">Umbuchung</li>
-                <li class="legend__item legend__item--version">Neuer Betrag</li>
-                <li class="legend__item legend__item--carryover">Übertrag</li>
-              </ul>
-              <p v-if="predecessorNames.length > 0" class="panel__note">
-                Enthält den Verlauf von {{ predecessorNames.map((name) => `„${name}“`).join(', ') }} vor dem Übertrag.
-              </p>
-            </template>
-          </article>
-
-          <!-- Einzige Primaeraktion: Umbuchen (fuer alle Mitglieder) -->
-          <div v-if="!isClosed" class="primary-action">
-            <Button
-              label="Umbuchen"
-              icon="pi pi-arrow-right-arrow-left"
-              class="primary-action__button"
-              :disabled="!canTransfer"
-              :aria-describedby="canTransfer ? undefined : 'transfer-hint'"
-              @click="openTransfer"
-            />
-            <p v-if="!canTransfer" id="transfer-hint" class="primary-action__hint">
-              Lege zuerst einen Spartopf an, um umzubuchen.
-              <NuxtLink to="/budgeting/savings">Zu den Spartöpfen</NuxtLink>
-            </p>
-          </div>
-
           <!-- Ereignisliste, nach Budgetperiode gruppiert -->
           <article class="panel" :aria-busy="historyLoading">
             <h2>Saldo-Ereignisse · {{ rangeHeading }}</h2>
@@ -753,6 +790,28 @@ function onDeleted(id: string) {
   font-size: 1.5rem;
   color: var(--color-text-primary);
   overflow-wrap: anywhere;
+}
+
+.detail-head__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Umbuchen gibt es zweimal im DOM: im Kopf (Desktop) und unter dem
+   Diagramm (mobil). display:none nimmt die jeweils andere Instanz auch
+   aus dem Accessibility-Tree. */
+@media (max-width: 899px) {
+  .primary-action--head {
+    display: none !important;
+  }
+}
+
+@media (min-width: 900px) {
+  .primary-action--body {
+    display: none !important;
+  }
 }
 
 .detail-head__more {

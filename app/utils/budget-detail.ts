@@ -252,3 +252,72 @@ function toLocalDay(value: string): string {
   const date = new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
+
+/**
+ * Prognose "Periodenende ≈ X" nur, solange nach heute noch Tage der
+ * laufenden Periode kommen. Am letzten Tag zaehlt die ADR-0003-Formel heute
+ * als vollen Resttag und rechnet eine ganze Tagesrate drauf, obwohl die
+ * Periode praktisch vorbei ist (Fall: Wochenbudget am Sonntag zeigte
+ * "≈ −94 €"). Ohne Periodenende (ONCE) gibt es nichts hochzurechnen.
+ * `periodEnd` ist exklusiv (Beginn der Folgeperiode), wie vom Server.
+ */
+export function showsPeriodForecast(periodEnd: string | null, today: string): boolean {
+  if (!periodEnd) return false
+  const lastDay = addDays(toLocalDay(periodEnd), -1)
+  return today < lastDay
+}
+
+const PREVIOUS_PERIOD_LABELS: Record<Frequency, string | null> = {
+  WEEKLY: 'ggü. Vorwoche',
+  MONTHLY: 'ggü. Vormonat',
+  QUARTERLY: 'ggü. Vorquartal',
+  YEARLY: 'ggü. Vorjahr',
+  ONCE: null,
+}
+
+/**
+ * Trendzeile im Kopf: Veraenderung gegenueber dem Saldo am Ende der
+ * Vorperiode ("▼ −3,30 € ggü. Vorwoche"). Die Veraenderung seit Beginn des
+ * Zeitraums waere oft nur der Saldo noch einmal — der Zeitraum beginnt
+ * meist am Saldo-Start, also bei 0.
+ *
+ * null, wenn es keine Vorperiode im geladenen Verlauf gibt (Budget startet
+ * in dieser Periode, oder der Zeitraum reicht nicht zurueck) und bei ONCE.
+ */
+export function trendVersusPreviousPeriod(
+  points: BalancePoint[],
+  periodStart: string,
+  frequency: Frequency,
+): { delta: number; label: string } | null {
+  const label = PREVIOUS_PERIOD_LABELS[frequency]
+  const first = points[0]
+  const last = points.at(-1)
+  if (!label || !first || !last) return null
+  const previousEnd = addDays(toLocalDay(periodStart), -1)
+  // Der erste Punkt ist der Saldo VOR `from` — Tage davor kennt der Verlauf nicht.
+  if (previousEnd < first.date) return null
+  return { delta: last.balance - balanceOnDay(points, previousEnd), label }
+}
+
+/**
+ * Periodengrenzen fuer die x-Achse: jeder Periodenbeginn im Zeitraum (nach
+ * `from`, bis einschliesslich `to`), damit sich jeder Zuteilungssprung einer
+ * Periode zuordnen laesst. `labeled` duennt die Beschriftung gleichmaessig
+ * auf hoechstens `maxLabels` aus; die (dezenten) Linien bleiben alle.
+ */
+export function periodTicks(
+  from: string,
+  to: string,
+  frequency: Frequency,
+  maxLabels: number,
+): Array<{ date: string; labeled: boolean }> {
+  const dates: string[] = []
+  let start = periodStartDay(from, frequency)
+  while (start) {
+    if (start > from && start <= to) dates.push(start)
+    if (start > to) break
+    start = nextPeriodStartDay(start, frequency)
+  }
+  const step = maxLabels > 0 ? Math.max(1, Math.ceil(dates.length / maxLabels)) : Infinity
+  return dates.map((date, index) => ({ date, labeled: index % step === 0 }))
+}
