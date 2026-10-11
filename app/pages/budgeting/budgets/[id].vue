@@ -34,6 +34,9 @@ const budgets = ref<BudgetListItem[]>([])
 const savingsGoals = ref<Array<{ id: string; name: string }>>([])
 const loading = ref(true)
 const loaded = ref(false)
+// Ladefehler getrennt von "nicht gefunden": Bei Netz-/500-Fehlern darf die
+// Seite nicht behaupten, das Budget gebe es nicht (mehr).
+const loadError = ref<string | null>(null)
 const notice = ref<Notice | null>(null)
 const dialogs = ref<{
   openEdit: (budget: BudgetListItem) => void
@@ -44,7 +47,11 @@ const dialogs = ref<{
 
 const budgetsById = computed(() => new Map(budgets.value.map((budget) => [budget.id, budget] as const)))
 const budget = computed(() => budgetsById.value.get(budgetId.value) ?? null)
-const notFound = computed(() => !UUID_PATTERN.test(budgetId.value) || (loaded.value && !budget.value))
+// Nicht gefunden nur bei ungueltiger ID oder wenn das Laden geklappt hat
+// und das Budget im Haushalt fehlt — nie nach einem Ladefehler.
+const notFound = computed(() =>
+  !UUID_PATTERN.test(budgetId.value) || (loaded.value && !loadError.value && !budget.value),
+)
 
 const balance = computed(() => budget.value?.balance?.balance ?? 0)
 const isClosed = computed(() => Boolean(budget.value?.closedAt && new Date(budget.value.closedAt) <= new Date()))
@@ -52,6 +59,10 @@ const hasClosingDate = computed(() => Boolean(budget.value?.closedAt))
 const successor = computed(() =>
   budget.value?.carryoverToBudgetId ? budgetsById.value.get(budget.value.carryoverToBudgetId) ?? null : null,
 )
+// Geschlossen: Der Endsaldo steckt laut ADR-0004 bereits im Ziel-Budget.
+// Deshalb neutral statt gruen/rot — sonst wirkt er wie verfuegbares Geld.
+const balanceLabel = computed(() => (isClosed.value ? 'Endsaldo' : 'Saldo'))
+const closingDateLabel = computed(() => formatPlanningDate(budget.value?.closedAt ?? null))
 const predecessors = computed(() => budgets.value.filter((item) => item.carryoverToBudgetId === budgetId.value))
 const period = computed(() => budget.value?.currentPeriod ?? null)
 
@@ -61,6 +72,7 @@ async function loadBudgets() {
     return
   }
   loading.value = true
+  loadError.value = null
   try {
     // Alle Budgets statt eines Einzel-Endpoints: Die Seite braucht ohnehin
     // Namen fuer Vorgaenger/Nachfolger und die Ziel-Auswahl beim Schliessen.
@@ -71,11 +83,16 @@ async function loadBudgets() {
     ])
     budgets.value = budgetData.budgets
     savingsGoals.value = (householdData.household?.savingsGoals ?? []).map((goal) => ({ id: goal.id, name: goal.name }))
+    loaded.value = true
   } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Budget konnte nicht geladen werden: ' + (error.statusMessage || error.message) }
+    loadError.value = error.statusMessage || error.message || 'Unbekannter Fehler'
+    // Schlaegt ein Neuladen nach einer Aktion fehl, bleibt die bisherige
+    // Ansicht stehen und der Fehler kommt als Hinweis darueber.
+    if (budget.value) {
+      notice.value = { severity: 'error', text: 'Budget konnte nicht neu geladen werden: ' + loadError.value }
+    }
   } finally {
     loading.value = false
-    loaded.value = true
   }
 }
 
@@ -222,7 +239,7 @@ function onDeleted(id: string) {
     </NuxtLink>
 
     <EmptyState
-      v-if="!notFound"
+      v-if="!notFound && !(loadError && !budget)"
       :loading="loading && !budget"
       :no-household="!loading && !activeHousehold"
       loading-title="Budget wird geladen"
@@ -239,6 +256,16 @@ function onDeleted(id: string) {
       :cta="{ label: 'Zur Budget-Liste', onClick: () => router.push('/budgeting/budgets'), severity: 'primary' }"
     />
 
+    <EmptyState
+      v-if="loadError && !budget && !loading && !notFound"
+      variant="no-data"
+      icon="pi pi-exclamation-triangle"
+      icon-tone="warning"
+      headline="Budget konnte nicht geladen werden"
+      :description="`Bitte Verbindung prüfen und erneut versuchen. (${loadError})`"
+      :cta="{ label: 'Erneut versuchen', onClick: loadBudgets, severity: 'primary' }"
+    />
+
     <template v-if="budget && !notFound">
       <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
@@ -248,16 +275,27 @@ function onDeleted(id: string) {
           <h1>{{ budget.name }}</h1>
           <div class="detail-head__tags">
             <span class="tag">{{ frequencyLabel(budget.frequency) }}</span>
-            <span v-if="hasClosingDate" class="tag tag--closed">
-              {{ isClosed ? 'geschlossen' : 'schließt' }} zum {{ formatPlanningDate(budget.closedAt) }}
-            </span>
+            <span v-if="isClosed" class="tag tag--closed">geschlossen</span>
           </div>
         </div>
         <div class="detail-head__balance">
-          <span class="detail-head__balance-value" :class="{ 'is-negative': balance < 0 }">{{ formatMoney(balance) }}</span>
-          <span class="detail-head__balance-label">Saldo</span>
+          <span
+            class="detail-head__balance-value"
+            :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
+          >{{ formatMoney(balance) }}</span>
+          <span class="detail-head__balance-label">{{ balanceLabel }}</span>
         </div>
       </header>
+
+      <!-- ADR-0004: Wohin der Saldo fliesst, direkt sichtbar statt nur als Tag. -->
+      <Message v-if="hasClosingDate" severity="info" class="closed-banner">
+        <template v-if="isClosed">Geschlossen am {{ closingDateLabel }} – der Saldo fließt in</template>
+        <template v-else>Schließt am {{ closingDateLabel }} in</template>
+        <NuxtLink v-if="successor" :to="`/budgeting/budgets/${successor.id}`" class="closed-banner__link">
+          „{{ successor.name }}“ <i class="pi pi-arrow-right" aria-hidden="true" />
+        </NuxtLink>
+        <template v-else>ein anderes Budget</template>
+      </Message>
 
       <!-- Aktionen: Umbuchen fuer alle Mitglieder, der Rest Owner-only (#128) -->
       <div v-if="!isClosed || canManageHousehold" class="detail-actions">
@@ -317,7 +355,10 @@ function onDeleted(id: string) {
             </button>
           </div>
         </div>
-        <p v-if="historyError" class="panel__error">{{ historyError }}</p>
+        <div v-if="historyError" class="panel__error">
+          <span>{{ historyError }}</span>
+          <Button label="Erneut versuchen" icon="pi pi-refresh" size="small" text @click="loadHistory" />
+        </div>
         <div v-else-if="!history" class="panel__placeholder">Lade Verlauf …</div>
         <template v-else>
           <BudgetBalanceChart
@@ -529,6 +570,20 @@ function onDeleted(id: string) {
   color: var(--color-accent-danger-text);
 }
 
+.detail-head__balance-value.is-closed {
+  color: var(--color-text-secondary);
+}
+
+.closed-banner__link {
+  color: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.closed-banner__link .pi {
+  font-size: 0.7rem;
+}
+
 .detail-head__balance-label {
   font-size: 0.75rem;
   color: var(--color-text-muted);
@@ -579,6 +634,10 @@ function onDeleted(id: string) {
 }
 
 .panel__error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin: 0;
   color: var(--color-accent-danger-text);
   font-size: 0.82rem;

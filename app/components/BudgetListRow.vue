@@ -19,6 +19,9 @@ const props = defineProps<{
 }>()
 
 const balance = computed(() => props.budget.balance?.balance ?? 0)
+// Stichtag erreicht: Der Endsaldo steckt bereits im Ziel-Budget (ADR-0004),
+// also neutral statt gruen/rot. Ein Stichtag in der Zukunft ist noch offen.
+const isClosed = computed(() => Boolean(props.budget.closedAt && new Date(props.budget.closedAt) <= new Date()))
 const period = computed(() => props.budget.currentPeriod)
 const periodLabel = computed(() =>
   period.value ? formatBudgetPeriodLabel(props.budget.frequency, period.value.start, period.value.end) : null,
@@ -26,27 +29,34 @@ const periodLabel = computed(() =>
 </script>
 
 <template>
-  <NuxtLink :to="`/budgeting/budgets/${budget.id}`" class="budget-row" :class="{ 'budget-row--closed': budget.closedAt }">
+  <NuxtLink :to="`/budgeting/budgets/${budget.id}`" class="budget-row" :class="{ 'budget-row--closed': isClosed }">
     <div class="budget-row__main">
       <span class="budget-row__name">{{ budget.name }}</span>
       <span class="budget-row__sub">
         <span class="budget-row__tag">{{ frequencyLabel(budget.frequency) }}</span>
-        <span v-if="budget.closedAt" class="budget-row__closed">
+        <span v-if="isClosed" class="budget-row__closed">
           geschlossen → {{ targetName ?? '—' }}
         </span>
-        <span v-else-if="period" class="budget-row__period">
+        <span v-else-if="budget.closedAt" class="budget-row__closed">
+          schließt am {{ formatPlanningDate(budget.closedAt) }} → {{ targetName ?? "—" }}
+        </span>
+        <span v-if="!isClosed && period" class="budget-row__period">
           {{ periodLabel }}: {{ formatMoney(period.spentAmount) }} / {{ formatMoney(period.plannedAmount) }}
         </span>
       </span>
       <ListProgressBar
-        v-if="!budget.closedAt && period"
+        v-if="!isClosed && period"
         class="budget-row__progress"
         :percent="period.percentUsed"
         :tone="period.severity"
       />
     </div>
     <div class="budget-row__aside">
-      <span class="budget-row__balance" :class="{ 'is-negative': balance < 0 }">{{ formatMoney(balance) }}</span>
+      <span
+        class="budget-row__balance"
+        :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
+        :title="isClosed ? 'Endsaldo — steckt bereits im Ziel-Budget' : undefined"
+      >{{ formatMoney(balance) }}</span>
       <BudgetBalanceSparkline :values="budget.balanceTrend" :width="64" :height="18" />
     </div>
     <i class="pi pi-chevron-right budget-row__chevron" aria-hidden="true" />
@@ -153,6 +163,10 @@ const periodLabel = computed(() =>
 
 .budget-row__balance.is-negative {
   color: var(--color-accent-danger-text);
+}
+
+.budget-row__balance.is-closed {
+  color: var(--color-text-secondary);
 }
 
 .budget-row__chevron {

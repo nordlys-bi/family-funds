@@ -155,7 +155,7 @@ watch(householdId, loadBudgets)
             @swipe-right="dialogs?.openEdit(budget)"
             @swipe-left="dialogs?.remove(budget)"
           >
-            <BudgetListRow :budget="budget" :format-money="formatMoney" />
+            <BudgetListRow :budget="budget" :format-money="formatMoney" :target-name="targetName(budget)" />
           </SwipeableListItem>
         </li>
       </ul>
