@@ -4,7 +4,14 @@
  * bleibt.
  */
 import { prisma } from './prisma'
-import { computeBudgetBalances, getEarliestBalanceSince, type BalanceBudget, type BudgetBalance } from './budget-balance'
+import {
+  computeBudgetBalances,
+  getEarliestBalanceSince,
+  type BalanceBudget,
+  type BalanceExpense,
+  type BalanceTransfer,
+  type BudgetBalance,
+} from './budget-balance'
 
 /** Prisma-Select fuer alle Felder, die die Saldo-Berechnung braucht. */
 export const budgetBalanceSelect = {
@@ -15,17 +22,19 @@ export const budgetBalanceSelect = {
 } as const
 
 /**
- * Laedt Ausgaben und Umbuchungen ab dem fruehesten `balanceSince` und
- * berechnet die Salden. `budgets` muss alle Budgets des Haushalts enthalten
- * (auch geschlossene), damit Vorgaenger-Endsalden aufgeloest werden.
+ * Laedt alle Ausgaben und Umbuchungen ab dem fruehesten `balanceSince` —
+ * die Rohdaten fuer `computeBudgetBalances` und den Saldo-Verlauf
+ * (`budget-balance-history.ts`).
  */
-export async function loadBudgetBalances(
+export async function loadBudgetBalanceInputs(
   householdId: string,
   budgets: BalanceBudget[],
-  at: Date = new Date(),
-): Promise<Map<string, BudgetBalance>> {
+  // Beschreibung/Notiz/Spartopf nur fuer die Ereignisliste des Verlaufs —
+  // Saldo und Dashboard brauchen sie nicht und sollen schlank bleiben.
+  options: { details?: boolean } = {},
+): Promise<{ expenses: BalanceExpense[]; transfers: BalanceTransfer[] }> {
   const earliest = getEarliestBalanceSince(budgets)
-  if (!earliest) return new Map()
+  if (!earliest) return { expenses: [], transfers: [] }
 
   // Ab Mitternacht, damit auch Buchungen mit Uhrzeit vor 12:00 am Starttag
   // mitkommen; das genaue Fenster pro Budget filtert `computeBudgetBalances`.
@@ -36,20 +45,47 @@ export async function loadBudgetBalances(
     prisma.expenseTransaction.findMany({
       where: {
         householdId,
-        budgetId: { not: null },
+        // Nur die uebergebenen Budgets — beim Verlauf ist das nur die
+        // Vorgaenger-Kette, sonst alle Budgets des Haushalts.
+        budgetId: { in: budgets.map((budget) => budget.id) },
         date: { gte: from },
         deletedAt: null,
       },
-      select: { budgetId: true, amount: true, date: true },
+      select: {
+        budgetId: true,
+        amount: true,
+        date: true,
+        ...(options.details ? { id: true, description: true } : {}),
+      },
     }),
     prisma.savingsGoalExecution.findMany({
       where: {
         sourceBudgetId: { in: budgets.map((budget) => budget.id) },
         date: { gte: from },
       },
-      select: { sourceBudgetId: true, amount: true, date: true },
+      select: {
+        sourceBudgetId: true,
+        amount: true,
+        date: true,
+        ...(options.details ? { id: true, note: true, savingsGoal: { select: { id: true, name: true } } } : {}),
+      },
     }),
   ])
 
+  return { expenses, transfers }
+}
+
+/**
+ * Laedt Ausgaben und Umbuchungen und berechnet die Salden. `budgets` muss
+ * alle Budgets des Haushalts enthalten (auch geschlossene), damit
+ * Vorgaenger-Endsalden aufgeloest werden.
+ */
+export async function loadBudgetBalances(
+  householdId: string,
+  budgets: BalanceBudget[],
+  at: Date = new Date(),
+): Promise<Map<string, BudgetBalance>> {
+  if (budgets.length === 0) return new Map()
+  const { expenses, transfers } = await loadBudgetBalanceInputs(householdId, budgets)
   return computeBudgetBalances(budgets, expenses, transfers, at)
 }

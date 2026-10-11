@@ -517,6 +517,9 @@ describe('GET /api/households/:id/dashboard — budgetPeriodCards (Perioden-Bugf
     expect(new Date(card.periodStart).getFullYear()).toBe(currentYear)
     expect(new Date(card.periodStart).getMonth()).toBe(0)
     expect(new Date(card.periodEnd!).getFullYear()).toBe(currentYear + 1)
+    // ADR-0004: Sparkline-Raster (woechentlich, 3 Monate) endet beim aktuellen Saldo
+    expect(card.balanceTrend.length).toBeGreaterThanOrEqual(13)
+    expect(card.balanceTrend.at(-1)).toBe(card.balance)
   })
 })
 

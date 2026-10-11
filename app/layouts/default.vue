@@ -194,7 +194,14 @@ onBeforeUnmount(() => {
           <i class="pi pi-list nav-icon"></i>
           <span>Buchungen</span>
         </NuxtLink>
-        <NuxtLink to="/budgeting/budgets" class="nav-item" active-class="nav-item-active">
+        <!-- Aktiv auch auf den Detailseiten /budgeting/budgets/:id — das sind
+             Geschwister-Routen, active-class wuerde dort nicht greifen. -->
+        <NuxtLink
+          to="/budgeting/budgets"
+          class="nav-item"
+          :class="{ 'nav-item-active': route.path.startsWith('/budgeting/budgets') }"
+          :aria-current="route.path === '/budgeting/budgets' ? 'page' : undefined"
+        >
           <i class="pi pi-wallet nav-icon"></i>
           <span>Budgets</span>
         </NuxtLink>
