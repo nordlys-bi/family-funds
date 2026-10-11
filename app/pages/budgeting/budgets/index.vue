@@ -1,7 +1,7 @@
 <!--
   Budget-Liste (ADR-0004): kompakte Uebersicht aller Budgets als virtuelle
   Konten. Pro Budget Saldo (gross), Trend und die laufende Periode; alles
-  Weitere — Verlauf, Ereignisse, Versionen, Umbuchen, Schliessen — liegt auf
+  Weitere — Verlauf, Ereignisse, Versionen, Schliessen, Loeschen — liegt auf
   der Detailseite `/budgeting/budgets/:id`, auf die jede Zeile verlinkt.
 
   Frueher war das hier eine Monats-Ansicht mit Monatswechsler (#34) und
@@ -10,21 +10,29 @@
   Zeile fuer die laufende Periode, Vergangenes der Saldo-Verlauf.
 
   Owner-only (#128): Anlegen, Bearbeiten und Loeschen nur fuer Owner.
-  Mobil bleiben Swipe-Bearbeiten/-Loeschen (#140) auf offenen Budgets; auf
-  Desktop liegen die Aktionen auf der Detailseite.
+  Umbuchen ist eine Buchung (ADR-0004) und fuer alle Mitglieder direkt in
+  der Liste erreichbar, weil es die haeufigste Aktion auf einem Budget ist:
+  mobil per Swipe nach links, auf Desktop als kleiner Button in der Zeile.
+  Swipe nach rechts bleibt Bearbeiten (#140, nur Owner). Loeschen ist aus
+  dem Swipe raus — es scheitert bei jedem Budget mit Buchungen ohnehin und
+  liegt (mit Begruendung, wenn gesperrt) im Menue der Detailseite.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Notice } from '~/types/planning'
 import type { BudgetListItem } from '~/types/budget'
 import { isFirstRun } from '~/utils/household-age'
+import { MOBILE_LIST_QUERY } from '~/composables/useListSwipe'
 
 definePageMeta({ layout: 'default' })
 
 const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
-const { swipeDisabled } = useListSwipe()
+// Eigene Swipe-Entscheidung statt useListSwipe: Umbuchen duerfen auch
+// MEMBER, deshalb ist Swipe mobil fuer alle an (Bearbeiten nur fuer Owner).
+const isMobileList = useMediaQuery(MOBILE_LIST_QUERY)
 
 const budgets = ref<BudgetListItem[]>([])
+const savingsGoals = ref<Array<{ id: string; name: string }>>([])
 // SSR-Initial-Render: `loading` startet auf true, damit EmptyState sofort
 // den Spinner zeigt statt eines leeren Renders bis zur Hydration.
 const loading = ref(true)
@@ -33,7 +41,7 @@ const showClosed = ref(false)
 const dialogs = ref<{
   openCreate: () => void
   openEdit: (budget: BudgetListItem) => void
-  remove: (budget: BudgetListItem) => Promise<void>
+  openTransfer: (budget: BudgetListItem) => void
 } | null>(null)
 
 const householdId = computed(() => activeHousehold.value?.id ?? null)
@@ -67,8 +75,13 @@ async function loadBudgets() {
   }
   loading.value = true
   try {
-    const data = await $fetch<{ budgets: BudgetListItem[] }>(`/api/households/${householdId.value}/budgets`)
+    // Spartoepfe nur fuer den Umbuchen-Dialog (wie auf der Detailseite).
+    const [data, householdData] = await Promise.all([
+      $fetch<{ budgets: BudgetListItem[] }>(`/api/households/${householdId.value}/budgets`),
+      $fetch<{ household: { savingsGoals: Array<{ id: string; name: string }> } | null }>('/api/households/current'),
+    ])
     budgets.value = data.budgets
+    savingsGoals.value = (householdData.household?.savingsGoals ?? []).map((goal) => ({ id: goal.id, name: goal.name }))
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Budgets konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
@@ -81,6 +94,19 @@ onMounted(async () => {
   await loadBudgets()
 })
 watch(householdId, loadBudgets)
+
+const hasSavingsGoals = computed(() => savingsGoals.value.length > 0)
+const NO_GOAL_HINT = 'Lege zuerst einen Spartopf an, um umzubuchen.'
+
+// Ohne Spartopf kein Dialog (er haette nichts zur Auswahl), sondern ein
+// Hinweis mit dem Weg dorthin — still nichts tun wuerde wie ein Fehler wirken.
+function openTransfer(budget: BudgetListItem) {
+  if (!hasSavingsGoals.value) {
+    notice.value = { severity: 'info', text: NO_GOAL_HINT }
+    return
+  }
+  dialogs.value?.openTransfer(budget)
+}
 </script>
 
 <template>
@@ -100,11 +126,14 @@ watch(householdId, loadBudgets)
       />
     </template>
 
-    <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
+    <Message v-if="notice" :severity="notice.severity" variant="simple">
+      {{ notice.text }}
+      <NuxtLink v-if="notice.text === NO_GOAL_HINT" to="/budgeting/savings" class="notice-link">Zu den Spartöpfen</NuxtLink>
+    </Message>
 
     <!-- OWNER-only Erklaerung (issue #128). -->
     <Message v-if="activeHousehold && !canManageHousehold" severity="warn" variant="simple">
-      Nur Owner können Budgets anlegen, bearbeiten, schließen und löschen. Umbuchen in Spartöpfe geht für alle Mitglieder auf der Detailseite.
+      Nur Owner können Budgets anlegen, bearbeiten, schließen und löschen. Umbuchen zwischen Budget und Spartopf geht für alle Mitglieder – direkt in der Liste (auf dem Handy nach links wischen) oder auf der Detailseite.
     </Message>
 
     <EmptyState
@@ -147,15 +176,32 @@ watch(householdId, loadBudgets)
       <ul class="budget-list">
         <li v-for="budget in openBudgets" :key="budget.id">
           <SwipeableListItem
-            :disabled="swipeDisabled"
+            :disabled="!isMobileList"
             swipe-right-icon="pi pi-pen-to-square"
-            swipe-right-label="Bearbeiten"
-            swipe-left-icon="pi pi-trash"
-            swipe-left-label="Löschen"
+            :swipe-right-label="canManageHousehold ? 'Bearbeiten' : undefined"
+            swipe-left-icon="pi pi-arrow-right-arrow-left"
+            swipe-left-label="Umbuchen"
+            swipe-left-severity="warning"
             @swipe-right="dialogs?.openEdit(budget)"
-            @swipe-left="dialogs?.remove(budget)"
+            @swipe-left="openTransfer(budget)"
           >
-            <BudgetListRow :budget="budget" :format-money="formatMoney" :target-name="targetName(budget)" />
+            <BudgetListRow :budget="budget" :format-money="formatMoney" :target-name="targetName(budget)">
+              <template #actions>
+                <Button
+                  v-if="!isMobileList"
+                  icon="pi pi-arrow-right-arrow-left"
+                  text
+                  rounded
+                  size="small"
+                  severity="secondary"
+                  class="row-transfer"
+                  :aria-label="`${budget.name} umbuchen`"
+                  :title="hasSavingsGoals ? 'Umbuchen' : NO_GOAL_HINT"
+                  :disabled="!hasSavingsGoals"
+                  @click.stop.prevent="openTransfer(budget)"
+                />
+              </template>
+            </BudgetListRow>
           </SwipeableListItem>
         </li>
       </ul>
@@ -183,7 +229,7 @@ watch(householdId, loadBudgets)
       ref="dialogs"
       :household-id="householdId"
       :budgets="budgets"
-      :savings-goals="[]"
+      :savings-goals="savingsGoals"
       :currency="currencyCode"
       @changed="loadBudgets"
       @notice="notice = $event"
@@ -199,6 +245,18 @@ watch(householdId, loadBudgets)
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.row-transfer {
+  flex-shrink: 0;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+}
+
+.notice-link {
+  margin-left: 0.35rem;
+  color: inherit;
+  font-weight: 700;
 }
 
 .closed-section {

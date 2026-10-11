@@ -575,8 +575,8 @@ function onDeleted(id: string) {
               @click="openTransfer"
             />
             <p v-if="!canTransfer" id="transfer-hint" class="primary-action__hint">
-              Noch kein Spartopf im Haushalt.
-              <NuxtLink to="/budgeting/savings">Spartopf anlegen</NuxtLink>
+              Lege zuerst einen Spartopf an, um umzubuchen.
+              <NuxtLink to="/budgeting/savings">Zu den Spartöpfen</NuxtLink>
             </p>
           </div>
 

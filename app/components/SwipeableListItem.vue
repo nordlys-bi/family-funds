@@ -21,6 +21,10 @@
   Swipe wird per Capture-Listener unterdrueckt, ein normaler Tap ohne
   Bewegung feuert wie gewohnt durch.
 
+  Eine Richtung ohne Label (`swipe-left-label`/`swipe-right-label` leer)
+  ist abgeschaltet: Die Karte laesst sich dorthin nicht ziehen und es wird
+  nichts emittiert — z. B. Budget-Liste, wo MEMBER nur Umbuchen duerfen.
+
   `disabled` reicht nur den Slot durch — kein Wrapper, keine Pointer-Handler,
   kein deckender Hintergrund. Damit laesst sich dieselbe Zeile ab Tablet/
   Desktop oder fuer User ohne die passende Berechtigung (z. B. MEMBER bei
@@ -47,7 +51,7 @@ const props = withDefaults(
     swipeRightSeverity?: 'primary' | 'success' | 'secondary'
     swipeLeftIcon?: string
     swipeLeftLabel?: string
-    swipeLeftSeverity?: 'danger' | 'warning'
+    swipeLeftSeverity?: 'danger' | 'warning' | 'primary'
     /** Ab wieviel Pixel Verschiebung eine Geste als "vollzogen" zaehlt. */
     threshold?: number
     /** Swipe abschalten: rendert nur den Slot-Inhalt, ohne Wrapper. */
@@ -114,7 +118,9 @@ function onPointerMove(event: PointerEvent) {
 
   event.preventDefault()
   const maxReveal = props.threshold + MAX_OVERDRAG
-  offset.value = Math.max(-maxReveal, Math.min(maxReveal, deltaX))
+  const minOffset = props.swipeLeftLabel ? -maxReveal : 0
+  const maxOffset = props.swipeRightLabel ? maxReveal : 0
+  offset.value = Math.max(minOffset, Math.min(maxOffset, deltaX))
 }
 
 function endDrag(event: PointerEvent) {
@@ -131,9 +137,9 @@ function endDrag(event: PointerEvent) {
 
   animating.value = true
   offset.value = 0
-  if (finalOffset <= -props.threshold) {
+  if (finalOffset <= -props.threshold && props.swipeLeftLabel) {
     emit('swipe-left')
-  } else if (finalOffset >= props.threshold) {
+  } else if (finalOffset >= props.threshold && props.swipeRightLabel) {
     emit('swipe-right')
   }
 }

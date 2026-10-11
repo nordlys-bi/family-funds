@@ -6,6 +6,10 @@
   zahl eines virtuellen Kontos. Die laufende Periode steht nur kompakt als
   verbraucht/zugeteilt darunter; Details, Verlauf und Aktionen liegen auf
   der Detailseite, auf die die ganze Zeile verlinkt.
+
+  Slot `actions`: Platz fuer Zeilen-Aktionen (Umbuchen) NEBEN dem Link —
+  ein Button innerhalb eines <a> waere ungueltiges HTML und wuerde die
+  Navigation mit ausloesen.
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -29,51 +33,52 @@ const periodLabel = computed(() =>
 </script>
 
 <template>
-  <NuxtLink :to="`/budgeting/budgets/${budget.id}`" class="budget-row" :class="{ 'budget-row--closed': isClosed }">
-    <div class="budget-row__main">
-      <span class="budget-row__name">{{ budget.name }}</span>
-      <span class="budget-row__sub">
-        <span class="budget-row__tag">{{ frequencyLabel(budget.frequency) }}</span>
-        <span v-if="isClosed" class="budget-row__closed">
-          geschlossen → {{ targetName ?? '—' }}
+  <div class="budget-row" :class="{ 'budget-row--closed': isClosed }">
+    <NuxtLink :to="`/budgeting/budgets/${budget.id}`" class="budget-row__link">
+      <div class="budget-row__main">
+        <span class="budget-row__name">{{ budget.name }}</span>
+        <span class="budget-row__sub">
+          <span class="budget-row__tag">{{ frequencyLabel(budget.frequency) }}</span>
+          <span v-if="isClosed" class="budget-row__closed">
+            geschlossen → {{ targetName ?? '—' }}
+          </span>
+          <span v-else-if="budget.closedAt" class="budget-row__closed">
+            schließt am {{ formatPlanningDate(budget.closedAt) }} → {{ targetName ?? "—" }}
+          </span>
+          <span v-if="!isClosed && period" class="budget-row__period">
+            {{ periodLabel }}: {{ formatMoney(period.spentAmount) }} / {{ formatMoney(period.plannedAmount) }}
+          </span>
         </span>
-        <span v-else-if="budget.closedAt" class="budget-row__closed">
-          schließt am {{ formatPlanningDate(budget.closedAt) }} → {{ targetName ?? "—" }}
-        </span>
-        <span v-if="!isClosed && period" class="budget-row__period">
-          {{ periodLabel }}: {{ formatMoney(period.spentAmount) }} / {{ formatMoney(period.plannedAmount) }}
-        </span>
-      </span>
-      <ListProgressBar
-        v-if="!isClosed && period"
-        class="budget-row__progress"
-        :percent="period.percentUsed"
-        :tone="period.severity"
-      />
-    </div>
-    <div class="budget-row__aside">
-      <span
-        class="budget-row__balance"
-        :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
-        :title="isClosed ? 'Endsaldo — steckt bereits im Ziel-Budget' : undefined"
-      >{{ formatMoney(balance) }}</span>
-      <BudgetBalanceSparkline :values="budget.balanceTrend" :width="64" :height="18" />
-    </div>
-    <i class="pi pi-chevron-right budget-row__chevron" aria-hidden="true" />
-  </NuxtLink>
+        <ListProgressBar
+          v-if="!isClosed && period"
+          class="budget-row__progress"
+          :percent="period.percentUsed"
+          :tone="period.severity"
+        />
+      </div>
+      <div class="budget-row__aside">
+        <span
+          class="budget-row__balance"
+          :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
+          :title="isClosed ? 'Endsaldo — steckt bereits im Ziel-Budget' : undefined"
+        >{{ formatMoney(balance) }}</span>
+        <BudgetBalanceSparkline :values="budget.balanceTrend" :width="64" :height="18" />
+      </div>
+      <i class="pi pi-chevron-right budget-row__chevron" aria-hidden="true" />
+    </NuxtLink>
+    <slot name="actions" />
+  </div>
 </template>
 
 <style scoped>
 .budget-row {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.7rem 0.8rem;
+  gap: 0.5rem;
+  padding-right: 0.5rem;
   background: var(--color-bg-panel-soft);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-lg, 12px);
-  color: inherit;
-  text-decoration: none;
   min-width: 0;
 }
 
@@ -81,11 +86,23 @@ const periodLabel = computed(() =>
   border-color: var(--color-border-default);
 }
 
-.budget-row:hover .budget-row__name {
+.budget-row__link {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.3rem 0.7rem 0.8rem;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+  border-radius: inherit;
+}
+
+.budget-row__link:hover .budget-row__name {
   color: var(--color-accent-primary-text);
 }
 
-.budget-row:focus-visible {
+.budget-row__link:focus-visible {
   outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
@@ -123,7 +140,7 @@ const periodLabel = computed(() =>
 
 .budget-row__tag {
   padding: 1px 7px;
-  background: rgba(59, 130, 246, 0.16);
+  background: var(--color-accent-primary-soft);
   color: var(--color-accent-primary-text);
   font-size: 0.66rem;
   font-weight: 700;
