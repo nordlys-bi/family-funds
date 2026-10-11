@@ -41,6 +41,8 @@ export type BudgetListItem = {
   /** Neueste Version zuerst. */
   versions: BudgetVersionItem[]
   balance: { balance: number } | null
+  /** Ausgaben, Umbuchungen oder Vorgaenger vorhanden — dann nur Schliessen, kein Loeschen. */
+  hasBookings: boolean
   /** Saldo im Wochenraster der letzten 3 Monate (Sparkline). */
   balanceTrend: number[]
   currentPeriod: BudgetCurrentPeriod | null

@@ -98,4 +98,17 @@ describe('GET /budgets', () => {
     expect(old.currentPeriod).toBeNull()
     expect(old.balance!.balance).toBe(2000)
   })
+
+  it('flags budgets with bookings so the UI can disable delete', async () => {
+    prismaMocks.budget.findMany.mockResolvedValue([
+      { ...open, _count: { expenses: 0, savingsTransfers: 0, predecessors: 1 } },
+      { ...closed, _count: { expenses: 0, savingsTransfers: 0, predecessors: 0 } },
+    ])
+    const result = await handler(makeEvent())
+    const byId = new Map(result.budgets.map((budget: { id: string; hasBookings: boolean }) => [budget.id, budget]))
+    expect(byId.get('b-open')!.hasBookings).toBe(true)
+    expect(byId.get('b-closed')!.hasBookings).toBe(false)
+    // Prisma-Interna gehen nicht ueber die Leitung.
+    expect(byId.get('b-open')).not.toHaveProperty('_count')
+  })
 })
