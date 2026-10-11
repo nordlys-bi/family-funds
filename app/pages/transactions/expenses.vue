@@ -160,23 +160,6 @@ const showFirstTimeEmpty = computed(
 )
 
 const budgetOptions = computed(() => currentHousehold.value?.budgets ?? [])
-// ADR-0004: Das Anlege-Dialog-Select bietet nur am Buchungsdatum offene
-// Budgets an. Der Inline-Editor bekommt alle Budgets samt `closedAt` und
-// filtert selbst nach seinem Entwurfs-Datum.
-const budgetSelectOptions = computed(() => [
-  { label: 'Sonstiges', value: '' },
-  ...budgetsOpenOn(budgetOptions.value, transactionForm.value.date)
-    .map((budget) => ({ label: budget.name, value: budget.id })),
-])
-watch(budgetSelectOptions, (options) => {
-  if (transactionForm.value.budgetId && !options.some((option) => option.value === transactionForm.value.budgetId)) {
-    transactionForm.value.budgetId = ''
-  }
-})
-const rowEditorBudgetOptions = computed(() => [
-  { label: 'Sonstiges', value: '' },
-  ...budgetOptions.value.map((budget) => ({ label: budget.name, value: budget.id, closedAt: budget.closedAt ?? null })),
-])
 
 // Issue #55: Option-Listen fuer die Filter-Selects in der Toolbar.
 // Bewusst getrennt von `budgetSelectOptions` (Dialog), weil:
@@ -209,6 +192,24 @@ const transactionForm = ref({
   date: new Date(),
   budgetId: '',
 })
+
+// ADR-0004: Das Anlege-Dialog-Select bietet nur am Buchungsdatum offene
+// Budgets an. Der Inline-Editor bekommt alle Budgets samt `closedAt` und
+// filtert selbst nach seinem Entwurfs-Datum.
+const budgetSelectOptions = computed(() => [
+  { label: 'Sonstiges', value: '' },
+  ...budgetsOpenOn(budgetOptions.value, transactionForm.value.date)
+    .map((budget) => ({ label: budget.name, value: budget.id })),
+])
+watch(budgetSelectOptions, (options) => {
+  if (transactionForm.value.budgetId && !options.some((option) => option.value === transactionForm.value.budgetId)) {
+    transactionForm.value.budgetId = ''
+  }
+})
+const rowEditorBudgetOptions = computed(() => [
+  { label: 'Sonstiges', value: '' },
+  ...budgetOptions.value.map((budget) => ({ label: budget.name, value: budget.id, closedAt: budget.closedAt ?? null })),
+])
 
 // Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
 async function onMonthChange(newMonth: string) {
