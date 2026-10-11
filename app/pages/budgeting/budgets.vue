@@ -30,6 +30,8 @@ type BudgetOverviewItem = {
   remainingAmount: number
   periodCount: number
   versionCount: number
+  // Naechste Betrags-Aenderung innerhalb des Monats (nach der angezeigten Version).
+  nextChange: { validFrom: string; amount: number; frequency: Frequency } | null
   // Issue #82: Wochen-Detail, nur fuer WEEKLY-Budgets befuellt.
   // Wire-Format: start/end sind ISO-Strings (JSON-Date-Serialisierung).
   periods: Array<{
@@ -146,11 +148,12 @@ const monthEnd = computed<Date | null>(() => {
 const visibleBudgets = computed(() => {
   const budgets = currentHousehold.value?.budgets ?? []
   if (!monthEnd.value) return budgets
-  return budgets.filter((budget) => {
-    const latestVersion = budget.versions[0]
-    if (!latestVersion) return false
-    return new Date(latestVersion.validFrom) <= monthEnd.value!
-  })
+  // Sichtbar, sobald IRGENDEINE Version bis Monatsende beginnt. Nur die
+  // neueste Version zu pruefen hat ein Budget nach einer Betrags-Aenderung
+  // in allen Monaten davor ausgeblendet (User-Report 2026-10-11).
+  return budgets.filter((budget) =>
+    budget.versions.some((version) => new Date(version.validFrom) <= monthEnd.value!),
+  )
 })
 
 // Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
@@ -313,6 +316,7 @@ const EMPTY_OVERVIEW_ITEM: BudgetOverviewItem = {
   remainingAmount: 0,
   periodCount: 0,
   versionCount: 0,
+  nextChange: null,
   periods: [],
 }
 
@@ -449,6 +453,13 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <span>gültig ab {{ formatDate(getBudgetOverviewItem(budget.id).currentValidFrom) }}</span>
             <span>·</span>
             <span>{{ getBudgetOverviewItem(budget.id).periodCount }} Perioden</span>
+            <template v-if="getBudgetOverviewItem(budget.id).nextChange">
+              <span>·</span>
+              <span class="row-next-change">
+                ab {{ formatDate(getBudgetOverviewItem(budget.id).nextChange!.validFrom) }}:
+                {{ formatMoney(getBudgetOverviewItem(budget.id).nextChange!.amount) }}
+              </span>
+            </template>
           </span>
         </template>
         <template #progress>
@@ -569,6 +580,10 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-radius: 4px;
+}
+
+.row-next-change {
+  color: var(--color-accent-primary-text);
 }
 
 .row-tag-muted {

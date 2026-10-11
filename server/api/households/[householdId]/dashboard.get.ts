@@ -5,6 +5,7 @@ import {
   attachPeriodSpending,
   buildBudgetOverview,
   getCurrentBudgetPeriodWindows,
+  getBudgetExpenseQueryWindow,
   getMonthWindow,
   getOverallBudgetPeriodWindow,
 } from '../../../utils/budget-evaluation'
@@ -42,6 +43,9 @@ export default defineEventHandler(async (event) => {
 
   const now = new Date()
   const { monthStart, monthEnd } = getMonthWindow(now)
+  // WEEKLY-Budgets brauchen auch die Tage der letzten Monatswoche, die schon
+  // im Folgemonat liegen (Woche gehoert dem Monat ihres Montags).
+  const budgetExpenseWindow = getBudgetExpenseQueryWindow(monthStart, monthEnd)
 
   const sevenDaysAgo = new Date(now)
   sevenDaysAgo.setDate(now.getDate() - 7)
@@ -87,7 +91,7 @@ export default defineEventHandler(async (event) => {
     prisma.expenseTransaction.findMany({
       where: {
         householdId,
-        date: { gte: monthStart, lt: monthEnd },
+        date: { gte: budgetExpenseWindow.start, lt: budgetExpenseWindow.end },
         // Soft-Delete (issue #58): nur aktive Buchungen aggregieren,
         // sonst zaehlt das Dashboard eine Buchung weiter, die der
         // User gerade geloescht hat. Issue #65.
@@ -175,7 +179,7 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
-  const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart)
+  const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart, now)
 
   // Dashboard-Budget-Karten (oberste Prio, issue-request): beziehen sich
   // auf die eigene, aktuell laufende Periode jedes Budgets statt auf den
@@ -203,7 +207,11 @@ export default defineEventHandler(async (event) => {
   const budgetPeriodCards = buildBudgetPeriodCards(attachPeriodSpending(periodWindows, periodExpenses))
 
   const incomeTotal = monthIncomeTotal._sum.amount ?? 0
-  const expensesTotal = monthExpenses.reduce((sum, transaction) => sum + transaction.amount, 0)
+  // `monthExpenses` reicht ggf. ueber den Monat hinaus (siehe
+  // `budgetExpenseWindow`) — die Monats-Summe bleibt kalendermonatlich.
+  const expensesTotal = monthExpenses
+    .filter((transaction) => transaction.date >= monthStart && transaction.date < monthEnd)
+    .reduce((sum, transaction) => sum + transaction.amount, 0)
 
   // Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne.
   const fixedCostDue = countOpenPlans(

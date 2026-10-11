@@ -35,6 +35,12 @@ export type BudgetOverviewItem = {
   periodCount: number
   versionCount: number
   /**
+   * Naechste Versions-Aenderung NACH der angezeigten (`current*`) Version,
+   * sofern sie noch in diesem Monat beginnt — fuer den Hinweis "ab 12. Okt.
+   * 300 €" in der Budgetliste. Sonst null.
+   */
+  nextChange: { validFrom: Date; amount: number; frequency: Frequency } | null
+  /**
    * Sub-Period-Detail. Aktuell nur für WEEKLY befüllt. Konsumenten
    * (Dashboard, Detail-Page) prüfen `currentFrequency === 'WEEKLY'`
    * oder iterieren einfach über `periods.length`.
@@ -372,6 +378,7 @@ function countPeriodsInMonth(
   frequency: Frequency,
   monthStart: Date,
   monthEnd: Date,
+  hasPredecessor: boolean,
 ) {
   if (validFrom >= monthEnd) {
     return 0
@@ -386,6 +393,15 @@ function countPeriodsInMonth(
   }
 
   let cursor = startOfPeriod(validFrom, frequency)
+
+  // Eine Periode gehoert der Version, die zu ihrem Start aktiv ist (siehe
+  // `findWeekVersion`). Beginnt eine Version mitten in einer Periode und
+  // hat einen Vorgaenger, zaehlt diese angebrochene Periode noch zum
+  // Vorgaenger — sonst wuerde sie doppelt geplant (Vorgaenger zaehlt sie
+  // ueber `cursor < validTo` ohnehin mit).
+  if (hasPredecessor && cursor < startOfDay(validFrom)) {
+    cursor = addPeriod(cursor, frequency)
+  }
 
   while (cursor < monthStart) {
     cursor = addPeriod(cursor, frequency)
@@ -415,67 +431,94 @@ function classifyPeriodSeverity(percentUsed: number): PeriodSeverity {
   return 'ok'
 }
 
+/** Erster Wochenstart (Montag, 12:00) am oder nach `date`. */
+function firstWeekStartOnOrAfter(date: Date) {
+  const weekStart = startOfPeriod(date, 'WEEKLY')
+  return weekStart < startOfDay(date) ? addPeriod(weekStart, 'WEEKLY') : weekStart
+}
+
+/**
+ * Wochen-Zuordnung zum Monat: Eine Woche gehoert dem Monat, in dem ihr
+ * MONTAG liegt — komplett, inkl. der Tage, die schon im Folgemonat liegen.
+ * Eine Woche Mo 28.9. – So 4.10. gehoert also nur zum September, und die
+ * Ausgaben vom 1.–4.10. zaehlen dort mit (User-Wunsch: sonst wirkt die
+ * Woche in beiden Monaten nur anteilig ausgelastet).
+ *
+ * `start`/`end` sind Wochenstarts (Mo 12:00). Eine Ausgabe gehoert in
+ * das Fenster, wenn `startOfPeriod(date, 'WEEKLY')` in `[start, end)` liegt.
+ */
+export function getWeeklyMonthWindow(monthStart: Date, monthEnd: Date) {
+  return {
+    start: firstWeekStartOnOrAfter(monthStart),
+    end: firstWeekStartOnOrAfter(monthEnd),
+  }
+}
+
+/**
+ * Datumsbereich, den die Expense-Query fuer `buildBudgetOverview` abdecken
+ * muss: Kalendermonat plus die Rest-Tage der letzten Woche, die im Monat
+ * startet (siehe `getWeeklyMonthWindow`). `end` liegt auf Mitternacht, damit
+ * auch Buchungen mit Uhrzeit am letzten Sonntag mitkommen.
+ */
+export function getBudgetExpenseQueryWindow(monthStart: Date, monthEnd: Date) {
+  const weeklyEnd = new Date(getWeeklyMonthWindow(monthStart, monthEnd).end)
+  weeklyEnd.setHours(0, 0, 0, 0)
+  return { start: monthStart, end: weeklyEnd > monthEnd ? weeklyEnd : monthEnd }
+}
+
+/**
+ * Welche Version plant die Woche ab `weekStart`? Die zum Montag aktive —
+ * eine Version, die mitten in der Woche beginnt, gilt erst ab der
+ * Folgewoche. Ausnahme: Es gab am Montag noch gar keine Version (Budget
+ * mitten in der Woche angelegt), dann plant die erste Version, die in der
+ * Woche beginnt, schon diese Woche. Gleiche Regel wie in
+ * `countPeriodsInMonth`, damit Wochen-Summe und Monats-Plan uebereinstimmen.
+ */
+function findWeekVersion<T extends { validFrom: Date }>(versions: T[], weekStart: Date, weekEnd: Date): T | null {
+  const active = findActiveVersionAt(versions, weekStart)
+  if (active) return active.version
+  return versions.find((version) => version.validFrom >= weekStart && version.validFrom < weekEnd) ?? null
+}
+
 /**
  * Issue #82: WEEKLY-Period-Detail.
  *
- * Iteriert über alle Wochen, deren Start in `[max(monthStart, currentValidFrom), monthEnd)`
- * liegt. Pro Woche: geplant = `currentAmount` (Cents), ausgegeben = Summe
- * der Transaktionen mit `date in [start, start+7d)`, remaining = geplant -
- * ausgegeben, percentUsed und severity.
+ * Listet alle Wochen, deren Montag im Monat liegt (siehe
+ * `getWeeklyMonthWindow`). Pro Woche: geplant = Betrag der fuer diese
+ * Woche gueltigen Version (`findWeekVersion`) — bei einer Versions-
+ * Aenderung mitten im Monat zeigen die Wochen davor also noch den alten
+ * Betrag. Wochen ohne WEEKLY-Version (vor der ersten Version, oder
+ * Frequenzwechsel) fehlen. ausgegeben = Summe der Transaktionen mit
+ * `date in [start, start+7d)`, auch wenn die Tage im Folgemonat liegen.
  *
- * Monats-Edge-Case: Eine Woche, die am Monatsletzten startet (z.B. Mo
- * 28.7.) und am Monatsersten des Folgemonats endet (So 3.8.), wird im
- * Juli UND im August als angefangene Woche gelistet (beide Monate
- * zeigen sie; spentAmount kann in beiden Monaten verschieden sein, je
- * nachdem welche Transaktionen in welcher Wochen-Hälfte liegen). Das ist
- * die richtige Semantik für den Familien-Alltag: "was habe ich DIESE
- * Woche ausgegeben" ist unabhängig vom Monatsende.
+ * `versions` muss aufsteigend nach `validFrom` sortiert sein, `expenses`
+ * muss `getBudgetExpenseQueryWindow` abdecken.
  */
-export function buildWeeklyPeriods(
+export function buildWeeklyPeriods<T extends { amount: number; frequency: Frequency; validFrom: Date }>(
   budgetId: string,
-  currentAmount: number,
-  currentValidFrom: Date,
-  currentValidTo: Date | null,
+  versions: T[],
   expenses: ExpenseLike[],
   monthStart: Date,
   monthEnd: Date,
 ): PeriodOverview[] {
-  // Wenn die aktuelle Version erst NACH dem Monatsende gültig wird,
-  // gibt es keine Perioden in diesem Monat.
-  if (currentValidFrom >= monthEnd) {
-    return []
-  }
+  const { start: firstWeekStart, end: weeksEnd } = getWeeklyMonthWindow(monthStart, monthEnd)
 
-  // Wochen, die vor dem Monatsstart angefangen haben, interessieren nicht
-  // für den Wochen-Detail — der User will Wochen sehen, die in diesem
-  // Monat STARTEN. Erste anzeigbare Woche: erste Wochenstart, der >=
-  // monthStart ist (oder das currentValidFrom, falls das später ist).
-  const lowerBound = currentValidFrom > monthStart ? currentValidFrom : monthStart
-
-  const firstWeekStart = startOfPeriod(lowerBound, 'WEEKLY')
-
-  // Expense-Aggregation: pro Wochenstart die Summe.
-  // Map<isoWeekStart, spentAmount>
+  // Expense-Aggregation: Map<Wochenstart-Timestamp, spentAmount>
   const expenseByWeek = new Map<number, number>()
   for (const expense of expenses) {
     if (expense.budgetId !== budgetId) continue
-    // expense.date kann in einer Woche liegen, die VOR firstWeekStart
-    // startet (z.B. wenn die Version später anfängt als die Transaktion).
-    // Wir aggregieren trotzdem — die Wochen-Liste zeigt sie nicht, aber
-    // die Monats-Summe stimmt.
-    if (expense.date < firstWeekStart) continue
-    const weekStart = startOfPeriod(expense.date, 'WEEKLY')
-    const key = weekStart.getTime()
+    const key = startOfPeriod(expense.date, 'WEEKLY').getTime()
     expenseByWeek.set(key, (expenseByWeek.get(key) ?? 0) + expense.amount)
   }
 
   const periods: PeriodOverview[] = []
-  let cursor = firstWeekStart
-  while (cursor < monthEnd) {
-    if (currentValidTo && cursor >= currentValidTo) break
+  for (let cursor = firstWeekStart; cursor < weeksEnd; cursor = addPeriod(cursor, 'WEEKLY')) {
     const next = addPeriod(cursor, 'WEEKLY')
+    const version = findWeekVersion(versions, cursor, next)
+    if (!version || version.frequency !== 'WEEKLY') continue
+
     const spentAmount = expenseByWeek.get(cursor.getTime()) ?? 0
-    const plannedAmount = currentAmount
+    const plannedAmount = version.amount
     const remainingAmount = plannedAmount - spentAmount
     const percentUsed = plannedAmount > 0 ? (spentAmount / plannedAmount) * 100 : 0
     periods.push({
@@ -487,21 +530,58 @@ export function buildWeeklyPeriods(
       percentUsed,
       severity: classifyPeriodSeverity(percentUsed),
     })
-    cursor = next
   }
 
   return periods
 }
 
-export function buildBudgetOverview(budgets: BudgetWithVersions[], expenses: ExpenseLike[], baseDate = new Date()): BudgetOverview {
+/**
+ * `baseDate` waehlt nur den Monat (Endpoints uebergeben `monthStart`),
+ * `today` ist der echte Stichtag fuer den Forecast. Frueher floss
+ * `baseDate` auch in den Forecast — mit `monthStart` war "heute" dann
+ * immer der Monatserste, `basisDays` 0 und der Forecast = Ist-Stand.
+ */
+export function buildBudgetOverview(
+  budgets: BudgetWithVersions[],
+  expenses: ExpenseLike[],
+  baseDate = new Date(),
+  today = new Date(),
+): BudgetOverview {
   const { monthStart, monthEnd } = getMonthWindow(baseDate)
-  const expenseByBudget = new Map<string, number>()
+  const weeklyWindow = getWeeklyMonthWindow(monthStart, monthEnd)
+  // Stichtag fuer die "aktuelle" Version: heute, auf den Monat geklemmt
+  // (vergangener Monat → letzter Tag, zukuenftiger → erster Tag).
+  const lastDayOfMonth = new Date(monthEnd)
+  lastDayOfMonth.setDate(lastDayOfMonth.getDate() - 1)
+  const todayAtNoon = startOfDay(today)
+  const referenceDate = todayAtNoon < monthStart
+    ? monthStart
+    : todayAtNoon > lastDayOfMonth ? lastDayOfMonth : todayAtNoon
+
+  // `expenses` reicht ueber den Kalendermonat hinaus (bis Ende der letzten
+  // Woche, die im Monat startet). Pro Budget wird erst unten entschieden,
+  // welches Fenster gilt — hier nur nach Budget gruppieren.
+  const isInCalendarMonth = (date: Date) => {
+    const day = startOfDay(date)
+    return day >= monthStart && day < monthEnd
+  }
+  const isInWeeklyWindow = (date: Date) => {
+    const weekStart = startOfPeriod(date, 'WEEKLY')
+    return weekStart >= weeklyWindow.start && weekStart < weeklyWindow.end
+  }
+
+  const expensesByBudget = new Map<string, ExpenseLike[]>()
   let unassignedSpent = 0
 
   for (const expense of expenses) {
     if (expense.budgetId) {
-      expenseByBudget.set(expense.budgetId, (expenseByBudget.get(expense.budgetId) ?? 0) + expense.amount)
-    } else {
+      const list = expensesByBudget.get(expense.budgetId)
+      if (list) {
+        list.push(expense)
+      } else {
+        expensesByBudget.set(expense.budgetId, [expense])
+      }
+    } else if (isInCalendarMonth(expense.date)) {
       unassignedSpent += expense.amount
     }
   }
@@ -511,43 +591,54 @@ export function buildBudgetOverview(budgets: BudgetWithVersions[], expenses: Exp
 
     let plannedAmount = 0
     let periodCountTotal = 0
-    let currentAmount: number | null = null
-    let currentFrequency: Frequency | null = null
-    let currentValidFrom: Date | null = null
-    let currentValidTo: Date | null = null
+    const monthVersions: Array<{ version: (typeof versions)[number]; validFrom: Date; validTo: Date | null }> = []
 
     versions.forEach((version, index) => {
       const { validFrom, validTo } = getActiveVersionRange(versions, index)
-      const periodCount = countPeriodsInMonth(validFrom, validTo, version.frequency, monthStart, monthEnd)
+      const periodCount = countPeriodsInMonth(validFrom, validTo, version.frequency, monthStart, monthEnd, index > 0)
       plannedAmount += periodCount * version.amount
       periodCountTotal += periodCount
 
       if (validFrom < monthEnd && (!validTo || validTo > monthStart)) {
-        currentAmount = version.amount
-        currentFrequency = version.frequency
-        currentValidFrom = validFrom
-        currentValidTo = validTo
+        monthVersions.push({ version, validFrom, validTo })
       }
     })
 
-    const spentAmount = expenseByBudget.get(budget.id) ?? 0
+    // Welche der Versionen im Monat ist die "aktuelle" (Anzeige "gültig ab",
+    // Frequenz)? Die zum Stichtag gueltige — sonst zeigte ein Oktober mit
+    // Aenderung ab 12.10. schon am 11.10. "gültig ab 12. Okt." (User-Report
+    // 2026-10-11). Faellt der Stichtag vor die erste Version im Monat
+    // (Budget beginnt erst spaeter im Monat), gilt die erste.
+    const current = monthVersions.filter((entry) => entry.validFrom <= referenceDate).at(-1)
+      ?? monthVersions[0]
+      ?? null
+    const currentAmount = current?.version.amount ?? null
+    const currentFrequency = current?.version.frequency ?? null
+    const currentValidFrom = current?.validFrom ?? null
+    const currentValidTo = current?.validTo ?? null
+    const next = current ? monthVersions[monthVersions.indexOf(current) + 1] : undefined
+    const nextChange = next
+      ? { validFrom: next.validFrom, amount: next.version.amount, frequency: next.version.frequency }
+      : null
+
+    // WEEKLY-Budgets rechnen in Wochen, die dem Monat ihres Montags
+    // gehoeren (siehe `getWeeklyMonthWindow`) — Plan (`countPeriodsInMonth`
+    // zaehlt Wochenstarts im Monat), Ausgaben und Forecast nutzen dasselbe
+    // Fenster. Alle anderen Frequenzen bleiben beim Kalendermonat.
+    const isWeekly = currentFrequency === 'WEEKLY'
+    const isInBudgetWindow = isWeekly ? isInWeeklyWindow : isInCalendarMonth
+    const budgetExpenses = (expensesByBudget.get(budget.id) ?? []).filter((expense) => isInBudgetWindow(expense.date))
+    const spentAmount = budgetExpenses.reduce((sum, expense) => sum + expense.amount, 0)
 
     // Issue #82: WEEKLY-Budgets kriegen zusätzlich eine Period-Liste.
     // MONTHLY/QUARTERLY/YEARLY/ONCE liefern `[]` — Monats-Summe reicht
-    // für die Monats-Anzeige. Forecast (#60) liest später die Periods.
-    const periods = currentFrequency === 'WEEKLY'
-      && currentAmount !== null
-      && currentValidFrom !== null
-      ? buildWeeklyPeriods(
-          budget.id,
-          currentAmount,
-          currentValidFrom,
-          currentValidTo,
-          expenses,
-          monthStart,
-          monthEnd,
-        )
+    // für die Monats-Anzeige.
+    const periods = isWeekly
+      ? buildWeeklyPeriods(budget.id, versions, budgetExpenses, monthStart, monthEnd)
       : []
+
+    const forecastStart = isWeekly ? weeklyWindow.start : monthStart
+    const forecastEnd = isWeekly ? weeklyWindow.end : monthEnd
 
     return {
       budgetId: budget.id,
@@ -562,11 +653,12 @@ export function buildBudgetOverview(budgets: BudgetWithVersions[], expenses: Exp
       remainingAmount: plannedAmount - spentAmount,
       periodCount: periodCountTotal,
       versionCount: versions.length,
+      nextChange,
       periods,
       // Issue #60: Forecast auf Monatsende. Pure function, O(1) pro
       // Budget, keine zusätzliche DB-Query nötig — alle Eingaben sind
       // bereits im `BudgetOverviewItem`-State.
-      forecast: buildBudgetForecast(plannedAmount, spentAmount, monthStart, monthEnd, baseDate),
+      forecast: buildBudgetForecast(plannedAmount, spentAmount, forecastStart, forecastEnd, today),
     }
   })
 

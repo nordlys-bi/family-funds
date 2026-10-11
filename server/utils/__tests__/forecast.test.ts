@@ -247,4 +247,25 @@ describe('buildBudgetOverview — forecast field (issue #60)', () => {
     expect(result.budgets[0].forecast.forecastTotal).toBe(0)
     expect(result.budgets[0].forecast.severity).toBe('on-track')
   })
+
+  it('nutzt `today` statt des Monats-Ankers (Endpoints uebergeben monthStart als baseDate)', () => {
+    const budget = {
+      id: 'budget-1',
+      key: 'X',
+      name: 'X',
+      versions: [
+        makeVersion({
+          amount: 100_000,
+          frequency: 'MONTHLY' as const,
+          validFrom: new Date(2025, 0, 1),
+        }),
+      ],
+    }
+    const expenses = [{ amount: 30_000, date: new Date(2026, 5, 5, 12), budgetId: 'budget-1' }]
+    const monthStart = new Date(2026, 5, 1, 12)
+    const result = buildBudgetOverview([budget], expenses, monthStart, new Date(2026, 5, 11, 12))
+    // 10 Tage Basis, 300€ → 30€/Tag, 20 Resttage → 300€ + 600€ = 900€
+    expect(result.budgets[0].forecast.basisDays).toBe(10)
+    expect(result.budgets[0].forecast.forecastTotal).toBe(90_000)
+  })
 })
