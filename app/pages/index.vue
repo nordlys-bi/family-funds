@@ -26,6 +26,7 @@ type DashboardData = {
     remainingAmount: number
     percentUsed: number
     severity: 'ok' | 'warning' | 'over'
+    balance?: number
   }>
   budgetAlerts: Array<{
     budgetId: string

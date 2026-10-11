@@ -24,8 +24,9 @@
   nutzt inputmode="decimal" fuer numerische Tastatur auf Mobile.
 -->
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { TransactionItem } from '~/composables/useTransactionList'
+import { fromDateInputValue, toDateInputValue } from '~/utils/form-helpers'
 
 export type TransactionEditPayload = {
   amount: number | null
@@ -38,7 +39,7 @@ const props = defineProps<{
   transaction: TransactionItem
   /** Optionen fuer das Budget-Dropdown (nur fuer Expenses relevant).
    *  Bei Income kann leer gelassen werden — Editor rendert das Feld nicht. */
-  budgetOptions?: Array<{ label: string; value: string }>
+  budgetOptions?: Array<{ label: string; value: string; closedAt?: string | null }>
   /** Waehrungscode fuer den MoneyInput. */
   currency: string
   /** Saving-State — true waehrend PATCH läuft, disablest Inputs + Save. */
@@ -55,24 +56,36 @@ const emit = defineEmits<{
 // === Lokaler Edit-State ==============================================
 // Working-Copy der Transaktion, damit Cancel die Original-Werte nicht
 // ueberschreibt. Parent darf die `transaction`-Prop nicht mutieren.
-const draft = ref<TransactionEditPayload>(initialDraft(props.transaction))
+// Das Datum liegt im Draft als `Date`, weil der DatePicker nach einer
+// Auswahl ohnehin ein `Date` zurueckschreibt — erst beim Speichern wird es
+// wieder zu 'YYYY-MM-DD' (sonst landet ein UTC-ISO-String im PATCH, den
+// der Server als ungueltiges Datum ablehnt).
+type EditDraft = Omit<TransactionEditPayload, 'date'> & { date: Date | null }
 
-function initialDraft(t: TransactionItem): TransactionEditPayload {
+const draft = ref<EditDraft>(initialDraft(props.transaction))
+
+function initialDraft(t: TransactionItem): EditDraft {
   return {
     amount: t.amount / 100,
     description: t.description ?? '',
-    date: formatDateForInput(t.date),
+    date: fromDateInputValue(t.date),
     budgetId: t.budgetId ?? null,
   }
 }
 
-function formatDateForInput(value: string): string {
-  // DB-Format: YYYY-MM-DD oder ISO-String. Input erwartet YYYY-MM-DD.
-  if (typeof value !== 'string') return ''
-  // ISO mit Zeit: Datum-Teil extrahieren
-  if (value.includes('T')) return value.split('T')[0] ?? ''
-  return value
+function toPayload(value: EditDraft): TransactionEditPayload {
+  return { ...value, date: toDateInputValue(value.date) }
 }
+
+// ADR-0004: Geschlossene Budgets nur anbieten, wenn das Entwurfs-Datum vor
+// ihrem Stichtag liegt. Das aktuell gesetzte Budget bleibt sichtbar, damit
+// der Select nicht leer wirkt — speichern mit Datum ab Stichtag lehnt der
+// Server ab und der Fehler erscheint unten.
+const availableBudgetOptions = computed(() =>
+  props.budgetOptions?.filter((option) =>
+    option.value === (draft.value.budgetId ?? '') || (!draft.value.date ? !option.closedAt : isBudgetOpenOn(option, draft.value.date)),
+  ),
+)
 
 // Wenn Parent eine andere Transaktion in den Editor legt (z. B. nach
 // Cancel + neuer Klick auf Edit), reset das Draft auf die neuen Werte.
@@ -90,10 +103,10 @@ function handleSave() {
   if (draft.value.amount == null || draft.value.amount <= 0) {
     // Parent bekommt trotzdem den Save-Event und kann die Validierung
     // uebernehmen (InputNumber-Komponente hat ihre eigenen Constraints).
-    emit('save', { ...draft.value })
+    emit('save', toPayload(draft.value))
     return
   }
-  emit('save', { ...draft.value })
+  emit('save', toPayload(draft.value))
 }
 
 function handleCancel() {
@@ -153,7 +166,7 @@ function handleCancel() {
       <Select
         :input-id="`tx-edit-budget-${transaction.id}`"
         v-model="draft.budgetId"
-        :options="budgetOptions"
+        :options="availableBudgetOptions"
         option-label="label"
         option-value="value"
         placeholder="Sonstiges"

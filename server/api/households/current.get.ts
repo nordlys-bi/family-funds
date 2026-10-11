@@ -1,7 +1,8 @@
 import { defineEventHandler, createError, getCookie } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
-import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow } from '../../utils/budget-evaluation'
+import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow, withVersionFrequency } from '../../utils/budget-evaluation'
+import { budgetBalanceSelect, loadBudgetBalances } from '../../utils/budget-balance-query'
 import { buildSavingsMonthlyProgress } from '../../utils/savings-progress'
 import { computePlanCoverage, indexPaidBuckets } from '../../utils/recurring-coverage'
 
@@ -90,6 +91,7 @@ export default defineEventHandler(async (event) => {
           id: true,
           key: true,
           name: true,
+          ...budgetBalanceSelect,
           createdAt: true,
           updatedAt: true,
           versions: {
@@ -99,7 +101,6 @@ export default defineEventHandler(async (event) => {
             select: {
               id: true,
               amount: true,
-              frequency: true,
               validFrom: true,
               createdAt: true,
               updatedAt: true,
@@ -210,7 +211,15 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  const budgetOverview = buildBudgetOverview(household.budgets, expenses, monthStart)
+  // ADR-0004: Frequenz kommt vom Budget; an die Versionen gehaengt, damit
+  // Auswertung und Frontend (Versions-Historie) unveraendert lesen koennen.
+  const budgetsWithFrequency = household.budgets.map(withVersionFrequency)
+  const budgetOverview = buildBudgetOverview(budgetsWithFrequency, expenses, monthStart)
+  const balances = await loadBudgetBalances(householdId, budgetsWithFrequency)
+  const budgets = budgetsWithFrequency.map((budget) => ({
+    ...budget,
+    balance: balances.get(budget.id)?.balance ?? 0,
+  }))
 
   // Issue #59: monatliche Coverage-Berechnung fuer Income- und
   // Fixkosten-Plaene. Wir laden alle Transaktionen im aktuellen
@@ -269,7 +278,7 @@ export default defineEventHandler(async (event) => {
   )
 
   return {
-    household: { ...household, savingsGoals, fixedCosts, incomePlans },
+    household: { ...household, budgets, savingsGoals, fixedCosts, incomePlans },
     budgetOverview,
   }
 })

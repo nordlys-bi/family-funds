@@ -15,6 +15,7 @@ import { prisma } from '../../../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../../../utils/household-access'
 import { defineApiResponse } from '../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../utils/validation'
+import { assertBudgetOpenOn } from '../../../../../utils/budget-lifecycle'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -30,7 +31,7 @@ export default defineEventHandler(async (event) => {
       id: expenseId,
       householdId,
     },
-    select: { id: true, deletedAt: true },
+    select: { id: true, deletedAt: true, date: true, budget: { select: { closedAt: true } } },
   })
 
   if (!existing) {
@@ -43,6 +44,14 @@ export default defineEventHandler(async (event) => {
   // Idempotent: bereits aktiv → 200 ohne Update
   if (existing.deletedAt === null) {
     return defineApiResponse({ kind: 'expense', restored: true, alreadyActive: true })
+  }
+
+  // ADR-0004: Eine Wiederherstellung wirkt wie eine neue Buchung — ab dem
+  // Stichtag eines geschlossenen Budgets ist sie deshalb nicht erlaubt
+  // (sonst laege wieder eine Ausgabe hinter dem Stichtag auf einem Budget,
+  // das ab dann nichts mehr fuehrt — sie gehoert zum Nachfolger).
+  if (existing.budget) {
+    assertBudgetOpenOn(existing.budget, existing.date)
   }
 
   await prisma.expenseTransaction.update({

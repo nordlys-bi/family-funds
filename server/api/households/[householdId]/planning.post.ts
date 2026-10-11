@@ -53,15 +53,19 @@ export default defineEventHandler(async (event) => {
       const validFrom = parseDateInput(body.validFrom, 'Valid from')
       assertPeriodStart(validFrom, frequency, 'Valid from')
 
+      // ADR-0004: Frequenz gehoert fest zum Budget. Der Saldo startet mit
+      // der Periode der ersten Version — `validFrom` ist per
+      // `assertPeriodStart` bereits ein Periodenbeginn.
       const item = await prisma.budget.create({
         data: {
           householdId,
           key: generateBudgetKey(),
           name,
+          frequency,
+          balanceSince: validFrom,
           versions: {
             create: {
               amount,
-              frequency,
               validFrom,
             },
           },

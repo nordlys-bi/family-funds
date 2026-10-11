@@ -33,6 +33,8 @@ type PeriodCard = {
   remainingAmount: number
   percentUsed: number
   severity: 'ok' | 'warning' | 'over'
+  /** ADR-0004: fortlaufender Saldo des Budgets (ueber alle Perioden). */
+  balance?: number
 }
 
 defineProps<{
@@ -89,6 +91,11 @@ function transactionsLink(card: PeriodCard) {
             </div>
           </dl>
         </div>
+        <!-- ADR-0004: Perioden-Rest oben beantwortet "wie liegen wir in
+             dieser Periode?", der Saldo hier "wie viel ist insgesamt da?". -->
+        <div v-if="card.balance !== undefined" class="card__balance" :class="{ 'is-negative': card.balance < 0 }">
+          Saldo gesamt {{ formatMoney(card.balance) }}
+        </div>
       </NuxtLink>
       <button
         type="button"
@@ -104,6 +111,16 @@ function transactionsLink(card: PeriodCard) {
 </template>
 
 <style scoped>
+.card__balance {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.card__balance.is-negative {
+  color: var(--color-accent-danger-text);
+}
+
 .empty {
   color: var(--color-text-muted);
   font-size: 0.9rem;

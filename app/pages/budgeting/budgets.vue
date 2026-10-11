@@ -15,6 +15,11 @@ type BudgetItem = {
   id: string
   key: string
   name: string
+  // ADR-0004: Frequenz fest am Budget, Saldo als virtuelles Konto.
+  frequency: Frequency
+  closedAt: string | null
+  carryoverToBudgetId: string | null
+  balance: number
   versions: BudgetVersion[]
 }
 
@@ -59,6 +64,7 @@ type PlanningHousehold = {
   name: string
   currency: string
   budgets: BudgetItem[]
+  savingsGoals: Array<{ id: string; name: string }>
 }
 
 import { isFirstRun } from '~/utils/household-age'
@@ -145,14 +151,19 @@ const monthEnd = computed<Date | null>(() => {
   return range ? range.end : null
 })
 
+const monthStart = computed<Date | null>(() => parseMonthRange(month.value)?.start ?? null)
+
 const visibleBudgets = computed(() => {
   const budgets = currentHousehold.value?.budgets ?? []
   if (!monthEnd.value) return budgets
   // Sichtbar, sobald IRGENDEINE Version bis Monatsende beginnt. Nur die
   // neueste Version zu pruefen hat ein Budget nach einer Betrags-Aenderung
   // in allen Monaten davor ausgeblendet (User-Report 2026-10-11).
+  // ADR-0004: Ein geschlossenes Budget verschwindet ab dem ersten Monat,
+  // der komplett nach seinem Stichtag liegt — sein Saldo lebt im Ziel weiter.
   return budgets.filter((budget) =>
-    budget.versions.some((version) => new Date(version.validFrom) <= monthEnd.value!),
+    budget.versions.some((version) => new Date(version.validFrom) <= monthEnd.value!)
+    && !(budget.closedAt && monthStart.value && new Date(budget.closedAt) <= monthStart.value),
   )
 })
 
@@ -221,7 +232,7 @@ const editBudget = (budget: BudgetItem) => {
   budgetForm.value = {
     name: budget.name,
     amount: latestVersion ? latestVersion.amount / 100 : null,
-    frequency: latestVersion?.frequency ?? 'MONTHLY',
+    frequency: budget.frequency,
     validFrom: latestVersion ? new Date(latestVersion.validFrom) : new Date(),
   }
   budgetDialogOpen.value = true
@@ -250,7 +261,8 @@ const saveBudget = async () => {
       ...(budgetEditId.value ? { id: budgetEditId.value } : {}),
       name: budgetForm.value.name,
       amount: budgetForm.value.amount,
-      frequency: budgetForm.value.frequency,
+      // ADR-0004: Frequenz nur beim Anlegen — danach unveraenderlich.
+      ...(budgetEditId.value ? {} : { frequency: budgetForm.value.frequency }),
       validFrom: formatDateToInputString(budgetForm.value.validFrom),
     }
     await $fetch(`/api/households/${activeHouseholdId.value}/planning`, {
@@ -275,7 +287,7 @@ const deletePlanningItem = async (budget: { id: string; name: string }) => {
   // Sicherung gegen Fehlklicks. Confirm-Text nennt das konkrete Budget.
   const ok = await confirm.ask({
     title: 'Budget löschen?',
-    message: `„${budget.name}" wird endgültig entfernt. Bereits gebuchte Ausgaben behalten das Budget-Label, der Topf-Betrag wird zurückgerechnet.`,
+    message: `„${budget.name}" wird endgültig entfernt. Das geht nur, solange noch nichts darauf gebucht wurde — sonst das Budget stattdessen schließen.`,
     tone: 'danger',
     confirmLabel: 'Endgültig löschen',
   })
@@ -290,9 +302,165 @@ const deletePlanningItem = async (budget: { id: string; name: string }) => {
     await loadPlanning()
     notice.value = { severity: 'success', text: 'Eintrag wurde gelöscht.' }
   } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Eintrag konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
+    // ADR-0004: 409 = Budget hat Buchungen, Umbuchungen oder Vorgaenger.
+    notice.value = error.statusCode === 409
+      ? { severity: 'warn', text: `„${budget.name}" hat bereits Buchungen und kann nicht gelöscht werden. Schließe es stattdessen in ein anderes Budget.` }
+      : { severity: 'error', text: 'Eintrag konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) }
   } finally {
     actionLoadingKey.value = null
+  }
+}
+
+// === ADR-0004: Saldo, Schließen, Umbuchen =============================
+const budgetsById = computed(() => new Map((currentHousehold.value?.budgets ?? []).map((budget) => [budget.id, budget] as const)))
+const budgetName = (budgetId: string | null) => (budgetId ? budgetsById.value.get(budgetId)?.name ?? '—' : '—')
+const isClosed = (budget: BudgetItem) => Boolean(budget.closedAt)
+
+// Schließen: Stichtag (Periodenbeginn) + Pflicht-Ziel. Default ist der
+// naechste Periodenbeginn, damit die laufende Periode noch genutzt wird.
+const closeDialogOpen = ref(false)
+const closeSaving = ref(false)
+const closeError = ref<string | null>(null)
+const closeForm = ref({
+  budgetId: '' as string,
+  closedAt: new Date() as Date | null,
+  targetId: null as string | null,
+})
+const closingBudget = computed(() => budgetsById.value.get(closeForm.value.budgetId) ?? null)
+const closeDialogHeader = computed(() => `„${closingBudget.value?.name ?? ''}“ schließen`)
+// Ziel: anderes Budget, das am Stichtag noch offen ist (sonst Zyklus).
+const closeTargetOptions = computed(() =>
+  budgetsOpenOn(
+    (currentHousehold.value?.budgets ?? []).filter((budget) => budget.id !== closeForm.value.budgetId),
+    closeForm.value.closedAt,
+  ).map((budget) => ({ label: budget.name, value: budget.id })),
+)
+
+function openCloseDialog(budget: BudgetItem) {
+  closeForm.value = {
+    budgetId: budget.id,
+    closedAt: getNextPeriodStartDate(new Date(), budget.frequency),
+    targetId: null,
+  }
+  closeError.value = null
+  closeDialogOpen.value = true
+}
+
+async function saveClose() {
+  if (!activeHouseholdId.value || !closingBudget.value) return
+  if (!closeForm.value.closedAt) {
+    closeError.value = 'Bitte einen Stichtag wählen.'
+    return
+  }
+  if (!closeForm.value.targetId) {
+    closeError.value = 'Bitte ein Ziel-Budget wählen — der Saldo darf nicht verschwinden.'
+    return
+  }
+  closeSaving.value = true
+  closeError.value = null
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/budgets/${closingBudget.value.id}/close`, {
+      method: 'POST',
+      body: {
+        closedAt: formatDateToInputString(closeForm.value.closedAt),
+        carryoverToBudgetId: closeForm.value.targetId,
+      },
+    })
+    closeDialogOpen.value = false
+    await loadPlanning()
+    notice.value = { severity: 'success', text: `„${closingBudget.value?.name ?? 'Budget'}" wurde geschlossen.` }
+  } catch (error: any) {
+    closeError.value = error.statusCode === 409
+      ? 'Es gibt Buchungen ab dem Stichtag. Bitte zuerst auf ein anderes Budget umhängen oder einen späteren Stichtag wählen.'
+      : 'Budget konnte nicht geschlossen werden: ' + (error.statusMessage || error.message)
+  } finally {
+    closeSaving.value = false
+  }
+}
+
+// Umbuchen Budget <-> Spartopf: eine SavingsGoalExecution mit
+// sourceBudgetId. Richtung als Auswahl statt Vorzeichen-Eingabe.
+const transferDialogOpen = ref(false)
+const transferSaving = ref(false)
+const transferError = ref<string | null>(null)
+const transferForm = ref({
+  budgetId: '' as string,
+  goalId: null as string | null,
+  direction: 'toGoal' as 'toGoal' | 'toBudget',
+  amount: null as number | null,
+  date: new Date() as Date | null,
+  note: '',
+})
+const transferBudget = computed(() => budgetsById.value.get(transferForm.value.budgetId) ?? null)
+const transferDialogHeader = computed(() => `Umbuchen: ${transferBudget.value?.name ?? ''}`)
+const transferNotePlaceholder = computed(() => `Umbuchung ${transferBudget.value?.name ?? ''}`)
+const savingsGoalOptions = computed(() =>
+  (currentHousehold.value?.savingsGoals ?? []).map((goal) => ({ label: goal.name, value: goal.id })),
+)
+const transferDirectionOptions = [
+  { label: 'Vom Budget in den Spartopf', value: 'toGoal' },
+  { label: 'Aus dem Spartopf ins Budget', value: 'toBudget' },
+]
+// Kein Saldo-Limit (ADR-0004), nur ein Hinweis, wenn der Saldo dadurch
+// negativ wird.
+const transferOverdraws = computed(() =>
+  transferForm.value.direction === 'toGoal'
+  && transferBudget.value !== null
+  && transferForm.value.amount !== null
+  && Math.round(transferForm.value.amount * 100) > transferBudget.value.balance,
+)
+
+function openTransferDialog(budget: BudgetItem) {
+  transferForm.value = {
+    budgetId: budget.id,
+    goalId: savingsGoalOptions.value[0]?.value ?? null,
+    direction: 'toGoal',
+    amount: budget.balance > 0 ? budget.balance / 100 : null,
+    date: new Date(),
+    note: '',
+  }
+  transferError.value = null
+  transferDialogOpen.value = true
+}
+
+async function saveTransfer() {
+  if (!activeHouseholdId.value || !transferBudget.value) return
+  if (!transferForm.value.goalId) {
+    transferError.value = 'Bitte einen Spartopf wählen.'
+    return
+  }
+  if (transferForm.value.amount == null || transferForm.value.amount <= 0) {
+    transferError.value = 'Betrag muss größer als 0 sein.'
+    return
+  }
+  if (!transferForm.value.date) {
+    transferError.value = 'Bitte ein Datum wählen.'
+    return
+  }
+  if (!isBudgetOpenOn(transferBudget.value, transferForm.value.date)) {
+    transferError.value = 'Das Budget ist zu diesem Datum bereits geschlossen.'
+    return
+  }
+  transferSaving.value = true
+  transferError.value = null
+  try {
+    const signed = transferForm.value.direction === 'toGoal' ? transferForm.value.amount : -transferForm.value.amount
+    await $fetch(`/api/households/${activeHouseholdId.value}/savings-goals/${transferForm.value.goalId}/executions`, {
+      method: 'POST',
+      body: {
+        amount: signed,
+        date: formatDateToInputString(transferForm.value.date),
+        note: transferForm.value.note || `Umbuchung ${transferBudget.value.name}`,
+        sourceBudgetId: transferBudget.value.id,
+      },
+    })
+    transferDialogOpen.value = false
+    await loadPlanning()
+    notice.value = { severity: 'success', text: 'Umbuchung wurde gespeichert.' }
+  } catch (error: any) {
+    transferError.value = 'Umbuchung fehlgeschlagen: ' + (error.statusMessage || error.message)
+  } finally {
+    transferSaving.value = false
   }
 }
 
@@ -450,6 +618,9 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <span v-if="getBudgetOverviewItem(budget.id).currentFrequency" class="row-tag">
               {{ frequencyLabel(getBudgetOverviewItem(budget.id).currentFrequency!) }}
             </span>
+            <span v-if="isClosed(budget)" class="row-tag-closed">
+              geschlossen ab {{ formatDate(budget.closedAt) }} → {{ budgetName(budget.carryoverToBudgetId) }}
+            </span>
             <span>gültig ab {{ formatDate(getBudgetOverviewItem(budget.id).currentValidFrom) }}</span>
             <span>·</span>
             <span>{{ getBudgetOverviewItem(budget.id).periodCount }} Perioden</span>
@@ -471,10 +642,41 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             :label="`${formatMoney(getBudgetOverviewItem(budget.id).spentAmount)} / ${formatMoney(getBudgetOverviewItem(budget.id).plannedAmount)}`"
           />
         </template>
+        <!-- ADR-0004: Saldo des virtuellen Kontos — "wie viel ist insgesamt
+             noch da?", unabhaengig vom angezeigten Monat. -->
+        <template #aside>
+          <div class="balance" :class="{ 'balance--negative': budget.balance < 0 }">
+            {{ formatMoney(budget.balance) }}
+            <span class="amount-secondary">Saldo</span>
+          </div>
+        </template>
+        <!-- Umbuchen (alle Mitglieder) und Schließen (Owner) als Text-Buttons
+             unter dem Titel, damit sie auch mobil ohne Swipe erreichbar sind. -->
+        <template v-if="!isClosed(budget)" #meta>
+          <div class="row-actions">
+            <Button
+              v-if="savingsGoalOptions.length > 0"
+              label="Umbuchen"
+              icon="pi pi-arrow-right-arrow-left"
+              size="small"
+              text
+              @click="openTransferDialog(budget)"
+            />
+            <Button
+              v-if="canManageHousehold"
+              label="Schließen"
+              icon="pi pi-lock"
+              size="small"
+              severity="secondary"
+              text
+              @click="openCloseDialog(budget)"
+            />
+          </div>
+        </template>
         <!-- Bearbeiten/Loeschen nur ab 640px als Buttons; mobil ersetzt durch
              Swipe (issue #132), siehe #actions-desktop in ItemCard. -->
         <template v-if="canManageHousehold" #actions-desktop>
-          <Button icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Budget bearbeiten" @click="editBudget(budget)" />
+          <Button v-if="!isClosed(budget)" icon="pi pi-pen-to-square" severity="secondary" outlined size="small" text aria-label="Budget bearbeiten" @click="editBudget(budget)" />
           <Button
             icon="pi pi-trash"
             severity="danger"
@@ -546,7 +748,83 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
       @save="saveBudget"
       @cancel="closeBudgetDialog"
     >
-      <BudgetForm v-model="budgetForm" :currency="currencyCode" />
+      <BudgetForm v-model="budgetForm" :currency="currencyCode" :frequency-locked="Boolean(budgetEditId)" />
+    </FormDialog>
+
+    <!-- ADR-0004: Budget schließen — Saldo fließt per Verweis ins Ziel. -->
+    <FormDialog
+      v-model:visible="closeDialogOpen"
+      :header="closeDialogHeader"
+      submit-label="Budget schließen"
+      submit-severity="danger"
+      :saving="closeSaving"
+      @save="saveClose"
+      @cancel="closeDialogOpen = false"
+    >
+      <p class="dialog-hint">
+        Ab dem Stichtag bekommt das Budget keine Zuteilungen mehr und nimmt keine Buchungen mehr an.
+        Sein Saldo ({{ formatMoney(closingBudget?.balance ?? 0) }}) fließt ins Ziel-Budget — auch spätere Korrekturen von Buchungen vor dem Stichtag.
+        Für einen Wechsel der Frequenz zuerst das neue Budget anlegen, dann das alte hinein schließen.
+      </p>
+      <FormFieldRow label="Stichtag" html-for="close-date">
+        <DatePicker id="close-date" v-model="closeForm.closedAt" show-icon date-format="dd.mm.yy" />
+      </FormFieldRow>
+      <FormFieldRow label="Ziel-Budget" html-for="close-target" wide>
+        <Select
+          id="close-target"
+          v-model="closeForm.targetId"
+          :options="closeTargetOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Budget wählen"
+          empty-message="Kein offenes Budget — zuerst ein neues anlegen"
+        />
+      </FormFieldRow>
+      <Message v-if="closeError" severity="error" variant="simple">{{ closeError }}</Message>
+    </FormDialog>
+
+    <!-- ADR-0004: Umbuchung Budget <-> Spartopf (eine Execution mit sourceBudgetId). -->
+    <FormDialog
+      v-model:visible="transferDialogOpen"
+      :header="transferDialogHeader"
+      submit-label="Umbuchen"
+      :saving="transferSaving"
+      @save="saveTransfer"
+      @cancel="transferDialogOpen = false"
+    >
+      <p class="dialog-hint">Aktueller Saldo: {{ formatMoney(transferBudget?.balance ?? 0) }}</p>
+      <FormFieldRow label="Richtung" html-for="transfer-direction" wide>
+        <Select
+          id="transfer-direction"
+          v-model="transferForm.direction"
+          :options="transferDirectionOptions"
+          option-label="label"
+          option-value="value"
+        />
+      </FormFieldRow>
+      <FormFieldRow label="Spartopf" html-for="transfer-goal" wide>
+        <Select
+          id="transfer-goal"
+          v-model="transferForm.goalId"
+          :options="savingsGoalOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Spartopf wählen"
+        />
+      </FormFieldRow>
+      <FormFieldRow label="Betrag" html-for="transfer-amount">
+        <MoneyInput id="transfer-amount" v-model="transferForm.amount" :currency="currencyCode" />
+      </FormFieldRow>
+      <FormFieldRow label="Datum" html-for="transfer-date" subtle>
+        <DatePicker id="transfer-date" v-model="transferForm.date" show-icon date-format="dd.mm.yy" />
+      </FormFieldRow>
+      <FormFieldRow label="Notiz" html-for="transfer-note" wide>
+        <InputText id="transfer-note" v-model="transferForm.note" :placeholder="transferNotePlaceholder" />
+      </FormFieldRow>
+      <Message v-if="transferOverdraws" severity="warn" variant="simple">
+        Der Saldo des Budgets wird dadurch negativ.
+      </Message>
+      <Message v-if="transferError" severity="error" variant="simple">{{ transferError }}</Message>
     </FormDialog>
   </ListPageShell>
 </template>
@@ -580,6 +858,39 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
   text-transform: uppercase;
   letter-spacing: 0.04em;
   border-radius: 4px;
+}
+
+.row-tag-closed {
+  display: inline-block;
+  padding: 1px 7px;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.balance {
+  text-align: right;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.balance--negative {
+  color: var(--color-accent-danger-text);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: -8px;
+}
+
+.dialog-hint {
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
 }
 
 .row-next-change {

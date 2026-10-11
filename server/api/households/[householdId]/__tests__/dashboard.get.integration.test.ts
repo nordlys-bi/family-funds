@@ -21,6 +21,8 @@ const prismaMocks = vi.hoisted(() => ({
   expenseTransaction: { findMany: vi.fn() },
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
+  // ADR-0004: Umbuchungen Budget -> Spartopf fuer den Budget-Saldo.
+  savingsGoalExecution: { findMany: vi.fn() },
   // Issue #98: Recurring-Coverage-Queries fuer den Handlungsbedarf-Block.
   fixedCostPlan: { findMany: vi.fn() },
   incomePlan: { findMany: vi.fn() },
@@ -71,6 +73,8 @@ function mockAuthFailure(statusCode: number, statusMessage: string) {
 }
 
 function resetDbMocks() {
+  prismaMocks.savingsGoalExecution.findMany.mockReset()
+  prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([])
   prismaMocks.budget.findMany.mockReset()
   prismaMocks.expenseTransaction.findMany.mockReset()
   prismaMocks.incomeTransaction.findMany.mockReset()
@@ -116,6 +120,11 @@ function setupTypicalHousehold() {
       id: 'b-food',
       key: 'food',
       name: 'Lebensmittel',
+      // ADR-0004: Frequenz + Saldo-Start am Budget
+      frequency: Frequency.MONTHLY,
+      balanceSince: new Date('2026-01-01'),
+      closedAt: null,
+      carryoverToBudgetId: null,
       versions: [
         { id: 'v-1', amount: 50000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
       ],
@@ -124,6 +133,11 @@ function setupTypicalHousehold() {
       id: 'b-fix',
       key: 'fix',
       name: 'Fixkosten',
+      // ADR-0004: Frequenz + Saldo-Start am Budget
+      frequency: Frequency.MONTHLY,
+      balanceSince: new Date('2026-01-01'),
+      closedAt: null,
+      carryoverToBudgetId: null,
       versions: [
         { id: 'v-2', amount: 100000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
       ],
@@ -132,6 +146,11 @@ function setupTypicalHousehold() {
       id: 'b-leisure',
       key: 'leisure',
       name: 'Freizeit',
+      // ADR-0004: Frequenz + Saldo-Start am Budget
+      frequency: Frequency.MONTHLY,
+      balanceSince: new Date('2026-01-01'),
+      closedAt: null,
+      carryoverToBudgetId: null,
       versions: [
         { id: 'v-3', amount: 20000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
       ],
@@ -384,6 +403,11 @@ describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
         id: 'b-1',
         key: 'food',
         name: 'Lebensmittel',
+        // ADR-0004: Frequenz + Saldo-Start am Budget
+        frequency: Frequency.MONTHLY,
+        balanceSince: new Date('2026-01-01'),
+        closedAt: null,
+        carryoverToBudgetId: null,
         versions: [
           { id: 'v-1', amount: plannedCents, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
         ],
@@ -456,6 +480,11 @@ describe('GET /api/households/:id/dashboard — budgetPeriodCards (Perioden-Bugf
         id: 'b-yearly',
         key: 'yearly',
         name: 'Jahresbudget',
+        // ADR-0004: Frequenz + Saldo-Start am Budget
+        frequency: Frequency.YEARLY,
+        balanceSince: yearlyValidFrom,
+        closedAt: null,
+        carryoverToBudgetId: null,
         versions: [
           { id: 'v-1', amount: 120000, frequency: Frequency.YEARLY, validFrom: yearlyValidFrom },
         ],

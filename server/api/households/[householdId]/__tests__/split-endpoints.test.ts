@@ -19,6 +19,7 @@ const prismaMocks = vi.hoisted(() => ({
   householdInvitation: { findMany: vi.fn() },
   budget: { findMany: vi.fn() },
   expenseTransaction: { findMany: vi.fn() },
+  savingsGoalExecution: { findMany: vi.fn() },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -52,6 +53,8 @@ function mockMembershipSuccess() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  prismaMocks.expenseTransaction.findMany.mockResolvedValue([])
+  prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([])
 })
 
 describe('GET /households/:id/members', () => {
@@ -105,6 +108,47 @@ describe('GET /households/:id/budgets', () => {
         orderBy: { createdAt: 'desc' },
       }),
     )
+  })
+
+  // ADR-0004: Saldo = Zuteilungen seit balanceSince − Ausgaben − Umbuchungen.
+  it('ships the running balance per budget', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 9, 11, 10))
+    try {
+      mockMembershipSuccess()
+      prismaMocks.budget.findMany.mockResolvedValue([
+        {
+          id: 'b-1',
+          key: 'budget_food',
+          name: 'Lebensmittel',
+          frequency: 'MONTHLY',
+          balanceSince: new Date(2026, 8, 1, 12),
+          closedAt: null,
+          carryoverToBudgetId: null,
+          versions: [{ id: 'v-1', amount: 40000, validFrom: new Date(2026, 6, 1, 12) }],
+        },
+      ])
+      prismaMocks.expenseTransaction.findMany.mockResolvedValue([
+        { budgetId: 'b-1', amount: 30000, date: new Date(2026, 8, 10, 12) },
+      ])
+      prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([
+        { sourceBudgetId: 'b-1', amount: 5000, date: new Date(2026, 9, 1, 12) },
+      ])
+
+      const response = await budgetsHandler(makeEvent())
+
+      expect(response.budgets[0].balance).toMatchObject({
+        balance: 80000 - 30000 - 5000,
+        allocated: 80000,
+        spent: 30000,
+        transferred: 5000,
+      })
+      expect(prismaMocks.expenseTransaction.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ deletedAt: null }) }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -175,11 +219,15 @@ describe('GET /households/:id/budget-overview', () => {
         id: 'b-1',
         key: 'budget_food',
         name: 'Lebensmittel',
+        // ADR-0004: Frequenz + Saldo-Start am Budget
+        frequency: 'MONTHLY',
+        balanceSince: new Date('2026-09-01'),
+        closedAt: null,
+        carryoverToBudgetId: null,
         versions: [
           {
             id: 'v-1',
             amount: 50000,
-            frequency: 'MONTHLY',
             validFrom: new Date('2026-07-01'),
             createdAt: new Date('2026-07-01'),
             updatedAt: new Date('2026-07-01'),

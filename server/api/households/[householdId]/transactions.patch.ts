@@ -5,6 +5,7 @@ import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
+import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
 
 type TransactionUpdateBody = {
   kind: string
@@ -56,13 +57,18 @@ export default defineEventHandler(async (event) => {
 
     const budgetId = body.budgetId === undefined ? undefined : body.budgetId?.trim() || null
 
-    if (budgetId) {
+    // ADR-0004: Gegen das resultierende Budget/Datum pruefen — auch ein
+    // reines Datums-Update darf eine Ausgabe nicht hinter den Stichtag
+    // eines geschlossenen Budgets schieben.
+    const effectiveBudgetId = budgetId === undefined ? existing.budgetId : budgetId
+
+    if (effectiveBudgetId) {
       const budget = await prisma.budget.findFirst({
         where: {
-          id: budgetId,
+          id: effectiveBudgetId,
           householdId,
         },
-        select: { id: true },
+        select: { id: true, closedAt: true },
       })
 
       if (!budget) {
@@ -71,6 +77,8 @@ export default defineEventHandler(async (event) => {
           statusMessage: 'Budget not found.',
         })
       }
+
+      assertBudgetOpenOn(budget, date ?? existing.date)
     }
 
     const item = await prisma.expenseTransaction.update({

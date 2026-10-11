@@ -75,17 +75,46 @@ type ExpenseLike = {
   budgetId: string | null
 }
 
+/**
+ * Version mit Frequenz. Seit ADR-0004 gehoert `frequency` zum Budget, nicht
+ * zur Version — die Auswertung hier arbeitet aber weiter pro Version, die
+ * Endpoints reichen die Budget-Frequenz per `withVersionFrequency` durch.
+ */
+export type EvaluationVersion = Omit<BudgetVersion, 'budgetId'> & { frequency: Frequency }
+
 type BudgetWithVersions = {
   id: string
   key: string
   name: string
   /**
-   * Die Funktion braucht nur die Felder, die sie auch liest (id, amount,
-   * frequency, validFrom). Prisma-Selects liefern meist einen Subset-Type
-   * ohne Relations wie `budget` oder `budgetId`. `Omit` macht den Type
-   * mit beiden Schreibweisen kompatibel.
+   * ADR-0004: Stichtag (exklusiv), ab dem ein geschlossenes Budget nichts
+   * mehr plant. Optional, damit Aufrufer ohne Schliessen-Kontext (Tests)
+   * unveraendert bleiben.
    */
-  versions: Array<Omit<BudgetVersion, 'budget' | 'budgetId'>>
+  closedAt?: Date | null
+  versions: EvaluationVersion[]
+}
+
+/**
+ * Haengt die Budget-Frequenz an jede Version (ADR-0004: Frequenz gehoert
+ * zum Budget). Die Auswertung in dieser Datei liest `version.frequency`.
+ */
+export function withVersionFrequency<B extends { frequency: Frequency; versions: object[] }>(
+  budget: B,
+): Omit<B, 'versions'> & { versions: Array<B['versions'][number] & { frequency: Frequency }> } {
+  return {
+    ...budget,
+    versions: budget.versions.map((version) => ({ ...version, frequency: budget.frequency })),
+  }
+}
+
+/**
+ * Ende eines Versions-Gueltigkeitsbereichs, gekappt auf den Stichtag eines
+ * geschlossenen Budgets — danach plant es nichts mehr (ADR-0004).
+ */
+function capAtClosedAt(validTo: Date | null, closedAt: Date | null | undefined): Date | null {
+  if (!closedAt) return validTo
+  return validTo && validTo < closedAt ? validTo : closedAt
 }
 
 function startOfDay(date: Date) {
@@ -156,13 +185,13 @@ export function addPeriod(date: Date, frequency: Frequency) {
   return value
 }
 
-function getActiveVersionRange(versions: BudgetVersion[], index: number) {
+function getActiveVersionRange(versions: Array<{ validFrom: Date }>, index: number, closedAt?: Date | null) {
   const current = versions[index]
   const next = versions[index + 1] ?? null
 
   return {
     validFrom: current.validFrom,
-    validTo: next?.validFrom ?? null,
+    validTo: capAtClosedAt(next?.validFrom ?? null, closedAt),
   }
 }
 
@@ -271,10 +300,13 @@ export function getCurrentBudgetPeriodWindows(
 
   for (const budget of budgets) {
     const versions = [...budget.versions].sort((left, right) => left.validFrom.getTime() - right.validFrom.getTime())
+    // Geschlossene Budgets haben ab dem Stichtag keine laufende Periode mehr.
+    if (budget.closedAt && budget.closedAt <= at) continue
     const active = findActiveVersionAt(versions, at)
     if (!active) continue
 
-    const { version, validFrom, validTo } = active
+    const { version, validFrom } = active
+    const validTo = capAtClosedAt(active.validTo, budget.closedAt)
     const { start, end } = computeCurrentPeriodBounds(version.frequency, validFrom, validTo, at)
 
     windows.push({
@@ -500,6 +532,7 @@ export function buildWeeklyPeriods<T extends { amount: number; frequency: Freque
   expenses: ExpenseLike[],
   monthStart: Date,
   monthEnd: Date,
+  closedAt: Date | null = null,
 ): PeriodOverview[] {
   const { start: firstWeekStart, end: weeksEnd } = getWeeklyMonthWindow(monthStart, monthEnd)
 
@@ -513,6 +546,8 @@ export function buildWeeklyPeriods<T extends { amount: number; frequency: Freque
 
   const periods: PeriodOverview[] = []
   for (let cursor = firstWeekStart; cursor < weeksEnd; cursor = addPeriod(cursor, 'WEEKLY')) {
+    // Ab dem Stichtag eines geschlossenen Budgets keine Wochen mehr.
+    if (closedAt && cursor >= closedAt) break
     const next = addPeriod(cursor, 'WEEKLY')
     const version = findWeekVersion(versions, cursor, next)
     if (!version || version.frequency !== 'WEEKLY') continue
@@ -594,12 +629,12 @@ export function buildBudgetOverview(
     const monthVersions: Array<{ version: (typeof versions)[number]; validFrom: Date; validTo: Date | null }> = []
 
     versions.forEach((version, index) => {
-      const { validFrom, validTo } = getActiveVersionRange(versions, index)
+      const { validFrom, validTo } = getActiveVersionRange(versions, index, budget.closedAt)
       const periodCount = countPeriodsInMonth(validFrom, validTo, version.frequency, monthStart, monthEnd, index > 0)
       plannedAmount += periodCount * version.amount
       periodCountTotal += periodCount
 
-      if (validFrom < monthEnd && (!validTo || validTo > monthStart)) {
+      if (validFrom < monthEnd && (!validTo || validTo > monthStart) && (!validTo || validTo > validFrom)) {
         monthVersions.push({ version, validFrom, validTo })
       }
     })
@@ -634,7 +669,7 @@ export function buildBudgetOverview(
     // MONTHLY/QUARTERLY/YEARLY/ONCE liefern `[]` — Monats-Summe reicht
     // für die Monats-Anzeige.
     const periods = isWeekly
-      ? buildWeeklyPeriods(budget.id, versions, budgetExpenses, monthStart, monthEnd)
+      ? buildWeeklyPeriods(budget.id, versions, budgetExpenses, monthStart, monthEnd, budget.closedAt ?? null)
       : []
 
     const forecastStart = isWeekly ? weeklyWindow.start : monthStart

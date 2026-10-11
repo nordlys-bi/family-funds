@@ -3,11 +3,15 @@
  *
  * Liste der Budgets eines Households inkl. aller Versionen
  * (History-Liste fuer Planning-Pages). Auth: MEMBERSHIP.
+ *
+ * ADR-0004: Jedes Budget traegt seinen aktuellen Saldo (`balance`) und die
+ * Felder fuer das Schliessen (`closedAt`, `carryoverToBudgetId`).
  */
 import { defineEventHandler } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { parseUuidParam } from '../../../utils/validation'
+import { budgetBalanceSelect, loadBudgetBalances } from '../../../utils/budget-balance-query'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -21,6 +25,7 @@ export default defineEventHandler(async (event) => {
       id: true,
       key: true,
       name: true,
+      ...budgetBalanceSelect,
       createdAt: true,
       updatedAt: true,
       versions: {
@@ -28,7 +33,6 @@ export default defineEventHandler(async (event) => {
         select: {
           id: true,
           amount: true,
-          frequency: true,
           validFrom: true,
           createdAt: true,
           updatedAt: true,
@@ -37,5 +41,12 @@ export default defineEventHandler(async (event) => {
     },
   })
 
-  return { budgets }
+  const balances = await loadBudgetBalances(householdId, budgets)
+
+  return {
+    budgets: budgets.map((budget) => ({
+      ...budget,
+      balance: balances.get(budget.id) ?? null,
+    })),
+  }
 })

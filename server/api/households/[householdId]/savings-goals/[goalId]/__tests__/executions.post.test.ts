@@ -23,6 +23,7 @@ import type { H3Event } from 'h3'
 const prismaMocks = vi.hoisted(() => ({
   savingsGoal: { findFirst: vi.fn() },
   savingsGoalExecution: { create: vi.fn() },
+  budget: { findFirst: vi.fn() },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -230,5 +231,60 @@ describe('POST /households/:id/savings-goals/:goalId/executions — Issue #36', 
     await expect(
       handler(makeEvent(HH_ID, 'not-a-uuid')),
     ).rejects.toMatchObject({ statusCode: 400 })
+  })
+})
+
+describe('POST executions — Umbuchung Budget <-> Spartopf (ADR-0004)', () => {
+  const BUDGET_ID = 'c3d4e5f6-a7b8-9012-cdef-123456789012'
+
+  it('laesst MEMBER aus einem Budget umbuchen und setzt sourceBudgetId', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: BUDGET_ID, closedAt: null })
+    prismaMocks.savingsGoalExecution.create.mockResolvedValue({ id: 'exec-1' })
+    setRequestBody({ amount: -20, date: '2026-10-05', sourceBudgetId: BUDGET_ID })
+
+    await handler(makeEvent())
+
+    expect(prismaMocks.budget.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: BUDGET_ID, householdId: HH_ID } }),
+    )
+    expect(prismaMocks.savingsGoalExecution.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ amount: -2000, sourceBudgetId: BUDGET_ID }),
+    })
+  })
+
+  it('bucht ohne sourceBudgetId weiter als normale Topf-Bewegung', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    prismaMocks.savingsGoalExecution.create.mockResolvedValue({ id: 'exec-1' })
+    setRequestBody({ amount: 10 })
+
+    await handler(makeEvent())
+
+    expect(prismaMocks.budget.findFirst).not.toHaveBeenCalled()
+    expect(prismaMocks.savingsGoalExecution.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ sourceBudgetId: null }),
+    })
+  })
+
+  it('wirft 404 fuer ein Budget aus einem anderen Haushalt', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    prismaMocks.budget.findFirst.mockResolvedValue(null)
+    setRequestBody({ amount: 10, sourceBudgetId: BUDGET_ID })
+
+    await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 404 })
+    expect(prismaMocks.savingsGoalExecution.create).not.toHaveBeenCalled()
+  })
+
+  it('lehnt Umbuchungen ab dem Stichtag eines geschlossenen Budgets ab', async () => {
+    mockMember()
+    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: GOAL_ID })
+    prismaMocks.budget.findFirst.mockResolvedValue({ id: BUDGET_ID, closedAt: new Date(2026, 9, 5, 12) })
+    setRequestBody({ amount: 10, date: '2026-10-05', sourceBudgetId: BUDGET_ID })
+
+    await expect(handler(makeEvent())).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.savingsGoalExecution.create).not.toHaveBeenCalled()
   })
 })

@@ -12,8 +12,9 @@
 import { createError, defineEventHandler, getQuery } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow } from '../../../utils/budget-evaluation'
+import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow, withVersionFrequency } from '../../../utils/budget-evaluation'
 import { parseUuidParam } from '../../../utils/validation'
+import { budgetBalanceSelect, loadBudgetBalances } from '../../../utils/budget-balance-query'
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/
 
@@ -63,19 +64,19 @@ export default defineEventHandler(async (event) => {
   // im Folgemonat liegen (Woche gehoert dem Monat ihres Montags).
   const expenseWindow = getBudgetExpenseQueryWindow(monthStart, monthEnd)
 
-  const [budgets, expenses] = await Promise.all([
+  const [rawBudgets, expenses] = await Promise.all([
     prisma.budget.findMany({
       where: { householdId },
       select: {
         id: true,
         key: true,
         name: true,
+        ...budgetBalanceSelect,
         versions: {
           orderBy: { validFrom: 'desc' },
           select: {
             id: true,
             amount: true,
-            frequency: true,
             validFrom: true,
             createdAt: true,
             updatedAt: true,
@@ -99,7 +100,24 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
-  const budgetOverview = buildBudgetOverview(budgets, expenses, monthStart)
+  const budgets = rawBudgets.map(withVersionFrequency)
+  const balances = await loadBudgetBalances(householdId, budgets)
+  const overview = buildBudgetOverview(budgets, expenses, monthStart)
+  // ADR-0004: Saldo als zweite Zahl neben "Plan vs. Ist der Periode" —
+  // immer der aktuelle Saldo (heute), unabhaengig vom angezeigten Monat.
+  const budgetOverview = {
+    ...overview,
+    budgets: overview.budgets.map((item) => {
+      const budget = budgets.find((entry) => entry.id === item.budgetId)
+      return {
+        ...item,
+        frequency: budget?.frequency ?? null,
+        closedAt: budget?.closedAt ?? null,
+        carryoverToBudgetId: budget?.carryoverToBudgetId ?? null,
+        balance: balances.get(item.budgetId)?.balance ?? 0,
+      }
+    }),
+  }
 
   return {
     householdId,

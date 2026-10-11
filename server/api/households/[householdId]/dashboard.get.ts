@@ -8,6 +8,7 @@ import {
   getBudgetExpenseQueryWindow,
   getMonthWindow,
   getOverallBudgetPeriodWindow,
+  withVersionFrequency,
 } from '../../../utils/budget-evaluation'
 import {
   buildBudgetAlerts,
@@ -18,6 +19,7 @@ import {
 import { buildAggregatedForecast } from '../../../utils/forecast'
 import { countOpenPlans } from '../../../utils/recurring-coverage'
 import { parseUuidParam } from '../../../utils/validation'
+import { budgetBalanceSelect, loadBudgetBalances } from '../../../utils/budget-balance-query'
 
 /**
  * GET /api/households/:householdId/dashboard
@@ -55,7 +57,7 @@ export default defineEventHandler(async (event) => {
   // statt N Rows durch Node zu streamen, kommt ein einzelner Skalar
   // zurueck (Backend-Review Finding #6).
   const [
-    budgets,
+    rawBudgets,
     monthExpenses,
     monthIncomeTotal,
     recentExpenses,
@@ -72,12 +74,12 @@ export default defineEventHandler(async (event) => {
         id: true,
         key: true,
         name: true,
+        ...budgetBalanceSelect,
         versions: {
           orderBy: { validFrom: 'desc' },
           select: {
             id: true,
             amount: true,
-            frequency: true,
             validFrom: true,
             createdAt: true,
             updatedAt: true,
@@ -179,7 +181,14 @@ export default defineEventHandler(async (event) => {
     }),
   ])
 
+  const budgets = rawBudgets.map(withVersionFrequency)
   const budgetOverview = buildBudgetOverview(budgets, monthExpenses, monthStart, now)
+  // ADR-0004: aktueller Saldo pro Budget fuer Alerts und Perioden-Karten.
+  const balances = await loadBudgetBalances(householdId, budgets, now)
+  const balanceOf = (budgetId: string) => balances.get(budgetId)?.balance ?? 0
+  const closedBudgetIds = new Set(
+    budgets.filter((budget) => budget.closedAt && budget.closedAt <= now).map((budget) => budget.id),
+  )
 
   // Dashboard-Budget-Karten (oberste Prio, issue-request): beziehen sich
   // auf die eigene, aktuell laufende Periode jedes Budgets statt auf den
@@ -237,8 +246,12 @@ export default defineEventHandler(async (event) => {
       balance: incomeTotal - expensesTotal,
       unassignedExpenses: budgetOverview.unassignedSpent,
     },
-    budgetAlerts: buildBudgetAlerts(budgetOverview),
-    budgetPeriodCards,
+    // Geschlossene Budgets (Stichtag erreicht) sind abgeloest und gehoeren
+    // nicht mehr in die Warnliste; ihr Saldo lebt im Ziel-Budget weiter.
+    budgetAlerts: buildBudgetAlerts(budgetOverview)
+      .filter((alert) => !closedBudgetIds.has(alert.budgetId))
+      .map((alert) => ({ ...alert, balance: balanceOf(alert.budgetId) })),
+    budgetPeriodCards: budgetPeriodCards.map((card) => ({ ...card, balance: balanceOf(card.budgetId) })),
     recentActivity: buildRecentActivity(recentExpenses, recentIncomes, now),
     savingsGoals: buildSavingsGoalsProgress(savingsGoals),
     // Issue #98: Zähler für den „Handlungsbedarf"-Block. `open` =
