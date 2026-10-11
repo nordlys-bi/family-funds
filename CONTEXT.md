@@ -200,7 +200,14 @@ Wiederkehrende Fixkosten.
 
 ### Budget
 
-Periodischer Maximalbetrag für eine Ausgaben-Kategorie (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder"). Budgets werden verbraucht; am Ende der Periode startet das Budget wieder bei 0.
+Virtuelles Konto für eine Ausgaben-Kategorie (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder"). Der Betrag der `BudgetVersion` ist eine **Zuteilung**, die zu Beginn jeder Periode gutgeschrieben wird; Ausgaben werden dagegen gebucht. Der **Saldo** bleibt über Periodengrenzen stehen — Reste werden übernommen, Überziehungen ebenso. Er verfällt nie, ist nicht gedeckelt und darf negativ werden. Siehe [ADR-0004](docs/adr/0004-budget-as-virtual-account.md).
+
+* Der Saldo wird nie gespeichert, sondern aus Zuteilungen (abgeleitet aus den `BudgetVersion`s), Ausgaben und Umbuchungen in Spartöpfe berechnet — ab `balanceSince` (für bestehende Budgets rückwirkend ab der Periode, die den 14.9.2026 enthält)
+* Zuteilungen sind keine Einnahmen (`IncomeTransaction`), sondern interne Verteilung
+* Die Frequenz gehört fest zum Budget und ist unveränderlich. Versionen ändern nur den Betrag, und nur zu einem Periodenbeginn
+* **Schließen:** Ein Budget wird zu einem Stichtag (`closedAt`, Periodenbeginn) geschlossen und verweist auf ein Ziel-Budget (`carryoverToBudgetId`, Pflicht). Dessen Saldo enthält immer den aktuellen Endsaldo des Vorgängers — auch spätere Korrekturen von Buchungen vor dem Stichtag. Ab dem Stichtag keine Zuteilungen und keine Buchungen mehr auf das geschlossene Budget. Ein Frequenzwechsel heißt: neues Budget anlegen, altes hinein schließen
+* **Löschen** nur, solange das Budget keine Buchungen, Umbuchungen oder Vorgänger hat — sonst schließen
+* Saldo kann ganz oder teilweise in einen Spartopf umgebucht werden (und umgekehrt), siehe "Umbuchung Budget ↔ Spartopf"
 
 **Wochenbudgets in der Monatsansicht:** Eine Woche (Mo–So) gehört komplett dem Monat, in dem ihr Montag liegt — inkl. der Ausgaben an Tagen, die schon im Folgemonat liegen. Eine monatsübergreifende Woche erscheint also nur in einem Monat. Ändert sich der Betrag (neue `BudgetVersion`), plant jede Woche mit der Version, die an ihrem Montag gilt; eine Version, die mitten in der Woche beginnt, greift erst ab der Folgewoche (außer es gab vorher noch keine Version).
 
@@ -209,6 +216,8 @@ Periodischer Maximalbetrag für eine Ausgaben-Kategorie (z.B. 250€/Woche Leben
 Ansparungs-Topf für einen bestimmten Zweck (z.B. "Urlaub 200€", "Reparaturen 200€"). Die App bildet **kein** Sparkonto ab — das Geld wird real beiseite gelegt (z.B. auf einem physischen Sparkonto), die App trackt nur die Reservierung. Mehrere `SavingsGoal`s können sich ein Sparkonto teilen.
 
 Der aktuelle Stand eines Topfes ergibt sich aus der Summe aller `SavingsGoalExecution`s für diesen Topf.
+
+**Abgrenzung zum Budget:** Beide haben einen aus Bewegungen berechneten Saldo. Ein Budget wird automatisch periodisch aufgefüllt und ist zum Verbrauchen da; ein Spartopf wird manuell bespart und dient einem Zweck.
 
 ### ExpenseTransaction
 
@@ -261,6 +270,10 @@ Kanonische Quelle für den Topf-Stand ("Wie voll ist der 'Urlaub'-Topf?").
 ### Doppelbuchung
 
 Eine Real-Aktion kann als zwei Buchungen erfasst werden: eine `ExpenseTransaction` (für das Reporting) und eine `SavingsGoalExecution` mit negativem Betrag (für den Topf-Stand). Beispiel: Eine 180€-Reise, die aus dem "Urlaub"-Topf bezahlt wird, erzeugt eine `ExpenseTransaction` und eine negative `SavingsGoalExecution`.
+
+### Umbuchung Budget ↔ Spartopf
+
+Eine `SavingsGoalExecution` mit `sourceBudgetId` verschiebt Geld zwischen einem Budget-Saldo und einem Topf: positiver Betrag = vom Budget in den Topf, negativer Betrag = aus dem Topf ins Budget. Das ist **eine** Zeile, keine Doppelbuchung — es fließt kein Geld aus dem Haushalt ab, deshalb entsteht keine `ExpenseTransaction`. Keine Beschränkung auf den verfügbaren Saldo.
 
 ---
 
