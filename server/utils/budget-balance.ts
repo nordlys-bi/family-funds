@@ -52,7 +52,8 @@ export type BudgetBalance = {
   carriedOver: number
 }
 
-function dayKey(date: Date) {
+/** Tagesgenauer Vergleichsschluessel (12:00 Serverzeit), siehe Kopfkommentar. */
+export function dayKey(date: Date) {
   const value = new Date(date)
   value.setHours(12, 0, 0, 0)
   return value.getTime()
@@ -81,25 +82,38 @@ function findAllocatingVersion(
   }) ?? null
 }
 
+export type BalanceAllocation = {
+  /** Periodenbeginn, zu dem gutgeschrieben wird. */
+  date: Date
+  amount: number
+  /** Zuteilende Version (Referenz aus `budget.versions`), fuer Versionswechsel im Verlauf. */
+  version: BalanceBudget['versions'][number] | null
+}
+
 /**
- * Summe der Zuteilungen fuer alle Perioden mit Start in
- * `[balanceSince, min(at, closedAt))`. Eine Periode, deren Start auf `at`
- * faellt, ist bereits zugeteilt.
+ * Alle Zuteilungen fuer Perioden mit Start in `[balanceSince, min(at, closedAt))`,
+ * chronologisch. Eine Periode, deren Start auf `at` faellt, ist bereits
+ * zugeteilt. Perioden ohne gueltige Version tauchen mit Betrag 0 auf, damit
+ * der Verlauf auch den Beginn der ersten Version als Wechsel erkennt.
  */
-export function computeAllocations(budget: BalanceBudget, at: Date): number {
+export function listAllocations(budget: BalanceBudget, at: Date): BalanceAllocation[] {
   const versions = [...budget.versions].sort((left, right) => left.validFrom.getTime() - right.validFrom.getTime())
   const atKey = dayKey(at)
   const closedKey = budget.closedAt ? dayKey(budget.closedAt) : Number.POSITIVE_INFINITY
   const isOpenAt = (periodStart: number) => periodStart <= atKey && periodStart < closedKey
+  const allocationFor = (start: Date, end: number): BalanceAllocation => {
+    const version = findAllocatingVersion(versions, start.getTime(), end)
+    return { date: start, amount: version?.amount ?? 0, version }
+  }
 
   // ONCE: genau eine Zuteilung zu `balanceSince`, ohne Folgeperiode.
   if (budget.frequency === 'ONCE') {
-    const start = dayKey(budget.balanceSince)
-    if (!isOpenAt(start)) return 0
-    return findAllocatingVersion(versions, start, Number.POSITIVE_INFINITY)?.amount ?? 0
+    const start = new Date(dayKey(budget.balanceSince))
+    if (!isOpenAt(start.getTime())) return []
+    return [allocationFor(start, Number.POSITIVE_INFINITY)]
   }
 
-  let total = 0
+  const allocations: BalanceAllocation[] = []
   // `balanceSince` ist immer ein Periodenbeginn; startOfPeriod schuetzt nur
   // gegen Altdaten, die es nicht sind.
   let cursor = startOfPeriod(budget.balanceSince, budget.frequency)
@@ -108,10 +122,33 @@ export function computeAllocations(budget: BalanceBudget, at: Date): number {
     // Schutz gegen Endlosschleifen bei kaputten Daten (unbekannte Frequenz,
     // ungueltiges Datum): das Raster muss vorwaerts laufen.
     if (!(next.getTime() > cursor.getTime())) break
-    total += findAllocatingVersion(versions, cursor.getTime(), next.getTime())?.amount ?? 0
+    allocations.push(allocationFor(cursor, next.getTime()))
     cursor = next
   }
-  return total
+  return allocations
+}
+
+/**
+ * Summe der Zuteilungen fuer alle Perioden mit Start in
+ * `[balanceSince, min(at, closedAt))`.
+ */
+export function computeAllocations(budget: BalanceBudget, at: Date): number {
+  return listAllocations(budget, at).reduce((total, allocation) => total + allocation.amount, 0)
+}
+
+/**
+ * Tagesschluessel des Zeitpunkts, zu dem der Endsaldo eines Vorgaengers ins
+ * Ziel einfliesst: der spaetere von Stichtag des Vorgaengers und Saldo-Start
+ * des Ziels. Ein (inkonsistent) offener Vorgaenger fliesst nie ein.
+ */
+export function getCarryoverInflowKey(
+  predecessor: Pick<BalanceBudget, 'closedAt'>,
+  target: Pick<BalanceBudget, 'balanceSince'>,
+): number {
+  return Math.max(
+    predecessor.closedAt ? dayKey(predecessor.closedAt) : Number.POSITIVE_INFINITY,
+    dayKey(target.balanceSince),
+  )
 }
 
 /**
@@ -176,13 +213,7 @@ export function computeBudgetBalances(
 
     let carriedOver = 0
     for (const predecessor of predecessorsByTarget.get(budget.id) ?? []) {
-      // Der Endsaldo fliesst zum spaeteren der beiden Zeitpunkte ein:
-      // Stichtag des Vorgaengers oder Saldo-Start des Ziels.
-      const inflowKey = Math.max(
-        predecessor.closedAt ? dayKey(predecessor.closedAt) : Number.POSITIVE_INFINITY,
-        dayKey(budget.balanceSince),
-      )
-      if (atKey >= inflowKey) {
+      if (atKey >= getCarryoverInflowKey(predecessor, budget)) {
         carriedOver += resolve(predecessor).balance
       }
     }
