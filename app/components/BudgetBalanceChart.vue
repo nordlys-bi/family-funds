@@ -18,11 +18,16 @@
   Tastatur: Pfeiltasten wandern von Punkt zu Punkt, Enter waehlt. Fuer
   Screenreader steht die Kurve zusaetzlich als Satz in einer
   `.sr-only`-Zusammenfassung (aria-describedby).
+
+  x-Achse: dezente Linie an jedem Periodenbeginn (Montag bzw. Monatserster
+  usw.), damit sich jeder Zuteilungssprung einer Periode zuordnen laesst;
+  beschriftet nur so viele, wie in die Breite passen.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { balanceAxisTicks, buildBalanceChartGeometry, compactMoneyLabel, type BalancePoint } from '~/utils/balance-chart'
-import { nearestIndex, summarizeBalanceHistory } from '~/utils/budget-detail'
+import { nearestIndex, periodTicks, summarizeBalanceHistory } from '~/utils/budget-detail'
+import type { Frequency } from '~/types/planning'
 
 export type BalanceChartEvent = {
   type: 'transfer' | 'version' | 'carryover'
@@ -36,6 +41,8 @@ const props = defineProps<{
   events?: BalanceChartEvent[]
   range: { from: string; to: string }
   formatMoney: (cents: number) => string
+  /** Periodenraster des Budgets fuer die x-Achsen-Ticks; ohne: nur Start/Ende. */
+  frequency?: Frequency
   /** Fest vorgegebene Hoehe; ohne: 180 px auf Handybreite, sonst 240 px. */
   height?: number
 }>()
@@ -83,6 +90,32 @@ const geometry = computed(() =>
 )
 
 const ticks = computed(() => balanceAxisTicks(geometry.value.domain))
+
+/** Platz pro Beschriftung "21.09." bei 11 px inkl. Luft. */
+const X_LABEL_SPACE = 52
+/**
+ * Mindestabstand einer Periodenbeschriftung zum Plot-Rand: Start-/End-Label
+ * sind dort buendig ausgerichtet (volle Breite ~36 px) plus halbe Breite des
+ * mittig gesetzten Tick-Labels und etwas Luft.
+ */
+const EDGE_LABEL_SPACE = 64
+/** Linien dichter als das waeren nur noch eine graue Flaeche. */
+const MIN_LINE_GAP = 6
+
+const xTicks = computed(() => {
+  if (!props.frequency) return []
+  const { plot } = geometry.value
+  const all = periodTicks(props.range.from, props.range.to, props.frequency, Math.floor((plot.right - plot.left) / X_LABEL_SPACE))
+    .map((tick) => ({ ...tick, x: geometry.value.xOfDate(tick.date) }))
+  const gap = all.length > 1 ? all[1]!.x - all[0]!.x : Infinity
+  return all
+    .filter((tick) => gap >= MIN_LINE_GAP || tick.labeled)
+    // Start/Ende sind immer beschriftet — Periodenlabels daneben wuerden ueberlappen.
+    .map((tick) => ({
+      ...tick,
+      labeled: tick.labeled && tick.x - plot.left >= EDGE_LABEL_SPACE && plot.right - tick.x >= EDGE_LABEL_SPACE,
+    }))
+})
 
 const uid = useId()
 const clipAbove = `${uid}-above`
@@ -310,6 +343,20 @@ const summaryText = computed(() => {
         </template>
       </g>
 
+      <!-- Periodengrenzen: hinter Flaeche und Linie; Linie immer, Beschriftung ausgeduennt -->
+      <g class="balance-chart__period-ticks">
+        <template v-for="tick in xTicks" :key="tick.date">
+          <line :x1="tick.x" :x2="tick.x" :y1="geometry.plot.top" :y2="geometry.plot.bottom" class="balance-chart__period-line" />
+          <text
+            v-if="tick.labeled"
+            :x="tick.x"
+            :y="geometry.height - 6"
+            text-anchor="middle"
+            class="balance-chart__axis-label"
+          >{{ shortDate(tick.date) }}</text>
+        </template>
+      </g>
+
       <!-- Flaeche: ueber null dezent, unter null in Danger-Farbe -->
       <path :d="geometry.areaPath" class="balance-chart__area balance-chart__area--positive" :clip-path="`url(#${clipAbove})`" />
       <path :d="geometry.areaPath" class="balance-chart__area balance-chart__area--negative" :clip-path="`url(#${clipBelow})`" />
@@ -325,7 +372,7 @@ const summaryText = computed(() => {
       <path :d="geometry.linePath" class="balance-chart__line" :clip-path="`url(#${clipAbove})`" />
       <path :d="geometry.linePath" class="balance-chart__line balance-chart__line--negative" :clip-path="`url(#${clipBelow})`" />
 
-      <!-- x-Beschriftung: nur Anfang und Ende, mehr passt mobil nicht sauber -->
+      <!-- x-Beschriftung Anfang und Ende -->
       <text :x="geometry.plot.left" :y="geometry.height - 6" text-anchor="start" class="balance-chart__axis-label">
         {{ shortDate(range.from) }}
       </text>
@@ -395,6 +442,10 @@ const summaryText = computed(() => {
 .balance-chart__gridline {
   stroke: var(--color-border-subtle);
   stroke-dasharray: 3 3;
+}
+
+.balance-chart__period-line {
+  stroke: var(--color-border-subtle);
 }
 
 .balance-chart__axis-label {
