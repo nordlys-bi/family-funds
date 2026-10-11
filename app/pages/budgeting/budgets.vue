@@ -316,6 +316,14 @@ const budgetsById = computed(() => new Map((currentHousehold.value?.budgets ?? [
 const budgetName = (budgetId: string | null) => (budgetId ? budgetsById.value.get(budgetId)?.name ?? '—' : '—')
 const isClosed = (budget: BudgetItem) => Boolean(budget.closedAt)
 
+// ADR-0004: Saldo-Verlauf pro Budget aufklappbar. Zu, bis der Nutzer ihn
+// oeffnet — der Verlauf kostet einen eigenen Request und die Liste soll
+// kompakt bleiben.
+const expandedHistory = ref<Record<string, boolean>>({})
+const toggleHistory = (budgetId: string) => {
+  expandedHistory.value = { ...expandedHistory.value, [budgetId]: !expandedHistory.value[budgetId] }
+}
+
 // Schließen: Stichtag (Periodenbeginn) + Pflicht-Ziel. Default ist der
 // naechste Periodenbeginn, damit die laufende Periode noch genutzt wird.
 const closeDialogOpen = ref(false)
@@ -650,12 +658,22 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
             <span class="amount-secondary">Saldo</span>
           </div>
         </template>
-        <!-- Umbuchen (alle Mitglieder) und Schließen (Owner) als Text-Buttons
-             unter dem Titel, damit sie auch mobil ohne Swipe erreichbar sind. -->
-        <template v-if="!isClosed(budget)" #meta>
+        <!-- Verlauf, Umbuchen (alle Mitglieder) und Schließen (Owner) als
+             Text-Buttons unter dem Titel, damit sie auch mobil ohne Swipe
+             erreichbar sind. Verlauf auch bei geschlossenen Budgets. -->
+        <template #meta>
           <div class="row-actions">
             <Button
-              v-if="savingsGoalOptions.length > 0"
+              :label="expandedHistory[budget.id] ? 'Verlauf ausblenden' : 'Verlauf'"
+              icon="pi pi-chart-line"
+              size="small"
+              severity="secondary"
+              text
+              :aria-expanded="Boolean(expandedHistory[budget.id])"
+              @click="toggleHistory(budget.id)"
+            />
+            <Button
+              v-if="!isClosed(budget) && savingsGoalOptions.length > 0"
               label="Umbuchen"
               icon="pi pi-arrow-right-arrow-left"
               size="small"
@@ -663,7 +681,7 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
               @click="openTransferDialog(budget)"
             />
             <Button
-              v-if="canManageHousehold"
+              v-if="!isClosed(budget) && canManageHousehold"
               label="Schließen"
               icon="pi pi-lock"
               size="small"
@@ -690,6 +708,13 @@ watch(activeHouseholdId, async () => { await loadPlanning() })
         </template>
       </ItemCard>
       </SwipeableListItem>
+
+      <BudgetBalanceHistory
+        v-if="expandedHistory[budget.id] && activeHousehold"
+        :household-id="activeHousehold.id"
+        :budget-id="budget.id"
+        :format-money="formatMoney"
+      />
 
       <!-- Issue #82: Wochen-Detail fuer WEEKLY-Budgets auf der Detail-Seite.
            Anders als auf dem Dashboard hier IMMER aufgeklappt — Detail-Kontext,

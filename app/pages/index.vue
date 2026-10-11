@@ -27,6 +27,8 @@ type DashboardData = {
     percentUsed: number
     severity: 'ok' | 'warning' | 'over'
     balance?: number
+    // ADR-0004: Saldo im Wochenraster der letzten 3 Monate (Sparkline).
+    balanceTrend?: number[]
   }>
   budgetAlerts: Array<{
     budgetId: string

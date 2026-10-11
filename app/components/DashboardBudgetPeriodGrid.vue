@@ -35,6 +35,8 @@ type PeriodCard = {
   severity: 'ok' | 'warning' | 'over'
   /** ADR-0004: fortlaufender Saldo des Budgets (ueber alle Perioden). */
   balance?: number
+  /** ADR-0004: Saldo im Wochenraster der letzten 3 Monate, fuer die Sparkline. */
+  balanceTrend?: number[]
 }
 
 defineProps<{
@@ -94,7 +96,9 @@ function transactionsLink(card: PeriodCard) {
         <!-- ADR-0004: Perioden-Rest oben beantwortet "wie liegen wir in
              dieser Periode?", der Saldo hier "wie viel ist insgesamt da?". -->
         <div v-if="card.balance !== undefined" class="card__balance" :class="{ 'is-negative': card.balance < 0 }">
-          Saldo gesamt {{ formatMoney(card.balance) }}
+          <span>Saldo gesamt {{ formatMoney(card.balance) }}</span>
+          <!-- Trend der letzten 3 Monate; Details mit Ereignissen auf der Budget-Seite. -->
+          <BudgetBalanceSparkline v-if="card.balanceTrend" :values="card.balanceTrend" :width="56" :height="16" />
         </div>
       </NuxtLink>
       <button
@@ -112,6 +116,11 @@ function transactionsLink(card: PeriodCard) {
 
 <style scoped>
 .card__balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   margin-top: 0.4rem;
   font-size: 0.75rem;
   color: var(--color-text-muted);
