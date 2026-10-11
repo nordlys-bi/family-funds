@@ -12,6 +12,11 @@
  * nicht gueltigen Budgets) und der grobe Saldo-Trend der letzten 3 Monate
  * (`balanceTrend`, Wochenraster wie auf dem Dashboard). Alles aus EINER
  * Ladung der Saldo-Rohdaten — die Liste braucht so nur einen Request.
+ *
+ * `hasBookings`: dieselben Spuren, an denen `DELETE .../budgets/:id` mit 409
+ * scheitert (Ausgaben inkl. soft-geloeschter, Umbuchungen, Vorgaenger). Die
+ * Detailseite deaktiviert damit "Löschen" vorab, statt erst den Fehler zu
+ * zeigen; der Server prueft beim Loeschen trotzdem selbst.
  */
 import { defineEventHandler } from 'h3'
 import { prisma } from '../../../utils/prisma'
@@ -38,6 +43,7 @@ export default defineEventHandler(async (event) => {
       ...budgetBalanceSelect,
       createdAt: true,
       updatedAt: true,
+      _count: { select: { expenses: true, savingsTransfers: true, predecessors: true } },
       versions: {
         orderBy: { validFrom: 'desc' },
         select: {
@@ -74,10 +80,11 @@ export default defineEventHandler(async (event) => {
   )
 
   return {
-    budgets: budgets.map((budget) => {
+    budgets: budgets.map(({ _count: counts, ...budget }) => {
       const period = periods.get(budget.id)
       return {
         ...budget,
+        hasBookings: Boolean(counts && (counts.expenses > 0 || counts.savingsTransfers > 0 || counts.predecessors > 0)),
         balance: balances.get(budget.id) ?? null,
         balanceTrend: (trends.get(budget.id) ?? []).map((point) => point.balance),
         currentPeriod: period

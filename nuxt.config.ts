@@ -110,8 +110,9 @@ export default defineNuxtConfig({
     // PrimeVue-Module resolved die Pfade selbst ueber sein Metadata-Paket.
     //
     // (issue #58: Soft-Delete mit Undo-Banner braucht `<Toast />`.)
+    // 'Menu': "⋯"-Aktionsmenue der Budget-Detailseite.
     components: {
-      include: ['Toast'],
+      include: ['Toast', 'Menu'],
     },
   },
   css: [

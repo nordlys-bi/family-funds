@@ -228,13 +228,19 @@ const transferOverdraws = computed(() =>
   && Math.round(transferForm.value.amount * 100) > balanceOf(transferBudget.value),
 )
 
-function openTransfer(budget: BudgetListItem) {
+/**
+ * `preset` belegt den Dialog vor — z. B. "Aus Spartopf ausgleichen" bei
+ * negativem Saldo: Richtung ins Budget, Betrag = Ueberziehung. Ohne Preset
+ * der haeufigste Fall: positiven Saldo in den Topf.
+ */
+function openTransfer(budget: BudgetListItem, preset?: { direction: 'toGoal' | 'toBudget'; amountCents: number }) {
   const balance = balanceOf(budget)
+  const defaultCents = preset ? preset.amountCents : balance
   transferForm.value = {
     budgetId: budget.id,
     goalId: savingsGoalOptions.value[0]?.value ?? null,
-    direction: 'toGoal',
-    amount: balance > 0 ? balance / 100 : null,
+    direction: preset?.direction ?? 'toGoal',
+    amount: defaultCents > 0 ? defaultCents / 100 : null,
     date: new Date(),
     note: '',
   }
@@ -308,6 +314,10 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
     @save="saveClose"
     @cancel="closeDialogOpen = false"
   >
+    <!-- ADR-0004: Wiederoeffnen ist nicht vorgesehen — das muss vor dem Klick klar sein. -->
+    <Message severity="warn" variant="simple" class="dialog-irreversible">
+      Schließen ist nicht umkehrbar: Ein geschlossenes Budget lässt sich nicht wieder öffnen.
+    </Message>
     <p class="dialog-hint">
       Ab dem Stichtag bekommt das Budget keine Zuteilungen mehr und nimmt keine Buchungen mehr an.
       Sein Saldo ({{ formatMoney(balanceOf(closingBudget)) }}) fließt ins Ziel-Budget — auch spätere Korrekturen von Buchungen vor dem Stichtag.
@@ -380,5 +390,9 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
   margin: 0 0 12px;
   color: var(--color-text-muted);
   font-size: 0.85rem;
+}
+
+.dialog-irreversible {
+  margin-bottom: 8px;
 }
 </style>
