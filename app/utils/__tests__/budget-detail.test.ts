@@ -7,8 +7,11 @@ import {
   nearestIndex,
   nextPeriodStartDay,
   periodStartDay,
+  periodTicks,
   projectedPeriodEndBalance,
+  showsPeriodForecast,
   summarizeBalanceHistory,
+  trendVersusPreviousPeriod,
 } from '../budget-detail'
 
 const points = [
@@ -174,5 +177,73 @@ describe('allHistoryFrom', () => {
   it('ignores unrelated budgets and respects the server limit', () => {
     expect(allHistoryFrom('c', budgets, '2026-10-11', 365)).toBe('2025-10-11')
     expect(allHistoryFrom('x', budgets.slice(0, 3), '2026-10-11', 10000)).toBe('2026-10-11')
+  })
+})
+
+describe('showsPeriodForecast', () => {
+  it('hides the forecast on the last day of a week (Sunday)', () => {
+    // KW 41: 5.–11.10., Ende exklusiv 12.10.
+    expect(showsPeriodForecast('2026-10-12', '2026-10-11')).toBe(false)
+    expect(showsPeriodForecast('2026-10-12', '2026-10-10')).toBe(true)
+  })
+
+  it('hides it on the last day of a month, also with ISO timestamps from the server', () => {
+    expect(showsPeriodForecast('2026-11-01T11:00:00.000Z', '2026-10-31')).toBe(false)
+    expect(showsPeriodForecast('2026-11-01T11:00:00.000Z', '2026-10-30')).toBe(true)
+  })
+
+  it('has no forecast without a period end (ONCE)', () => {
+    expect(showsPeriodForecast(null, '2026-10-11')).toBe(false)
+  })
+})
+
+describe('trendVersusPreviousPeriod', () => {
+  const weekly = [
+    { date: '2026-09-14', balance: 0 },
+    { date: '2026-09-14', balance: 25000 },
+    { date: '2026-10-04', balance: -4551 },
+    { date: '2026-10-05', balance: 20449 },
+    { date: '2026-10-11', balance: -4881 },
+  ]
+
+  it('compares with the balance at the end of the previous period', () => {
+    expect(trendVersusPreviousPeriod(weekly, '2026-10-05', 'WEEKLY')).toEqual({ delta: -330, label: 'ggü. Vorwoche' })
+  })
+
+  it('is null when the history does not reach the previous period', () => {
+    // Budget startet in dieser Woche: Vortag liegt vor dem ersten Punkt.
+    expect(trendVersusPreviousPeriod(weekly, '2026-09-14', 'WEEKLY')).toBeNull()
+  })
+
+  it('is null for ONCE and without points', () => {
+    expect(trendVersusPreviousPeriod(weekly, '2026-10-05', 'ONCE')).toBeNull()
+    expect(trendVersusPreviousPeriod([], '2026-10-05', 'WEEKLY')).toBeNull()
+  })
+
+  it('accepts the ISO period start from the server', () => {
+    expect(trendVersusPreviousPeriod(weekly, '2026-10-05T10:00:00.000Z', 'WEEKLY')?.delta).toBe(-330)
+  })
+})
+
+describe('periodTicks', () => {
+  it('marks every Monday after from for weekly budgets', () => {
+    expect(periodTicks('2026-09-14', '2026-10-11', 'WEEKLY', 10).map((tick) => tick.date))
+      .toEqual(['2026-09-21', '2026-09-28', '2026-10-05'])
+  })
+
+  it('marks month starts for monthly budgets, including to', () => {
+    expect(periodTicks('2026-07-11', '2026-10-01', 'MONTHLY', 10).map((tick) => tick.date))
+      .toEqual(['2026-08-01', '2026-09-01', '2026-10-01'])
+  })
+
+  it('thins labels evenly but keeps every line', () => {
+    const ticks = periodTicks('2026-01-01', '2026-10-11', 'WEEKLY', 5)
+    expect(ticks).toHaveLength(40)
+    expect(ticks.filter((tick) => tick.labeled).length).toBeLessThanOrEqual(5)
+    expect(ticks[0]!.labeled).toBe(true)
+  })
+
+  it('has no ticks for ONCE', () => {
+    expect(periodTicks('2026-01-01', '2026-10-11', 'ONCE', 5)).toEqual([])
   })
 })
