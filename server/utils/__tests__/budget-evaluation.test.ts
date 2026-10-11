@@ -214,6 +214,35 @@ describe('buildBudgetOverview — version history handling', () => {
   })
 })
 
+describe('buildBudgetOverview — aktuelle Version bei Änderung im Monat', () => {
+  const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+    makeVersion({ amount: 30_000, frequency: 'WEEKLY', validFrom: new Date(2026, 9, 12, 12) }),
+    makeVersion({ amount: 25_000, frequency: 'WEEKLY', validFrom: new Date(2026, 5, 29, 12) }),
+  ])
+  const october = new Date(2026, 9, 1, 12)
+
+  it('zeigt vor der Änderung die alte Version und kündigt die neue an (User-Report 2026-10-11)', () => {
+    const item = buildBudgetOverview([budget], [], october, new Date(2026, 9, 11, 9)).budgets[0]
+    expect(item.currentAmount).toBe(25_000)
+    expect(item.currentValidFrom).toEqual(new Date(2026, 5, 29, 12))
+    expect(item.nextChange).toEqual({ validFrom: new Date(2026, 9, 12, 12), amount: 30_000, frequency: 'WEEKLY' })
+  })
+
+  it('zeigt ab dem Änderungstag die neue Version ohne Hinweis', () => {
+    const item = buildBudgetOverview([budget], [], october, new Date(2026, 9, 12, 8)).budgets[0]
+    expect(item.currentAmount).toBe(30_000)
+    expect(item.nextChange).toBeNull()
+  })
+
+  it('vergangener Monat: Stand am Monatsende; zukünftiger Monat: Stand am Monatsanfang', () => {
+    const past = buildBudgetOverview([budget], [], october, new Date(2026, 11, 1, 12)).budgets[0]
+    expect(past.currentAmount).toBe(30_000)
+    const future = buildBudgetOverview([budget], [], october, new Date(2026, 8, 1, 12)).budgets[0]
+    expect(future.currentAmount).toBe(25_000)
+    expect(future.nextChange?.amount).toBe(30_000)
+  })
+})
+
 describe('buildBudgetOverview — expense aggregation and unassigned bucket', () => {
   const baseDate = new Date(2026, 5, 15, 12)
 
@@ -385,9 +414,7 @@ describe('buildWeeklyPeriods', () => {
   it('liefert 5 Wochen für Juni 2026 (Mo 1.6. – So 5.7., letzte Woche startet Mo 29.6.)', () => {
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       [],
       monthStart,
       monthEnd,
@@ -418,9 +445,7 @@ describe('buildWeeklyPeriods', () => {
     ]
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       expenses,
       monthStart,
       monthEnd,
@@ -443,9 +468,7 @@ describe('buildWeeklyPeriods', () => {
     ]
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       expenses,
       monthStart,
       monthEnd,
@@ -460,9 +483,7 @@ describe('buildWeeklyPeriods', () => {
     ]
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       expenses,
       monthStart,
       monthEnd,
@@ -477,9 +498,7 @@ describe('buildWeeklyPeriods', () => {
     ]
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       expenses,
       monthStart,
       monthEnd,
@@ -490,13 +509,14 @@ describe('buildWeeklyPeriods', () => {
     }
   })
 
-  it('respektiert currentValidTo (Version endet mitten im Monat)', () => {
+  it('lässt Wochen ohne WEEKLY-Version aus (Nachfolger mit anderer Frequenz)', () => {
     // Version endet am 15.6. → nur Wochen bis einschließlich 8.6. – 14.6.
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      currentValidFrom,
-      new Date(2026, 5, 15, 12, 0, 0, 0),
+      [
+        { amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: currentValidFrom },
+        { amount: 0, frequency: 'MONTHLY' as const, validFrom: new Date(2026, 5, 15, 12, 0, 0, 0) },
+      ],
       [],
       monthStart,
       monthEnd,
@@ -510,9 +530,8 @@ describe('buildWeeklyPeriods', () => {
   it('liefert leeres Array wenn currentValidFrom >= monthEnd', () => {
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      new Date(2026, 6, 15, 12, 0, 0, 0), // 15. Juli (nach monthEnd)
-      null,
+      // 15. Juli (nach monthEnd)
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 6, 15, 12, 0, 0, 0) }],
       [],
       monthStart,
       monthEnd,
@@ -524,9 +543,7 @@ describe('buildWeeklyPeriods', () => {
     // currentValidFrom = 15.6. → erste anzeigbare Woche ist 15.6. (Mo)
     const result = buildWeeklyPeriods(
       'budget-1',
-      PLANNED_WEEKLY_CENTS,
-      new Date(2026, 5, 15, 12, 0, 0, 0),
-      null,
+      [{ amount: PLANNED_WEEKLY_CENTS, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 5, 15, 12, 0, 0, 0) }],
       [],
       monthStart,
       monthEnd,
@@ -541,9 +558,7 @@ describe('buildWeeklyPeriods', () => {
     // Transaktion am 10.6. (Mi) → gehört zur Woche 8.6. – 14.6. (Index 1).
     const result = buildWeeklyPeriods(
       'budget-1',
-      0,
-      currentValidFrom,
-      null,
+      [{ amount: 0, frequency: 'WEEKLY' as const, validFrom: currentValidFrom }],
       [{ amount: 5_000, date: new Date(2026, 5, 10, 10, 0), budgetId: 'budget-1' }],
       monthStart,
       monthEnd,
@@ -557,6 +572,94 @@ describe('buildWeeklyPeriods', () => {
     // percentUsed = 0 (Division-by-zero-Schutz), severity = ok
     expect(percentUsedIsZero(result[1].percentUsed)).toBe(true)
     expect(result[1].severity).toBe('ok')
+  })
+})
+
+describe('buildWeeklyPeriods — Versionswechsel im Monat', () => {
+  // Oktober 2026: Mo 5.10. ist der erste Montag, Mo 26.10. der letzte.
+  const monthStart = new Date(2026, 9, 1, 12, 0, 0, 0)
+  const monthEnd = new Date(2026, 10, 1, 12, 0, 0, 0)
+
+  it('zeigt Wochen vor der neuen Version mit dem alten Betrag (User-Report 2026-10-11)', () => {
+    const versions = [
+      { amount: 25_000, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 0, 1, 12) },
+      { amount: 30_000, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 9, 12, 12) },
+    ]
+    const result = buildWeeklyPeriods('budget-1', versions, [], monthStart, monthEnd)
+    expect(result.map((p) => p.start.getDate())).toEqual([5, 12, 19, 26])
+    expect(result.map((p) => p.plannedAmount)).toEqual([25_000, 30_000, 30_000, 30_000])
+  })
+
+  it('eine Version, die mitten in der Woche beginnt, gilt erst ab der Folgewoche', () => {
+    const versions = [
+      { amount: 25_000, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 0, 1, 12) },
+      { amount: 30_000, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 9, 14, 12) }, // Mi
+    ]
+    const result = buildWeeklyPeriods('budget-1', versions, [], monthStart, monthEnd)
+    expect(result.map((p) => p.plannedAmount)).toEqual([25_000, 25_000, 30_000, 30_000])
+  })
+
+  it('ein mitten in der Woche neu angelegtes Budget plant schon diese Woche', () => {
+    const versions = [
+      { amount: 30_000, frequency: 'WEEKLY' as const, validFrom: new Date(2026, 9, 14, 12) }, // Mi
+    ]
+    const result = buildWeeklyPeriods('budget-1', versions, [], monthStart, monthEnd)
+    expect(result.map((p) => p.start.getDate())).toEqual([12, 19, 26])
+  })
+})
+
+describe('buildWeeklyPeriods — Wochen gehören dem Monat ihres Montags', () => {
+  const versions = [{ amount: 25_000, frequency: 'WEEKLY' as const, validFrom: new Date(2025, 0, 1, 12) }]
+
+  it('listet die Woche Mo 28.9. – So 4.10. nur im September, mit allen Ausgaben der Woche', () => {
+    const expenses = [
+      { amount: 5_000, date: new Date(2026, 8, 29, 12), budgetId: 'budget-1' }, // Di 29.9.
+      { amount: 7_000, date: new Date(2026, 9, 3, 12), budgetId: 'budget-1' }, // Sa 3.10.
+    ]
+    const september = buildWeeklyPeriods('budget-1', versions, expenses, new Date(2026, 8, 1, 12), new Date(2026, 9, 1, 12))
+    const lastWeek = september[september.length - 1]
+    expect(lastWeek.start.getDate()).toBe(28)
+    expect(lastWeek.spentAmount).toBe(12_000)
+
+    const october = buildWeeklyPeriods('budget-1', versions, expenses, new Date(2026, 9, 1, 12), new Date(2026, 10, 1, 12))
+    expect(october[0].start.getMonth()).toBe(9)
+    expect(october[0].start.getDate()).toBe(5)
+  })
+})
+
+describe('buildBudgetOverview — WEEKLY-Budgets über die Monatsgrenze', () => {
+  const budget = makeBudget('budget-1', 'GROCERIES', 'Lebensmittel', [
+    makeVersion({ amount: 25_000, frequency: 'WEEKLY', validFrom: new Date(2025, 0, 1) }),
+  ])
+  const expenses = [
+    { amount: 5_000, date: new Date(2026, 8, 29, 12), budgetId: 'budget-1' }, // Di 29.9.
+    { amount: 7_000, date: new Date(2026, 9, 3, 12), budgetId: 'budget-1' }, // Sa 3.10. (Woche ab 28.9.)
+    { amount: 2_000, date: new Date(2026, 9, 6, 12), budgetId: 'budget-1' }, // Di 6.10.
+    { amount: 1_000, date: new Date(2026, 9, 3, 12), budgetId: null }, // Sonstiges, Kalendermonat
+  ]
+
+  it('rechnet Folgemonats-Tage der letzten Woche dem Monat des Montags zu', () => {
+    const september = buildBudgetOverview([budget], expenses, new Date(2026, 8, 15, 12))
+    expect(september.budgets[0].spentAmount).toBe(12_000)
+    expect(september.budgets[0].plannedAmount).toBe(4 * 25_000) // Mo 7., 14., 21., 28.9.
+  })
+
+  it('zählt Tage vor dem ersten Montag nicht im neuen Monat', () => {
+    const october = buildBudgetOverview([budget], expenses, new Date(2026, 9, 15, 12))
+    expect(october.budgets[0].spentAmount).toBe(2_000)
+    expect(october.budgets[0].periods.reduce((sum, p) => sum + p.spentAmount, 0)).toBe(2_000)
+    expect(october.unassignedSpent).toBe(1_000)
+  })
+
+  it('Monats-Plan = Summe der Wochen-Pläne bei Versionswechsel', () => {
+    const changed = makeBudget('budget-1', 'GROCERIES', 'Lebensmittel', [
+      makeVersion({ amount: 30_000, frequency: 'WEEKLY', validFrom: new Date(2026, 9, 14, 12) }), // Mi
+      makeVersion({ amount: 25_000, frequency: 'WEEKLY', validFrom: new Date(2025, 0, 1) }),
+    ])
+    const october = buildBudgetOverview([changed], [], new Date(2026, 9, 15, 12))
+    const weeksSum = october.budgets[0].periods.reduce((sum, p) => sum + p.plannedAmount, 0)
+    expect(october.budgets[0].plannedAmount).toBe(weeksSum)
+    expect(weeksSum).toBe(2 * 25_000 + 2 * 30_000)
   })
 })
 

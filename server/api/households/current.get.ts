@@ -1,7 +1,7 @@
 import { defineEventHandler, createError, getCookie } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
-import { buildBudgetOverview, getMonthWindow } from '../../utils/budget-evaluation'
+import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow } from '../../utils/budget-evaluation'
 import { buildSavingsMonthlyProgress } from '../../utils/savings-progress'
 import { computePlanCoverage, indexPaidBuckets } from '../../utils/recurring-coverage'
 
@@ -193,13 +193,15 @@ export default defineEventHandler(async (event) => {
   })
 
   const { monthStart, monthEnd } = getMonthWindow()
+  const expenseWindow = getBudgetExpenseQueryWindow(monthStart, monthEnd)
   const expenses = await prisma.expenseTransaction.findMany({
     where: {
       householdId,
       date: {
-        gte: monthStart,
-        lt: monthEnd,
+        gte: expenseWindow.start,
+        lt: expenseWindow.end,
       },
+      deletedAt: null,
     },
     select: {
       amount: true,

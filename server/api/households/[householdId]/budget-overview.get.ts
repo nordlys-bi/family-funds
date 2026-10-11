@@ -12,7 +12,7 @@
 import { createError, defineEventHandler, getQuery } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { buildBudgetOverview, getMonthWindow } from '../../../utils/budget-evaluation'
+import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow } from '../../../utils/budget-evaluation'
 import { parseUuidParam } from '../../../utils/validation'
 
 const MONTH_REGEX = /^\d{4}-\d{2}$/
@@ -59,6 +59,10 @@ export default defineEventHandler(async (event) => {
     monthEnd = me
   }
 
+  // WEEKLY-Budgets brauchen auch die Tage der letzten Monatswoche, die schon
+  // im Folgemonat liegen (Woche gehoert dem Monat ihres Montags).
+  const expenseWindow = getBudgetExpenseQueryWindow(monthStart, monthEnd)
+
   const [budgets, expenses] = await Promise.all([
     prisma.budget.findMany({
       where: { householdId },
@@ -82,7 +86,7 @@ export default defineEventHandler(async (event) => {
     prisma.expenseTransaction.findMany({
       where: {
         householdId,
-        date: { gte: monthStart, lt: monthEnd },
+        date: { gte: expenseWindow.start, lt: expenseWindow.end },
         // Soft-Delete (issue #58): nur aktive Buchungen aggregieren.
         // Eine soft-deletete Buchung ist aus der UX-Sicht weg, das
         // Budget muss zurueckgerechnet sein. Ohne den Filter wuerde

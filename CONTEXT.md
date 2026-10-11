@@ -202,6 +202,8 @@ Wiederkehrende Fixkosten.
 
 Periodischer Maximalbetrag für eine Ausgaben-Kategorie (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder"). Budgets werden verbraucht; am Ende der Periode startet das Budget wieder bei 0.
 
+**Wochenbudgets in der Monatsansicht:** Eine Woche (Mo–So) gehört komplett dem Monat, in dem ihr Montag liegt — inkl. der Ausgaben an Tagen, die schon im Folgemonat liegen. Eine monatsübergreifende Woche erscheint also nur in einem Monat. Ändert sich der Betrag (neue `BudgetVersion`), plant jede Woche mit der Version, die an ihrem Montag gilt; eine Version, die mitten in der Woche beginnt, greift erst ab der Folgewoche (außer es gab vorher noch keine Version).
+
 ### SavingsGoal
 
 Ansparungs-Topf für einen bestimmten Zweck (z.B. "Urlaub 200€", "Reparaturen 200€"). Die App bildet **kein** Sparkonto ab — das Geld wird real beiseite gelegt (z.B. auf einem physischen Sparkonto), die App trackt nur die Reservierung. Mehrere `SavingsGoal`s können sich ein Sparkonto teilen.
