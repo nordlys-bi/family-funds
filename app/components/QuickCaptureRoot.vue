@@ -56,6 +56,11 @@ const saving = ref(false)
 const errorMessage = ref<string | null>(null)
 
 const budgets = ref<BudgetItem[]>([])
+// Erst nach dem ersten erfolgreichen Laden ist die Options-Liste
+// aussagekraeftig. Vorher enthaelt sie nur "Sonstiges", und der Reset-Watch
+// unten wuerde ein vorausgewaehltes Budget (Dashboard-Karte) beim ersten
+// Oeffnen sofort wieder leeren.
+const budgetsLoaded = ref(false)
 // ADR-0004: Geschlossene Budgets nur bis zu ihrem Stichtag anbieten.
 const budgetSelectOptions = computed(() => [
   { label: 'Sonstiges', value: '' },
@@ -66,6 +71,7 @@ const budgetSelectOptions = computed(() => [
 // "Sonstiges" zuruecksetzen statt eine Auswahl zu behalten, die der Server
 // mit 400 ablehnt.
 watch(budgetSelectOptions, (options) => {
+  if (!budgetsLoaded.value) return
   if (form.value.budgetId && !options.some((option) => option.value === form.value.budgetId)) {
     form.value.budgetId = ''
   }
@@ -92,6 +98,7 @@ async function loadBudgets() {
       '/api/households/current',
     )
     budgets.value = data.household?.budgets ?? []
+    budgetsLoaded.value = true
   } catch {
     budgets.value = []
   }
