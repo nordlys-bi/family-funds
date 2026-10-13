@@ -90,9 +90,10 @@ function detailLink(card: PeriodCard) {
         <!-- ADR-0004: Perioden-Rest oben beantwortet "wie liegen wir in
              dieser Periode?", der Saldo hier "wie viel ist insgesamt da?". -->
         <div v-if="card.balance !== undefined" class="card__balance" :class="{ 'is-negative': card.balance < 0 }">
-          <span>Saldo gesamt {{ formatMoney(card.balance) }}</span>
-          <!-- Trend der letzten 3 Monate; Details mit Ereignissen auf der Budget-Seite. -->
-          <BudgetBalanceSparkline v-if="card.balanceTrend" :values="card.balanceTrend" :width="56" :height="16" />
+          <span class="card__balance-label">Saldo gesamt {{ formatMoney(card.balance) }}</span>
+          <!-- Trend der letzten 3 Monate ueber die volle Kartenbreite (#148);
+               Details mit Ereignissen auf der Budget-Seite. -->
+          <BudgetBalanceSparkline v-if="card.balanceTrend" :values="card.balanceTrend" :width="160" :height="22" fluid />
         </div>
       </NuxtLink>
       <button
@@ -111,13 +112,18 @@ function detailLink(card: PeriodCard) {
 <style scoped>
 .card__balance {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.35rem;
   margin-top: 0.4rem;
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.card__balance-label {
+  /* Rechtsbuendig wie die Betragsspalte darueber (#148). */
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .card__balance.is-negative {

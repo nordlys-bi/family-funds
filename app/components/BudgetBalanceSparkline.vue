@@ -16,8 +16,11 @@ const props = withDefaults(
     values: number[]
     width?: number
     height?: number
+    /** Volle Breite des Containers: `width` ist dann nur die interne
+     *  Koordinatenbreite, das SVG wird horizontal gestreckt (#148). */
+    fluid?: boolean
   }>(),
-  { width: 72, height: 20 },
+  { width: 72, height: 20, fluid: false },
 )
 
 const geometry = computed(() => buildSparklineGeometry(props.values, props.width, props.height))
@@ -35,9 +38,11 @@ const clipBelow = `${uid}-below`
   <svg
     v-if="values.length > 1"
     class="sparkline"
-    :width="width"
+    :class="{ 'sparkline--fluid': fluid }"
+    :width="fluid ? '100%' : width"
     :height="height"
     :viewBox="`0 0 ${width} ${height}`"
+    :preserveAspectRatio="fluid ? 'none' : undefined"
     aria-hidden="true"
   >
     <defs>
@@ -61,6 +66,17 @@ const clipBelow = `${uid}-below`
   display: block;
   flex-shrink: 0;
   overflow: visible;
+}
+
+.sparkline--fluid {
+  width: 100%;
+}
+
+/* Beim horizontalen Strecken (fluid) sollen Linien nicht mitverbreitert
+   bzw. verzerrt werden — Strichstaerke bleibt in Bildschirm-Pixeln. */
+.sparkline__zero,
+.sparkline__line {
+  vector-effect: non-scaling-stroke;
 }
 
 .sparkline__zero {
