@@ -273,7 +273,7 @@ async function main() {
     // Ohne Budget ("Sonstiges")
     add(null, euros(9, 25), pick(['Apotheke', 'Post / Paket', 'Schlüsseldienst Ersatzschlüssel']), day(y, m, 13))
   }
-  add(null, 4800, 'Ferienwohnung Ostsee (aus Spartopf)', day(2026, 10, 3))
+  add(null, 48000, 'Ferienwohnung Ostsee (aus Spartopf)', day(2026, 10, 3))
 
   for (const expense of expenses) {
     await prisma.expenseTransaction.create({
