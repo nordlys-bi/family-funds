@@ -96,7 +96,7 @@ export default defineEventHandler(async (event) => {
         // einfliesen. Issue #65.
         deletedAt: null,
       },
-      select: { amount: true, date: true, budgetId: true },
+      select: { amount: true, date: true, budgetId: true, fixedCostPlanId: true },
     }),
   ])
 
