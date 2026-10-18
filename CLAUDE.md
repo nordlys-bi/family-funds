@@ -14,6 +14,7 @@ docker compose up -d       # start local PostgreSQL (and optional Keycloak)
 cp .env.example .env       # configure environment (mock-auth needs only DATABASE_URL/DIRECT_URL)
 npx prisma migrate dev     # apply migrations locally
 npx prisma db seed         # seed local DB (prisma/seed.ts)
+npm run db:seed:demo       # (re)create only the "Familie Demo" household with ~3 months of data; keeps other data
 
 npm run dev                # dev server on :3000 (runs `prisma migrate deploy && prisma generate` first)
 npm run build               # production build
