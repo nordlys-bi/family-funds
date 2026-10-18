@@ -279,6 +279,38 @@ describe('buildBudgetOverview — expense aggregation and unassigned bucket', ()
     expect(overview.spentTotal).toBe(1234 + 2000)
   })
 
+  it('keeps fixed-cost expenses out of "Sonstiges" but in spentTotal', () => {
+    // Miete & Co. sind ueber ihren Fixkosten-Plan zugeordnet — kein
+    // Handlungsbedarf fuer die Dashboard-Meldung "ohne Budgetzuordnung".
+    const budget = makeBudget('b1', 'food', 'Lebensmittel', [
+      makeVersion({ amount: 50000, frequency: 'MONTHLY', validFrom: new Date(2026, 0, 1) }),
+    ])
+    const expenses = [
+      { amount: 1234, date: new Date(2026, 5, 5), budgetId: 'b1' },
+      { amount: 800, date: new Date(2026, 5, 8), budgetId: null },
+      { amount: 125000, date: new Date(2026, 5, 1), budgetId: null, fixedCostPlanId: 'rent' },
+    ]
+    const overview = buildBudgetOverview([budget], expenses, baseDate)
+    expect(overview.unassignedSpent).toBe(800)
+    expect(overview.unassigned.spentAmount).toBe(800)
+    expect(overview.fixedCostSpent).toBe(125000)
+    expect(overview.spentTotal).toBe(1234 + 800 + 125000)
+  })
+
+  it('a fixed-cost expense booked onto a budget still counts for that budget', () => {
+    const budget = makeBudget('b1', 'fun', 'Freizeit', [
+      makeVersion({ amount: 12000, frequency: 'MONTHLY', validFrom: new Date(2026, 0, 1) }),
+    ])
+    const overview = buildBudgetOverview(
+      [budget],
+      [{ amount: 1399, date: new Date(2026, 5, 20), budgetId: 'b1', fixedCostPlanId: 'streaming' }],
+      baseDate,
+    )
+    expect(overview.budgets[0].spentAmount).toBe(1399)
+    expect(overview.fixedCostSpent).toBe(0)
+    expect(overview.unassignedSpent).toBe(0)
+  })
+
   it('total remaining is negative when over-spending', () => {
     const budget = makeBudget('b1', 'food', 'Lebensmittel', [
       makeVersion({ amount: 5000, frequency: 'MONTHLY', validFrom: new Date(2026, 0, 1) }),

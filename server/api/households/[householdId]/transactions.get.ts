@@ -36,8 +36,11 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                          UI-Pattern gebraucht, falls man eine Vorschau
  *                          der geloeschten Items braucht.
  *   - `?unassigned=1`     Nur Ausgaben ohne Budget-Zuordnung (issue #52,
- *                          Dashboard "Handlungsbedarf"-Link). Setzt
- *                          `budgetId: null` auf dem Expense-Read UND im
+ *                          Dashboard "Handlungsbedarf"-Link) und ohne
+ *                          Fixkosten-Plan — Fixkosten sind ueber ihren Plan
+ *                          zugeordnet und kein Handlungsbedarf. Setzt
+ *                          `budgetId: null, fixedCostPlanId: null` auf dem
+ *                          Expense-Read UND im
  *                          `expenseTotal`-Aggregate (dort dann
  *                          expenseTotal === unassignedExpenseTotal). Income
  *                          ist nicht betroffen (kein Budget-Bezug).
@@ -183,7 +186,7 @@ export default defineEventHandler(async (event) => {
   const userFilter = userIdParam ? { userId: userIdParam } : {}
 
   // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
-  // verlinkt auf ?unassigned=1. Setzt budgetId: null auf dem Expense-Read UND
+  // verlinkt auf ?unassigned=1. Setzt budgetId + fixedCostPlanId: null auf dem Expense-Read UND
   // im expenseTotal-Aggregate (dort dann expenseTotal === unassignedExpenseTotal),
   // laesst Income unveraendert (kein Budget-Bezug).
   const unassignedOnly = query.unassigned === '1'
@@ -196,7 +199,7 @@ export default defineEventHandler(async (event) => {
     unassignedOnly && budgetIdParam
       ? { budgetId: { in: [] as string[] } }
       : unassignedOnly
-        ? { budgetId: null }
+        ? { budgetId: null, fixedCostPlanId: null }
         : budgetIdParam
           ? { budgetId: budgetIdParam }
           : {}
@@ -303,6 +306,9 @@ export default defineEventHandler(async (event) => {
             ...userFilter,
             date: dateRangeFilter,
             budgetId: null,
+            // Gleiche Definition wie `?unassigned=1` und die Dashboard-
+            // Meldung: Fixkosten zaehlen nicht als "ohne Budget".
+            fixedCostPlanId: null,
           },
           _sum: { amount: true },
         }),

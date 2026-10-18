@@ -60,7 +60,10 @@ export type BudgetOverview = {
   plannedTotal: number
   spentTotal: number
   remainingTotal: number
+  /** Ausgaben ohne Budget UND ohne Fixkosten-Plan — der "Handlungsbedarf". */
   unassignedSpent: number
+  /** Ausgaben ohne Budget, die zu einem Fixkosten-Plan gehoeren (zaehlen in spentTotal). */
+  fixedCostSpent: number
   budgets: BudgetOverviewItem[]
   unassigned: {
     name: string
@@ -73,6 +76,7 @@ type ExpenseLike = {
   amount: number
   date: Date
   budgetId: string | null
+  fixedCostPlanId?: string | null
 }
 
 /**
@@ -607,6 +611,7 @@ export function buildBudgetOverview(
 
   const expensesByBudget = new Map<string, ExpenseLike[]>()
   let unassignedSpent = 0
+  let fixedCostSpent = 0
 
   for (const expense of expenses) {
     if (expense.budgetId) {
@@ -617,7 +622,15 @@ export function buildBudgetOverview(
         expensesByBudget.set(expense.budgetId, [expense])
       }
     } else if (isInCalendarMonth(expense.date)) {
-      unassignedSpent += expense.amount
+      // Fixkosten (Miete, Kita, ...) sind ueber ihren Plan zugeordnet und
+      // kein Handlungsbedarf — sonst stuende auf dem Dashboard praktisch
+      // jeden Monat ein hoher "ohne Budgetzuordnung"-Betrag. In die
+      // Gesamtausgaben fliessen sie trotzdem.
+      if (expense.fixedCostPlanId) {
+        fixedCostSpent += expense.amount
+      } else {
+        unassignedSpent += expense.amount
+      }
     }
   }
 
@@ -698,7 +711,7 @@ export function buildBudgetOverview(
   })
 
   const plannedTotal = items.reduce((sum, item) => sum + item.plannedAmount, 0)
-  const spentTotal = items.reduce((sum, item) => sum + item.spentAmount, 0) + unassignedSpent
+  const spentTotal = items.reduce((sum, item) => sum + item.spentAmount, 0) + unassignedSpent + fixedCostSpent
 
   return {
     monthStart,
@@ -707,6 +720,7 @@ export function buildBudgetOverview(
     spentTotal,
     remainingTotal: plannedTotal - spentTotal,
     unassignedSpent,
+    fixedCostSpent,
     budgets: items,
     unassigned: {
       name: 'Sonstiges',

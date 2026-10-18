@@ -74,6 +74,24 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
     expect(call?.where?.budgetId).toBeNull()
   })
 
+  it('excludes fixed-cost expenses (fixedCostPlanId: null) when unassigned=1', async () => {
+    // Fixkosten sind ueber ihren Plan zugeordnet — gleiche Definition wie
+    // die Dashboard-Meldung "ohne Budgetzuordnung".
+    await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
+    const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
+    expect(call?.where?.fixedCostPlanId).toBeNull()
+    const totalCall = prismaMocks.expenseTransaction.aggregate.mock.calls[0][0]
+    expect(totalCall?.where?.fixedCostPlanId).toBeNull()
+  })
+
+  it('unassignedExpenseTotal never counts fixed-cost expenses', async () => {
+    await handler(makeEvent({ month: '2026-05' }))
+    const unassignedCall = prismaMocks.expenseTransaction.aggregate.mock.calls[1][0]
+    expect(unassignedCall?.where).toMatchObject({ budgetId: null, fixedCostPlanId: null })
+    const listCall = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
+    expect(listCall?.where?.fixedCostPlanId).toBeUndefined()
+  })
+
   it('does not add budgetId filter when unassigned is not "1"', async () => {
     await handler(makeEvent({ month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]

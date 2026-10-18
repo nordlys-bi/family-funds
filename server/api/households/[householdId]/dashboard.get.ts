@@ -101,7 +101,7 @@ export default defineEventHandler(async (event) => {
         // User gerade geloescht hat. Issue #65.
         deletedAt: null,
       },
-      select: { amount: true, date: true, budgetId: true },
+      select: { amount: true, date: true, budgetId: true, fixedCostPlanId: true },
     }),
     prisma.incomeTransaction.aggregate({
       where: {
@@ -214,7 +214,7 @@ export default defineEventHandler(async (event) => {
           },
           deletedAt: null,
         },
-        select: { amount: true, date: true, budgetId: true },
+        select: { amount: true, date: true, budgetId: true, fixedCostPlanId: true },
       })
     : []
 
