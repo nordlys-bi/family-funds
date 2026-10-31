@@ -47,7 +47,7 @@ const hiddenCount = computed(() => props.goals.length - visible.value.length)
         <span class="name">{{ goal.name }}</span>
         <span class="pct">{{ goal.percentToTarget.toFixed(0) }}%</span>
       </div>
-      <ListProgressBar :percent="Math.min(100, goal.percentToTarget)" tone="primary" />
+      <ListProgressBar :percent="Math.min(100, goal.percentToTarget)" tone="accent" />
       <div class="meta">
         {{ formatMoney(goal.currentAmount) }} von {{ formatMoney(goal.targetAmount) }}
         <template v-if="goal.monthlyRate > 0">

@@ -271,14 +271,26 @@ function entryTitle(entry: BalanceHistoryEntry): string {
   }
 }
 
-/** Ausgabe-Zeile → Buchungen dieses Tages im Budget (`to` ist exklusiv). */
-function expenseLink(entry: BalanceHistoryEntry) {
-  const next = new Date(`${entry.date}T12:00:00`)
-  next.setDate(next.getDate() + 1)
+/** Buchungsliste eines Budgets fuer eine Periode (`to` ist exklusiv). */
+function periodExpensesLink(budgetId: string, start: string, end: string | null) {
   return {
     path: '/transactions/expenses',
-    query: { budgetId: entry.budgetId, from: entry.date, to: isoDay(next) },
+    query: { budgetId, from: start, ...(end ? { to: end } : {}) },
   }
+}
+
+// Absprung pro Periode statt pro Buchung: einzelne Buchungen zu verlinken
+// fuehrte nur auf eine Ein-Tages-Liste, gesucht ist meist der Zeitraum.
+// Die Historie enthaelt auch Vorgaenger-Perioden (ADR-0004) — deren
+// Buchungen haengen am Vorgaenger, also dessen budgetId verwenden. Die
+// Buchungsliste filtert nur auf ein Budget; mischt eine Periode mehrere,
+// bleibt es beim aktuellen.
+function groupExpensesLink(group: { start: string; end: string | null; entries: BalanceHistoryEntry[] }) {
+  if (!budget.value) return null
+  const budgetIds = new Set(group.entries.filter((entry) => entry.type === 'expense').map((entry) => entry.budgetId))
+  if (budgetIds.size === 0) return null
+  const [only] = budgetIds
+  return periodExpensesLink(budgetIds.size === 1 && only ? only : budget.value.id, group.start, group.end)
 }
 
 const groups = computed(() =>
@@ -394,14 +406,7 @@ const asideOpen = ref(false)
 
 function periodTransactionsLink() {
   if (!budget.value || !period.value) return null
-  return {
-    path: '/transactions/expenses',
-    query: {
-      budgetId: budget.value.id,
-      from: period.value.start,
-      ...(period.value.end ? { to: period.value.end } : {}),
-    },
-  }
+  return periodExpensesLink(budget.value.id, period.value.start, period.value.end)
 }
 
 function onDeleted(id: string) {
@@ -632,21 +637,33 @@ function onDeleted(id: string) {
                 class="period-group"
                 :class="{ 'is-highlighted': highlightGroup === group.start }"
               >
-                <button
-                  type="button"
-                  class="period-group__head"
-                  :aria-expanded="openGroups.has(group.start)"
-                  :aria-controls="`period-${group.start}-list`"
-                  @click="toggleGroup(group.start)"
-                >
-                  <i class="pi pi-chevron-right period-group__chevron" aria-hidden="true" />
-                  <span class="period-group__label">{{ groupLabel(group) }}</span>
-                  <span class="period-group__sums">
-                    <span v-if="group.inflow !== 0" class="is-positive">{{ signedMoney(group.inflow) }}</span>
-                    <span v-if="group.outflow !== 0">{{ signedMoney(group.outflow) }}</span>
-                    <span class="period-group__end" :class="{ 'is-negative': group.endBalance < 0 }">Ende {{ compactMoney(group.endBalance) }}</span>
-                  </span>
-                </button>
+                <div class="period-group__head-row">
+                  <button
+                    type="button"
+                    class="period-group__head"
+                    :aria-expanded="openGroups.has(group.start)"
+                    :aria-controls="`period-${group.start}-list`"
+                    @click="toggleGroup(group.start)"
+                  >
+                    <i class="pi pi-chevron-right period-group__chevron" aria-hidden="true" />
+                    <span class="period-group__label">{{ groupLabel(group) }}</span>
+                    <span class="period-group__sums">
+                      <span v-if="group.inflow !== 0" class="is-positive">{{ signedMoney(group.inflow) }}</span>
+                      <span v-if="group.outflow !== 0">{{ signedMoney(group.outflow) }}</span>
+                      <span class="period-group__end" :class="{ 'is-negative': group.endBalance < 0 }">Ende {{ compactMoney(group.endBalance) }}</span>
+                    </span>
+                  </button>
+                  <NuxtLink
+                    v-if="groupExpensesLink(group)"
+                    :to="groupExpensesLink(group)!"
+                    class="period-group__link"
+                    :aria-label="`Buchungen ${groupLabel(group)} anzeigen`"
+                    :title="`Buchungen ${groupLabel(group)} anzeigen`"
+                  >
+                    <span class="period-group__link-text">Buchungen</span>
+                    <i class="pi pi-arrow-right" aria-hidden="true" />
+                  </NuxtLink>
+                </div>
                 <div v-show="openGroups.has(group.start)" :id="`period-${group.start}-list`">
                   <!-- Nur wenn der Kopf-Zugang nicht allein aus der Zuteilung besteht -->
                   <p v-if="group.allocation !== 0 && group.allocation !== group.inflow" class="period-group__allocation">
@@ -664,8 +681,7 @@ function onDeleted(id: string) {
                       <span class="entry__text">
                         <span class="entry__title">
                           <span class="entry__date">{{ shortDate(entry.date) }}</span>
-                          <NuxtLink v-if="entry.type === 'expense'" :to="expenseLink(entry)">{{ entryTitle(entry) }}</NuxtLink>
-                          <template v-else-if="entry.type === 'carryover' && entry.fromBudgetId">
+                          <template v-if="entry.type === 'carryover' && entry.fromBudgetId">
                             Übertrag aus
                             <NuxtLink :to="`/budgeting/budgets/${entry.fromBudgetId}`">{{ entry.fromBudgetName ?? 'Vorgänger' }}</NuxtLink>
                           </template>
@@ -1255,12 +1271,50 @@ function onDeleted(id: string) {
   border-top: 0;
 }
 
+.period-group__head-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.period-group__link {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: var(--touch-target-min);
+  min-height: var(--touch-target-min);
+  padding: 0 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--color-accent-primary-text);
+  text-decoration: none;
+}
+
+.period-group__link:hover {
+  background: var(--color-accent-primary-soft);
+}
+
+.period-group__link .pi {
+  font-size: 0.7rem;
+}
+
+/* Mobil nur der Pfeil — der Periodenkopf braucht die Breite fuer die Summen. */
+@media (max-width: 639px) {
+  .period-group__link-text {
+    display: none;
+  }
+}
+
 .period-group__head {
   display: grid;
   grid-template-columns: 1rem minmax(0, 1fr);
   align-items: center;
   column-gap: 0.4rem;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: var(--touch-target-min);
   padding: 0.4rem 0;
   border: 0;
