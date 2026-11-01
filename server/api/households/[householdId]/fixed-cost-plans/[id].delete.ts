@@ -11,6 +11,7 @@ import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
+import { ensureAllocations } from '../../../../utils/envelope-store'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -30,6 +31,9 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Ein geloeschter Plan fehlt in der Zuteilung seines Fixkosten-Umschlags —
+  // erst nachbuchen, dann aendern (ADR-0005, Regel 1).
+  await ensureAllocations(householdId)
   await prisma.fixedCostPlan.delete({ where: { id: planId } })
 
   return defineApiResponse({ kind: 'fixedCostPlan', deleted: true })

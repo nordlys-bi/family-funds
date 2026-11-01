@@ -20,6 +20,7 @@ const prismaMocks = vi.hoisted(() => ({
   expenseTransaction: { create: vi.fn() },
   incomeTransaction: { create: vi.fn() },
   budget: { findFirst: vi.fn() },
+  envelope: { findFirst: vi.fn() },
   fixedCostPlan: { findFirst: vi.fn() },
   incomePlan: { findFirst: vi.fn() },
 }))
@@ -111,33 +112,84 @@ describe('POST /transactions — income (issue #105)', () => {
   })
 })
 
-describe('POST /transactions — expense budget assignment (regression guard)', () => {
-  it('still passes a valid budgetId through to the expense create', async () => {
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: 'b-1' })
+describe('POST /transactions — expense envelope assignment (regression guard)', () => {
+  it('passes a valid envelopeId through to the expense create', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(
+      makeEvent({ kind: 'expense', amount: 5000, date: '2026-08-27', envelopeId: 'env-1' }),
+    )
+
+    const data = prismaMocks.expenseTransaction.create.mock.calls[0][0].data
+    expect(data.envelopeId).toBe('env-1')
+    expect(data).not.toHaveProperty('budgetId')
+  })
+
+  it('still accepts the old budgetId name for expenses (until #156)', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
 
     await handler(
       makeEvent({ kind: 'expense', amount: 5000, date: '2026-08-27', budgetId: 'b-1' }),
     )
 
     const data = prismaMocks.expenseTransaction.create.mock.calls[0][0].data
-    expect(data.budgetId).toBe('b-1')
+    expect(data.envelopeId).toBe('b-1')
+  })
+
+  it('404s for an envelope outside the household', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue(null)
+
+    await expect(
+      handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-08-27', envelopeId: 'env-x' })),
+    ).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('inherits the envelope of its fixed-cost plan', async () => {
+    prismaMocks.fixedCostPlan.findFirst.mockResolvedValue({ id: 'fc-1', envelopeId: 'env-housing' })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'expense', amount: 95000, date: '2026-11-01', fixedCostPlanId: 'fc-1' }))
+
+    const data = prismaMocks.expenseTransaction.create.mock.calls[0][0].data
+    expect(data).toMatchObject({ envelopeId: 'env-housing', fixedCostPlanId: 'fc-1' })
   })
 })
 
-describe('POST /transactions — geschlossene Budgets (ADR-0004)', () => {
+describe('POST /transactions — Gutschrift auf einen Umschlag (ADR-0005)', () => {
+  it('credits an income to the given envelope', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'income', amount: 2500, date: '2026-11-03', envelopeId: 'env-kids' }))
+
+    const data = prismaMocks.incomeTransaction.create.mock.calls[0][0].data
+    expect(data.envelopeId).toBe('env-kids')
+  })
+
+  it('inherits the envelope of its income plan', async () => {
+    prismaMocks.incomePlan.findFirst.mockResolvedValue({ id: 'p-1', envelopeId: 'env-kids' })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'income', amount: 25500, date: '2026-11-03', incomePlanId: 'p-1' }))
+
+    const data = prismaMocks.incomeTransaction.create.mock.calls[0][0].data
+    expect(data.envelopeId).toBe('env-kids')
+  })
+})
+
+describe('POST /transactions — geschlossene Umschlaege', () => {
   it('rejects an expense dated on or after the closing date', async () => {
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: 'b-1', closedAt: new Date(2026, 9, 5, 12) })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: new Date(2026, 9, 5, 12) })
 
     await expect(
-      handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-05', budgetId: 'b-1' })),
+      handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-05', envelopeId: 'env-1' })),
     ).rejects.toMatchObject({ statusCode: 400 })
     expect(prismaMocks.expenseTransaction.create).not.toHaveBeenCalled()
   })
 
   it('still allows late bookings dated before the closing date', async () => {
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: 'b-1', closedAt: new Date(2026, 9, 5, 12) })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: new Date(2026, 9, 5, 12) })
 
-    await handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-04', budgetId: 'b-1' }))
+    await handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-04', envelopeId: 'env-1' }))
 
     expect(prismaMocks.expenseTransaction.create).toHaveBeenCalledTimes(1)
   })

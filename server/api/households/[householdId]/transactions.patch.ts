@@ -5,7 +5,7 @@ import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
+import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
 
 type TransactionUpdateBody = {
   kind: string
@@ -13,7 +13,16 @@ type TransactionUpdateBody = {
   amount?: string | number
   description?: string | null
   date?: string
+  // ADR-0005: Umschlag, null = "Zu verteilen". Fuer Ausgaben und Einnahmen.
+  envelopeId?: string | null
+  // Alter Name bis zur neuen Erfassung (#156), nur fuer Ausgaben.
   budgetId?: string | null
+}
+
+/** `undefined` = nicht geaendert, `null` = "Zu verteilen". */
+function parseEnvelopeChange(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined
+  return value?.trim() || null
 }
 
 export default defineEventHandler(async (event) => {
@@ -55,31 +64,12 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const budgetId = body.budgetId === undefined ? undefined : body.budgetId?.trim() || null
+    const envelopeId = parseEnvelopeChange(body.envelopeId !== undefined ? body.envelopeId : body.budgetId)
 
-    // ADR-0004: Gegen das resultierende Budget/Datum pruefen — auch ein
-    // reines Datums-Update darf eine Ausgabe nicht hinter den Stichtag
-    // eines geschlossenen Budgets schieben.
-    const effectiveBudgetId = budgetId === undefined ? existing.budgetId : budgetId
-
-    if (effectiveBudgetId) {
-      const budget = await prisma.budget.findFirst({
-        where: {
-          id: effectiveBudgetId,
-          householdId,
-        },
-        select: { id: true, closedAt: true },
-      })
-
-      if (!budget) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Budget not found.',
-        })
-      }
-
-      assertBudgetOpenOn(budget, date ?? existing.date)
-    }
+    // ADR-0005: Gegen den resultierenden Umschlag und das Datum pruefen —
+    // auch ein reines Datums-Update darf eine Ausgabe nicht hinter den
+    // Stichtag eines geschlossenen Umschlags schieben.
+    await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
 
     const item = await prisma.expenseTransaction.update({
       where: { id: body.id },
@@ -87,7 +77,7 @@ export default defineEventHandler(async (event) => {
         ...(amount !== undefined ? { amount } : {}),
         ...(description !== undefined ? { description } : {}),
         ...(date ? { date } : {}),
-        ...(budgetId !== undefined ? { budgetId } : {}),
+        ...(envelopeId !== undefined ? { envelopeId } : {}),
       },
     })
 
@@ -110,12 +100,16 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const envelopeId = parseEnvelopeChange(body.envelopeId)
+  await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+
   const item = await prisma.incomeTransaction.update({
     where: { id: body.id },
     data: {
       ...(amount !== undefined ? { amount } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(date ? { date } : {}),
+      ...(envelopeId !== undefined ? { envelopeId } : {}),
     },
   })
 
