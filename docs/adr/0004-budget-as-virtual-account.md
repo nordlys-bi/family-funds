@@ -1,6 +1,6 @@
 # Budget als virtuelles Konto mit fortlaufendem Saldo
 
-Status: accepted
+Status: accepted, erweitert durch [ADR-0005](0005-envelopes-as-unified-virtual-accounts.md) — dort ersetzt: berechnete Zuteilungen und `BudgetVersion` (gebuchte Zuteilungen), "Periodenansicht bleibt" (Bewertung nach Saldo), Umbuchung Budget ↔ Spartopf (`EnvelopeTransfer`). Gilt bis zur Umsetzung unverändert.
 
 Bisher war ein Budget ein periodischer Maximalbetrag: Am Ende jeder Periode startete es wieder bei 0, Reste und Überziehungen gingen verloren. Das bildet die Realität falsch ab — nicht ausgegebenes Budget ist echtes Geld, das danach in der App nicht mehr auftaucht, und eine Überziehung war real bezahlt, ohne dass sie später irgendwo fehlt.
 

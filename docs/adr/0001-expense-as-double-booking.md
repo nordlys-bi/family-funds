@@ -1,6 +1,6 @@
 # Expense-Realaktionen als Doppelbuchung in `ExpenseTransaction` und `SavingsGoalExecution`
 
-Status: accepted
+Status: superseded by [ADR-0005](0005-envelopes-as-unified-virtual-accounts.md) (gilt bis zu dessen Umsetzung)
 
 Wir unterscheiden zwei unabhängige Buchungs-Ströme: tatsächliche Ausgaben (`ExpenseTransaction`) für Ausgaben-Reports und Topf-Bewegungen (`SavingsGoalExecution`) für den Stand eines `SavingsGoal`-Topfes. Wenn eine Real-Aktion aus einem Spar-Topf bezahlt wird (z.B. eine 180€-Reise aus dem "Urlaub"-Topf), erzeugt sie **beide** Buchungen — eine `ExpenseTransaction` (damit die Reise im Ausgaben-Reporting erscheint) und eine `SavingsGoalExecution` mit negativem Betrag (damit der Topf-Stand automatisch sinkt).
 

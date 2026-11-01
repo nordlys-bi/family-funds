@@ -1,6 +1,6 @@
 # Umschläge: Budgets, Sparziele und Fixkosten als ein virtuelles Konto
 
-Status: proposed
+Status: accepted (noch nicht umgesetzt)
 
 Seit [ADR-0004](0004-budget-as-virtual-account.md) sind Budgets virtuelle Konten mit fortlaufendem Saldo. Sparziele sind es der Sache nach auch — ihr Stand ist die Summe der Bewegungen —, werden aber als eigenes Modell mit eigenen Buchungsregeln geführt. Daraus entstehen Sonderwege, die sich gegenseitig stützen müssen:
 
@@ -162,5 +162,5 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 ## Folgen
 
 - Löst [ADR-0001](0001-expense-as-double-booking.md) ab, erweitert [ADR-0004](0004-budget-as-virtual-account.md) (Saldo-Konzept, Schließen, Löschen bleiben gültig; "Zuteilungen sind keine Buchungen" und `BudgetVersion` werden durch gebuchte Zuteilungen ersetzt, "Periodenansicht bleibt" durch "Bewertung nach Saldo"), ändert die Hochrechnung aus [ADR-0003](0003-forecast-mode.md). [ADR-0002](0002-recurring-plan-coverage.md) bleibt gültig; Pläne bekommen zusätzlich eine Rolle als Zuteilungsquelle.
-- `CONTEXT.md` (Budget, SavingsGoal, Buchungs-Logik, Doppelbuchung, Umbuchung) wird bei Annahme umgeschrieben.
+- `CONTEXT.md` (Budget, SavingsGoal, Buchungs-Logik, Doppelbuchung, Umbuchung) beschreibt bis zur Umsetzung weiter den Ist-Stand und verweist auf diese ADR; umgeschrieben wird mit der Umsetzung.
 - API: `/budgets` und `/savings-goals` werden zu `/envelopes`; Gruppen-Ansichten filtern per `group`.

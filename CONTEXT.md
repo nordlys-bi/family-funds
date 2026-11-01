@@ -198,6 +198,8 @@ Geplante Einnahmen.
 
 Wiederkehrende Fixkosten.
 
+> **Zielbild:** [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md) (angenommen, noch nicht umgesetzt) führt `Budget` und `SavingsGoal` zu **Umschlägen** (`Envelope`) mit Gruppen, gebuchten Zuteilungen, "Zu verteilen" und Vormerkungen zusammen. Die folgenden Abschnitte beschreiben den Ist-Stand bis zur Umsetzung.
+
 ### Budget
 
 Virtuelles Konto für eine Ausgaben-Kategorie (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder"). Der Betrag der `BudgetVersion` ist eine **Zuteilung**, die zu Beginn jeder Periode gutgeschrieben wird; Ausgaben werden dagegen gebucht. Der **Saldo** bleibt über Periodengrenzen stehen — Reste werden übernommen, Überziehungen ebenso. Er verfällt nie, ist nicht gedeckelt und darf negativ werden. Siehe [ADR-0004](docs/adr/0004-budget-as-virtual-account.md).
@@ -250,6 +252,8 @@ Dadurch bleiben Auswertungen, Forecasts und spätere Erweiterungen möglich.
 ---
 
 ## Buchungs-Logik
+
+> **Zielbild:** Mit [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md) entfallen Doppelbuchung und `SavingsGoalExecution`; Ausgaben und Einnahmen hängen optional an einem Umschlag, Geld zwischen Umschlägen bewegt eine `EnvelopeTransfer`. Bis zur Umsetzung gilt der folgende Ist-Stand.
 
 Die App unterscheidet zwei voneinander unabhängige Buchungs-Ströme:
 

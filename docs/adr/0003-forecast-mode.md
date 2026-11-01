@@ -1,6 +1,6 @@
 # Forecast-Modus: Plan vs. Ist-Hochrechnung
 
-Status: **accepted** (issue #60)
+Status: **accepted** (issue #60), Hochrechnung geändert durch [ADR-0005](0005-envelopes-as-unified-virtual-accounts.md): künftig auf den Saldo am Periodenende statt auf die Periodenausgaben.
 
 ## Konzept
 
