@@ -22,7 +22,7 @@ const prismaMocks = vi.hoisted(() => ({
     update: vi.fn(),
   },
   householdMember: { count: vi.fn() },
-  budget: { count: vi.fn() },
+  envelope: { count: vi.fn() },
   expenseTransaction: { count: vi.fn() },
 }))
 
@@ -185,7 +185,7 @@ describe('GET /api/households/:id/activity', () => {
   it('liefert die Counts parallel', async () => {
     mockAuthMembership()
     prismaMocks.householdMember.count.mockResolvedValue(2)
-    prismaMocks.budget.count.mockResolvedValue(3)
+    prismaMocks.envelope.count.mockResolvedValue(3)
     prismaMocks.expenseTransaction.count.mockResolvedValue(15)
 
     const event = {

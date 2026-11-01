@@ -4,12 +4,12 @@ import { requireHouseholdOwner } from '../../../utils/household-access'
 import {
   assertFrequency,
   assertPlanningKind,
-  assertPeriodStart,
-  generateBudgetKey,
   parseDateInput,
   parseMoneyToCents,
   parseOptionalDateInput,
 } from '../../../utils/planning'
+import { ensureAllocations } from '../../../utils/envelope-store'
+import { parsePlanEnvelope } from '../../../utils/envelope-transfer'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
@@ -18,17 +18,19 @@ type PlanningCreateBody = {
   name?: string
   amount?: string | number
   frequency?: string
-  validFrom?: string
-  targetAmount?: string | number
-  monthlyRate?: string | number
   startDate?: string
   endDate?: string | null
-  // Issue #59 polish: optionales Budget fuer Income-/FixedCost-Plan.
+  // Issue #59 polish: optionaler Umschlag fuer Income-/FixedCost-Plan.
   // Beim "Als bezahlt/erhalten markieren"-Flow erbt die neue
-  // Transaktion dieses Budget. null = kein Default, Transaktion
-  // wird mit budgetId=null angelegt.
+  // Transaktion diesen Umschlag; ein Fixkosten-Umschlag mit Zuteilung
+  // aus Plaenen (ADR-0005) teilt aus ihm zu. null = kein Umschlag.
+  envelopeId?: string | null
+  // Alter Name bis #159.
   budgetId?: string | null
 }
+
+// Budgets und Sparziele werden seit ADR-0005 als Umschlaege ueber
+// POST .../envelopes angelegt.
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -47,52 +49,12 @@ export default defineEventHandler(async (event) => {
   }
 
   switch (kind) {
-    case 'budget': {
-      const amount = parseMoneyToCents(body.amount, 'Amount')
-      const frequency = assertFrequency(body.frequency)
-      const validFrom = parseDateInput(body.validFrom, 'Valid from')
-      assertPeriodStart(validFrom, frequency, 'Valid from')
-
-      // ADR-0004: Frequenz gehoert fest zum Budget. Der Saldo startet mit
-      // der Periode der ersten Version — `validFrom` ist per
-      // `assertPeriodStart` bereits ein Periodenbeginn.
-      const item = await prisma.budget.create({
-        data: {
-          householdId,
-          key: generateBudgetKey(),
-          name,
-          frequency,
-          balanceSince: validFrom,
-          versions: {
-            create: {
-              amount,
-              validFrom,
-            },
-          },
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
     case 'incomePlan': {
       const amount = parseMoneyToCents(body.amount, 'Amount')
       const frequency = assertFrequency(body.frequency)
       const startDate = parseDateInput(body.startDate, 'Start date')
       const endDate = parseOptionalDateInput(body.endDate)
-      const budgetId = body.budgetId?.trim() || null
-
-      if (budgetId) {
-        const budget = await prisma.budget.findFirst({
-          where: { id: budgetId, householdId },
-          select: { id: true },
-        })
-        if (!budget) {
-          throw createError({
-            statusCode: 404,
-            statusMessage: 'Budget not found.',
-          })
-        }
-      }
+      const envelopeId = (await parsePlanEnvelope(householdId, body)) ?? null
 
       const item = await prisma.incomePlan.create({
         data: {
@@ -102,7 +64,7 @@ export default defineEventHandler(async (event) => {
           frequency,
           startDate,
           endDate,
-          budgetId,
+          envelopeId,
         },
       })
 
@@ -113,20 +75,11 @@ export default defineEventHandler(async (event) => {
       const frequency = assertFrequency(body.frequency)
       const startDate = parseDateInput(body.startDate, 'Start date')
       const endDate = parseOptionalDateInput(body.endDate)
-      const budgetId = body.budgetId?.trim() || null
+      const envelopeId = (await parsePlanEnvelope(householdId, body)) ?? null
 
-      if (budgetId) {
-        const budget = await prisma.budget.findFirst({
-          where: { id: budgetId, householdId },
-          select: { id: true },
-        })
-        if (!budget) {
-          throw createError({
-            statusCode: 404,
-            statusMessage: 'Budget not found.',
-          })
-        }
-      }
+      // Ein neuer Plan aendert die Zuteilung eines Fixkosten-Umschlags —
+      // erst nachbuchen, dann aendern (ADR-0005, Regel 1).
+      if (envelopeId) await ensureAllocations(householdId)
 
       const item = await prisma.fixedCostPlan.create({
         data: {
@@ -136,26 +89,7 @@ export default defineEventHandler(async (event) => {
           frequency,
           startDate,
           endDate,
-          budgetId,
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
-    case 'savingsGoal': {
-      const targetAmount = parseMoneyToCents(body.targetAmount, 'Target amount')
-      const monthlyRate = parseMoneyToCents(body.monthlyRate, 'Monthly rate')
-      const startDate = parseDateInput(body.startDate, 'Start date')
-      const endDate = parseOptionalDateInput(body.endDate)
-
-      const item = await prisma.savingsGoal.create({
-        data: {
-          householdId,
-          name,
-          targetAmount,
-          monthlyRate,
-          startDate,
-          endDate,
+          envelopeId,
         },
       })
 

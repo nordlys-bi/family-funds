@@ -5,13 +5,18 @@ import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
+import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
 
 type TransactionCreateBody = {
   kind: string
   amount?: string | number
   description?: string | null
   date?: string
+  // ADR-0005: Umschlag der Buchung, null = "Zu verteilen". Auch fuer
+  // Einnahmen (Gutschrift auf einen Umschlag).
+  envelopeId?: string | null
+  // Alter Name bis zur neuen Erfassung (#156) — die IDs migrierter Budgets
+  // sind die ihrer Umschlaege. Nur fuer Ausgaben ausgewertet.
   budgetId?: string | null
   // Issue #59: optionaler FK auf einen Recurring-Plan, gesetzt wenn
   // der User die Transaktion ueber den "Als bezahlt markieren"-Flow
@@ -48,7 +53,7 @@ export default defineEventHandler(async (event) => {
 
   if (kind === 'expense') {
     const fixedCostPlanId = body.fixedCostPlanId?.trim() || null
-    let budgetId = body.budgetId?.trim() || null
+    let envelopeId = (body.envelopeId ?? body.budgetId)?.trim() || null
 
     if (fixedCostPlanId) {
       const plan = await prisma.fixedCostPlan.findFirst({
@@ -56,7 +61,7 @@ export default defineEventHandler(async (event) => {
           id: fixedCostPlanId,
           householdId,
         },
-        select: { id: true, budgetId: true },
+        select: { id: true, envelopeId: true },
       })
 
       if (!plan) {
@@ -67,33 +72,16 @@ export default defineEventHandler(async (event) => {
       }
 
       // Issue #59 polish (Option c, hart gekoppelt): wenn der Plan
-      // ein Default-Budget hat, erbt die Transaktion dieses Budget.
+      // einen Umschlag hat, erbt die Transaktion diesen Umschlag.
       // Per-Transaction-Override ist nicht vorgesehen — wer das
       // nachtraeglich aendern will, nutzt den Transaction-Row-Editor.
-      if (plan.budgetId && !budgetId) {
-        budgetId = plan.budgetId
+      if (plan.envelopeId && !envelopeId) {
+        envelopeId = plan.envelopeId
       }
     }
 
-    if (budgetId) {
-      const budget = await prisma.budget.findFirst({
-        where: {
-          id: budgetId,
-          householdId,
-        },
-        select: { id: true, closedAt: true },
-      })
-
-      if (!budget) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Budget not found.',
-        })
-      }
-
-      // ADR-0004: keine Ausgaben ab dem Stichtag eines geschlossenen Budgets.
-      assertBudgetOpenOn(budget, date)
-    }
+    // ADR-0005: keine Buchungen ab dem Stichtag eines geschlossenen Umschlags.
+    await assertBookingEnvelope(householdId, envelopeId, date)
 
     const item = await prisma.expenseTransaction.create({
       data: {
@@ -102,7 +90,7 @@ export default defineEventHandler(async (event) => {
         amount,
         description,
         date,
-        budgetId,
+        envelopeId,
         fixedCostPlanId,
       },
     })
@@ -112,13 +100,12 @@ export default defineEventHandler(async (event) => {
 
   // kind === 'income'
   //
-  // Einnahmen tragen KEIN Budget (issue #105). Budgets sind laut
-  // CONTEXT.md periodische Maximalbetraege fuer Ausgaben-Kategorien;
-  // `IncomeTransaction` hat entsprechend kein `budgetId`-Feld im Schema.
-  // Ein frueherer #59-Stand hat `budgetId` hier durchgereicht — das lief
-  // in einen Prisma-Validierungsfehler und hat jede Einnahme-Erfassung
-  // blockiert. `body.budgetId` wird jetzt bewusst ignoriert.
+  // ADR-0005: Eine Einnahme kann einem Umschlag gutgeschrieben werden
+  // (Verkauf → Kinder), sonst geht sie nach "Zu verteilen". Nur
+  // `envelopeId` zaehlt — `budgetId` bleibt bei Einnahmen bewusst
+  // ignoriert (issue #105: das alte UI schickt dort Ausgaben-Budgets mit).
   const incomePlanId = body.incomePlanId?.trim() || null
+  let envelopeId = body.envelopeId?.trim() || null
 
   if (incomePlanId) {
     const plan = await prisma.incomePlan.findFirst({
@@ -126,7 +113,7 @@ export default defineEventHandler(async (event) => {
         id: incomePlanId,
         householdId,
       },
-      select: { id: true },
+      select: { id: true, envelopeId: true },
     })
 
     if (!plan) {
@@ -135,7 +122,15 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Income plan not found.',
       })
     }
+
+    // Wie bei Fixkosten: Eine Einnahme aus einem Plan mit Umschlag wird
+    // diesem gutgeschrieben (Kindergeld → Kinder).
+    if (plan.envelopeId && !envelopeId) {
+      envelopeId = plan.envelopeId
+    }
   }
+
+  await assertBookingEnvelope(householdId, envelopeId, date)
 
   const item = await prisma.incomeTransaction.create({
     data: {
@@ -145,6 +140,7 @@ export default defineEventHandler(async (event) => {
       description,
       date,
       incomePlanId,
+      envelopeId,
     },
   })
 

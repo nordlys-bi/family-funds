@@ -33,6 +33,8 @@ const prismaMocks = vi.hoisted(() => ({
   incomePlan: { findFirst: vi.fn(), delete: vi.fn() },
   fixedCostPlan: { findFirst: vi.fn(), delete: vi.fn() },
   savingsGoal: { findFirst: vi.fn(), delete: vi.fn() },
+  // ensureAllocations vor dem Loeschen eines Fixkosten-Plans (ADR-0005).
+  envelope: { findMany: vi.fn().mockResolvedValue([]) },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -48,10 +50,8 @@ vi.mock('../../../../utils/household-access', () => ({
 
 import expenseHandler from '../expenses/[id].delete'
 import incomeHandler from '../incomes/[id].delete'
-import budgetHandler from '../budgets/[id].delete'
 import incomePlanHandler from '../income-plans/[id].delete'
 import fixedCostPlanHandler from '../fixed-cost-plans/[id].delete'
-import savingsGoalHandler from '../savings-goals/[id].delete'
 // 410 Gone Tombstones
 import oldTransactionsDelete from '../transactions.delete'
 import oldPlanningDelete from '../planning.delete'
@@ -176,53 +176,6 @@ describe('DELETE /households/:id/incomes/:incomeId', () => {
   })
 })
 
-describe('DELETE /households/:id/budgets/:budgetId (owner-only)', () => {
-  it('returns the envelope on success', async () => {
-    mockOwner()
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: ITEM_ID })
-    prismaMocks.budget.delete.mockResolvedValue({ id: ITEM_ID })
-
-    const response = await budgetHandler(makeEvent())
-
-    expect(response).toEqual({ data: { kind: 'budget', deleted: true } })
-  })
-
-  it('requires OWNER (rejects plain Members)', async () => {
-    authMocks.requireHouseholdOwner.mockRejectedValue({
-      statusCode: 403,
-      statusMessage: 'Only owners can manage this household.',
-    })
-    await expect(budgetHandler(makeEvent())).rejects.toMatchObject({ statusCode: 403 })
-  })
-
-  it('throws 404 when budget not in household', async () => {
-    mockOwner()
-    prismaMocks.budget.findFirst.mockResolvedValue(null)
-    await expect(budgetHandler(makeEvent())).rejects.toMatchObject({ statusCode: 404 })
-  })
-
-  // ADR-0004: Budgets mit Spuren werden geschlossen, nicht geloescht.
-  it.each([
-    ['expenses (incl. soft-deleted)', () => prismaMocks.expenseTransaction.count.mockResolvedValue(1)],
-    ['savings transfers', () => prismaMocks.savingsGoalExecution.count.mockResolvedValue(1)],
-    ['a closed predecessor', () => prismaMocks.budget.count.mockResolvedValue(1)],
-  ])('throws 409 when the budget has %s', async (_label, arrange) => {
-    mockOwner()
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: ITEM_ID })
-    arrange()
-    await expect(budgetHandler(makeEvent())).rejects.toMatchObject({ statusCode: 409 })
-    expect(prismaMocks.budget.delete).not.toHaveBeenCalled()
-  })
-
-  it('counts soft-deleted expenses too (no deletedAt filter)', async () => {
-    mockOwner()
-    prismaMocks.budget.findFirst.mockResolvedValue({ id: ITEM_ID })
-    prismaMocks.budget.delete.mockResolvedValue({ id: ITEM_ID })
-    await budgetHandler(makeEvent())
-    expect(prismaMocks.expenseTransaction.count).toHaveBeenCalledWith({ where: { budgetId: ITEM_ID } })
-  })
-})
-
 describe('DELETE /households/:id/income-plans/:planId', () => {
   it('returns the envelope on success', async () => {
     mockOwner()
@@ -253,18 +206,6 @@ describe('DELETE /households/:id/fixed-cost-plans/:planId', () => {
   })
 })
 
-describe('DELETE /households/:id/savings-goals/:goalId', () => {
-  it('returns the envelope on success', async () => {
-    mockOwner()
-    prismaMocks.savingsGoal.findFirst.mockResolvedValue({ id: ITEM_ID })
-    prismaMocks.savingsGoal.delete.mockResolvedValue({ id: ITEM_ID })
-
-    const response = await savingsGoalHandler(makeEvent())
-
-    expect(response).toEqual({ data: { kind: 'savingsGoal', deleted: true } })
-  })
-})
-
 describe('410 Gone Tombstones (alte fat DELETE-Endpoints)', () => {
   it('transactions.delete.ts liefert 410 mit Hinweis auf Split-Routes', async () => {
     await expect(oldTransactionsDelete(makeEvent())).rejects.toMatchObject({
@@ -276,7 +217,7 @@ describe('410 Gone Tombstones (alte fat DELETE-Endpoints)', () => {
   it('planning.delete.ts liefert 410 mit Hinweis auf Split-Routes', async () => {
     await expect(oldPlanningDelete(makeEvent())).rejects.toMatchObject({
       statusCode: 410,
-      statusMessage: expect.stringMatching(/(budgets|income-plans|fixed-cost-plans|savings-goals)/),
+      statusMessage: expect.stringMatching(/(envelopes|income-plans|fixed-cost-plans)/),
     })
   })
 
