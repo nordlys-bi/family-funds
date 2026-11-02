@@ -16,7 +16,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } fro
 import Menu from 'primevue/menu'
 import type { Notice } from '~/types/planning'
 import type { EnvelopeHistoryEntry, EnvelopeHistoryResponse, EnvelopeItem } from '~/types/envelope'
-import type { BalanceChartEvent } from '~/components/BudgetBalanceChart.vue'
+import type { BalanceChartEvent } from '~/components/EnvelopeBalanceChart.vue'
 import { compactMoneyLabel } from '~/utils/balance-chart'
 import { ENVELOPE_GROUPS } from '~/utils/envelope-options'
 import {
@@ -25,7 +25,7 @@ import {
   groupEntriesByPeriod,
   periodStartDay,
   trendVersusPreviousPeriod,
-} from '~/utils/budget-detail'
+} from '~/utils/envelope-detail'
 
 definePageMeta({ layout: 'default' })
 
@@ -300,7 +300,7 @@ const groups = computed(() =>
 
 function groupLabel(group: { start: string; end: string | null }) {
   if (!envelope.value) return ''
-  return formatBudgetPeriodLabel(envelope.value.frequency, `${group.start}T12:00:00`, group.end ? `${group.end}T12:00:00` : null)
+  return formatEnvelopePeriodLabel(envelope.value.frequency, `${group.start}T12:00:00`, group.end ? `${group.end}T12:00:00` : null)
 }
 
 // Laufende Periode offen, aeltere zu — die aktuelle ist fast immer die
@@ -562,7 +562,7 @@ function onDeleted(id: string) {
 
         <div v-if="period" class="period-strip">
           <div class="period-strip__row">
-            <span class="period-strip__label">{{ formatBudgetPeriodLabel(envelope.frequency, period.start, period.end) }}</span>
+            <span class="period-strip__label">{{ formatEnvelopePeriodLabel(envelope.frequency, period.start, period.end) }}</span>
           </div>
           <ListProgressBar
             v-if="envelope.group === 'RUNNING'"
@@ -618,7 +618,7 @@ function onDeleted(id: string) {
           <button v-if="months !== 0" type="button" class="link-button" @click="months = 0">Ganzen Verlauf zeigen</button>
         </div>
         <template v-else>
-          <BudgetBalanceChart
+          <EnvelopeBalanceChart
             :class="{ 'is-loading': historyLoading }"
             :points="history.points"
             :events="chartEvents"

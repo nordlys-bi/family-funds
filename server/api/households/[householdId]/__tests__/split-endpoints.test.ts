@@ -19,7 +19,6 @@ const prismaMocks = vi.hoisted(() => ({
   householdInvitation: { findMany: vi.fn() },
   budget: { findMany: vi.fn() },
   expenseTransaction: { findMany: vi.fn() },
-  savingsGoalExecution: { findMany: vi.fn() },
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -52,7 +51,6 @@ function mockMembershipSuccess() {
 beforeEach(() => {
   vi.clearAllMocks()
   prismaMocks.expenseTransaction.findMany.mockResolvedValue([])
-  prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([])
 })
 
 describe('GET /households/:id/members', () => {

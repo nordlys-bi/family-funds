@@ -39,7 +39,6 @@ const prismaMocks = vi.hoisted(() => ({
   expenseTransaction: { findMany: vi.fn(), aggregate: vi.fn(), count: vi.fn() },
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
-  savingsGoalExecution: { findMany: vi.fn() },
   householdMember: { count: vi.fn() },
   // Issue #98: dashboard.get lädt jetzt auch Recurring-Pläne.
   fixedCostPlan: { findMany: vi.fn() },
@@ -106,7 +105,6 @@ beforeEach(() => {
   prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
   prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
   prismaMocks.savingsGoal.findMany.mockResolvedValue([])
-  prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([])
   prismaMocks.householdMember.count.mockResolvedValue(0)
   prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
   prismaMocks.incomePlan.findMany.mockResolvedValue([])

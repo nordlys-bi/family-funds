@@ -9,8 +9,7 @@
  */
 import type { AllocationSource, EnvelopeGroup, Frequency } from '@prisma/client'
 import { prisma } from './prisma'
-import { dayKey } from './budget-balance'
-import { addPeriod, startOfPeriod, type PeriodSeverity } from './budget-evaluation'
+import { addPeriod, dayKey, startOfPeriod, type PeriodSeverity } from './period'
 import {
   classifyEnvelopeSeverity,
   computePeriodAvailability,

@@ -21,7 +21,7 @@ type DashboardData = {
     amount: number
     description: string | null
     date: string
-    budgetName: string | null
+    envelopeName: string | null
     userDisplayName: string | null
   }>
   // Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
@@ -171,7 +171,7 @@ watch(quickCapture.savedTick, loadDashboard)
             />
           </NuxtLink>
         </template>
-        <DashboardBudgetPeriodGrid :envelopes="runningEnvelopes" :format-money="formatMoney" />
+        <DashboardEnvelopeGrid :envelopes="runningEnvelopes" :format-money="formatMoney" />
       </ListPanel>
 
       <!-- Handlungsbedarf (issue #37): stand urspruenglich ganz oben, weil

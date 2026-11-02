@@ -42,7 +42,7 @@ defineProps<{
    * Look mit Background/Border/Shadow) bleibt trotzdem ausgeblendet.
    * Fuer Panels, deren Inhalt keine ItemCard/SwipeableListItem-Zeilen
    * sind, sondern z. B. ein eigenes Karten-Grid mit eigenem Rand
-   * (DashboardBudgetPeriodGrid) — das braucht seinen eigenen
+   * (DashboardEnvelopeGrid) — das braucht seinen eigenen
    * Randabstand, aber keine zusaetzliche Trennlinie/Box vom Panel.
    */
   noBleed?: boolean

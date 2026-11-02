@@ -1,7 +1,7 @@
 import { defineEventHandler } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { getMonthWindow } from '../../../utils/budget-evaluation'
+import { getMonthWindow } from '../../../utils/period'
 import { buildRecentActivity } from '../../../utils/dashboard'
 import { countOpenPlans } from '../../../utils/recurring-coverage'
 import { parseUuidParam } from '../../../utils/validation'
@@ -20,10 +20,8 @@ import { loadEnvelopeOverview } from '../../../utils/envelope-overview'
  * - recentActivity (letzte 5 Transaktionen der letzten 7 Tage)
  * - recurringDue   (offene Fixkosten und Einnahmen des Monats)
  *
- * ADR-0005: Budget-Warnungen, Budget-Karten, Sparziel-Fortschritt und die
- * Monatsprognose ueber Budgets sind entfallen — sie ergeben sich aus
- * `envelopes` (Gruppe, `severity`, `currentPeriod`, `targetAmount`). Das
- * Dashboard-UI zieht in #157 nach.
+ * Karten, Warnungen und Sparziel-Fortschritt ergeben sich im Client aus
+ * `envelopes` (Gruppe, `severity`, `currentPeriod`, `targetAmount`).
  *
  * Auth via `requireHouseholdMembership`.
  */
@@ -73,7 +71,6 @@ export default defineEventHandler(async (event) => {
         amount: true,
         description: true,
         date: true,
-        envelopeId: true,
         envelope: { select: { name: true } },
         user: { select: { displayName: true } },
       },
@@ -81,7 +78,7 @@ export default defineEventHandler(async (event) => {
     prisma.incomeTransaction.findMany({
       where: { householdId, date: { gte: sevenDaysAgo, lte: now }, deletedAt: null },
       orderBy: { date: 'desc' },
-      select: { id: true, amount: true, description: true, date: true, user: { select: { displayName: true } } },
+      select: { id: true, amount: true, description: true, date: true, envelope: { select: { name: true } }, user: { select: { displayName: true } } },
     }),
     prisma.fixedCostPlan.findMany({
       where: { householdId },
@@ -130,7 +127,7 @@ export default defineEventHandler(async (event) => {
     envelopes: overview.envelopes,
     unassigned: overview.unassigned,
     recentActivity: buildRecentActivity(
-      recentExpenses.map(({ envelopeId, envelope, ...expense }) => ({ ...expense, budgetId: envelopeId, budget: envelope })),
+      recentExpenses,
       recentIncomes,
       now,
     ),

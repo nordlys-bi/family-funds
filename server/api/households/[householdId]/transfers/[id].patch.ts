@@ -18,7 +18,7 @@ import { parseUuidParam } from '../../../../utils/validation'
 import { parseDateInput, parseMoneyToCents } from '../../../../utils/planning'
 import { parseMoneyToCentsAllowZero } from '../../../../utils/envelope-lifecycle'
 import { assertTransferSides, parseEnvelopeSide } from '../../../../utils/envelope-transfer'
-import { dayKey } from '../../../../utils/budget-balance'
+import { dayKey } from '../../../../utils/period'
 
 type UpdateTransferBody = {
   fromEnvelopeId?: string | null

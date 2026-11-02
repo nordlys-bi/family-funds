@@ -14,7 +14,8 @@
  * nicht und zaehlen deshalb nicht als Abweichung.
  */
 import { PrismaClient } from '@prisma/client'
-import { computeBudgetBalances, dayKey } from '../server/utils/budget-balance'
+import { dayKey } from '../server/utils/period'
+import { computeBudgetBalances } from './lib/legacy-budget-balance'
 import { computeEnvelopeBalances } from '../server/utils/envelope-balance'
 
 const prisma = new PrismaClient()

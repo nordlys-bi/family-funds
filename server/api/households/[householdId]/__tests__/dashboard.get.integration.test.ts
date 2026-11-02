@@ -165,7 +165,7 @@ describe('GET /api/households/:id/dashboard — recurringDue (issue #98)', () =>
 describe('GET /api/households/:id/dashboard — recentActivity', () => {
   const daysAgo = (days: number) => new Date(Date.now() - days * 86400000)
   const expense = (id: string, date: Date, envelope: { name: string } | null = null) => ({
-    id, amount: 100, description: id, date, envelopeId: envelope ? `env-${id}` : null, envelope, user: { displayName: 'Jan' },
+    id, amount: 100, description: id, date, envelope, user: { displayName: 'Jan' },
   })
 
   it('returns at most 5 entries from the last 7 days, newest first, with the envelope name', async () => {
@@ -183,14 +183,14 @@ describe('GET /api/households/:id/dashboard — recentActivity', () => {
     prismaMocks.incomeTransaction.findMany.mockImplementation(async (args: any) => {
       if (args?.where?.incomePlanId) return []
       return [
-        { id: 'i1', amount: 5000, description: 'Verkauf', date: daysAgo(0.5), user: { displayName: 'Sarah' } },
-        { id: 'i2', amount: 5000, description: 'alt', date: daysAgo(6), user: { displayName: 'Sarah' } },
+        { id: 'i1', amount: 5000, description: 'Verkauf', date: daysAgo(0.5), envelope: null, user: { displayName: 'Sarah' } },
+        { id: 'i2', amount: 5000, description: 'alt', date: daysAgo(6), envelope: null, user: { displayName: 'Sarah' } },
       ]
     })
 
     const response = await handler(makeEvent(HH_ID))
 
     expect(response.recentActivity.map((entry) => entry.id)).toEqual(['i1', 'e1', 'e2', 'e3', 'e4'])
-    expect(response.recentActivity[1]).toMatchObject({ budgetId: 'env-e1', budgetName: 'Lebensmittel' })
+    expect(response.recentActivity[1]).toMatchObject({ envelopeName: 'Lebensmittel' })
   })
 })

@@ -1,9 +1,7 @@
 /**
  * Rechenkern fuer Umschlaege (ADR-0005, issue #154).
  *
- * Reine Funktionen ohne DB-Zugriff. Noch von nichts aufgerufen — #155 baut
- * Schema und `ensureAllocations` darauf auf. Bis dahin rechnet die App weiter
- * nach ADR-0004 (`budget-balance.ts`).
+ * Reine Funktionen ohne DB-Zugriff; die Anbindung liegt in `envelope-store.ts`.
  *
  * Zuteilungen werden in ADR-0005 gebucht statt berechnet: Sobald eine Periode
  * begonnen hat, entsteht eine Zeile mit dem Betrag, den die Regel *zu diesem
@@ -17,8 +15,7 @@
  * Vergleiche laufen tagesgenau ueber `dayKey` (12:00 Serverzeit).
  */
 import type { Frequency } from '@prisma/client'
-import { dayKey } from './budget-balance'
-import { addPeriod, startOfPeriod, type PeriodSeverity } from './budget-evaluation'
+import { addPeriod, dayKey, startOfPeriod, type PeriodSeverity } from './period'
 
 export type AllocationPlan = {
   amount: number

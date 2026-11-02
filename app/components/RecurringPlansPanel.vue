@@ -390,9 +390,8 @@ async function submitMark() {
   color: var(--color-accent-warning-text);
 }
 
-/* Issue #59: warn/danger-Severity fuer den Coverage-Tag (analog zu
-   savings-progress.ts, damit der User dieselbe Farb-Sprache
-   wiedererkennt). */
+/* Issue #59: warn/danger-Severity fuer den Coverage-Tag (dieselbe
+   Farb-Sprache wie bei den Umschlaegen). */
 .row-tag--warn {
   background: rgba(251, 191, 36, 0.18);
   color: var(--color-accent-warning-text);

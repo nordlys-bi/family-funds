@@ -1,7 +1,7 @@
 import { createError, defineEventHandler, getQuery } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { getMonthWindow } from '../../../utils/budget-evaluation'
+import { getMonthWindow } from '../../../utils/period'
 import { parseOptionalUuidQuery, parseUuidParam } from '../../../utils/validation'
 
 const DEFAULT_LIMIT = 200
