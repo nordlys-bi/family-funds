@@ -18,6 +18,7 @@ import type { Notice } from '~/types/planning'
 import type { EnvelopeHistoryEntry, EnvelopeHistoryResponse, EnvelopeItem } from '~/types/envelope'
 import type { BalanceChartEvent } from '~/components/BudgetBalanceChart.vue'
 import { compactMoneyLabel } from '~/utils/balance-chart'
+import { ENVELOPE_GROUPS } from '~/utils/envelope-options'
 import {
   allHistoryFrom,
   balanceTrendOf,
@@ -37,7 +38,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 /** Obergrenze des Servers fuer den Verlauf (MAX_HISTORY_RANGE_DAYS). */
 const MAX_HISTORY_DAYS = 2 * 366
 
-const budgetId = computed(() => String(route.params.id ?? ''))
+const envelopeId = computed(() => String(route.params.id ?? ''))
 const householdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => activeHousehold.value?.currency ?? 'EUR')
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
@@ -46,45 +47,50 @@ const compactMoney = (value: number) => compactMoneyLabel(formatMoney(value))
 /** Betrag mit echtem Minuszeichen bzw. Plus — Vorzeichen ist hier die Aussage. */
 const signedMoney = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : '±'}${compactMoney(Math.abs(value))}`
 
-const budgets = ref<EnvelopeItem[]>([])
+const envelopes = ref<EnvelopeItem[]>([])
 const loading = ref(true)
 const loaded = ref(false)
 // Ladefehler getrennt von "nicht gefunden": Bei Netz-/500-Fehlern darf die
-// Seite nicht behaupten, das Budget gebe es nicht (mehr).
+// Seite nicht behaupten, der Umschlag gebe es nicht (mehr).
 const loadError = ref<string | null>(null)
 const notice = ref<Notice | null>(null)
 const dialogs = ref<{
-  openEdit: (budget: EnvelopeItem) => void
-  openClose: (budget: EnvelopeItem) => void
-  openTransfer: (budget: EnvelopeItem, preset?: { direction: 'out' | 'in'; amountCents: number }) => void
-  remove: (budget: EnvelopeItem) => Promise<void>
+  openEdit: (envelope: EnvelopeItem) => void
+  openClose: (envelope: EnvelopeItem) => void
+  openTransfer: (envelope: EnvelopeItem, preset?: { direction: 'out' | 'in'; amountCents: number }) => void
+  remove: (envelope: EnvelopeItem) => Promise<void>
 } | null>(null)
 
-const budgetsById = computed(() => new Map(budgets.value.map((budget) => [budget.id, budget] as const)))
-const budget = computed(() => budgetsById.value.get(budgetId.value) ?? null)
+const envelopesById = computed(() => new Map(envelopes.value.map((envelope) => [envelope.id, envelope] as const)))
+const envelope = computed(() => envelopesById.value.get(envelopeId.value) ?? null)
 // Nicht gefunden nur bei ungueltiger ID oder wenn das Laden geklappt hat
-// und das Budget im Haushalt fehlt — nie nach einem Ladefehler.
+// und der Umschlag im Haushalt fehlt — nie nach einem Ladefehler.
 const notFound = computed(() =>
-  !UUID_PATTERN.test(budgetId.value) || (loaded.value && !loadError.value && !budget.value),
+  !UUID_PATTERN.test(envelopeId.value) || (loaded.value && !loadError.value && !envelope.value),
 )
 
-const balance = computed(() => budget.value?.balance.balance ?? 0)
-const isClosed = computed(() => Boolean(budget.value?.closedAt && new Date(budget.value.closedAt) <= new Date()))
-const hasClosingDate = computed(() => Boolean(budget.value?.closedAt))
+const balance = computed(() => envelope.value?.balance.balance ?? 0)
+const envelopeGroupLabel = computed(() => ENVELOPE_GROUPS.find((group) => group.value === envelope.value?.group)?.label ?? '')
+const targetPercent = computed(() => {
+  const target = envelope.value?.targetAmount
+  return target ? Math.max(0, balance.value / target) * 100 : null
+})
+const isClosed = computed(() => Boolean(envelope.value?.closedAt && new Date(envelope.value.closedAt) <= new Date()))
+const hasClosingDate = computed(() => Boolean(envelope.value?.closedAt))
 const successor = computed(() =>
-  budget.value?.carryoverToEnvelopeId ? budgetsById.value.get(budget.value.carryoverToEnvelopeId) ?? null : null,
+  envelope.value?.carryoverToEnvelopeId ? envelopesById.value.get(envelope.value.carryoverToEnvelopeId) ?? null : null,
 )
-// Geschlossen: Der Endsaldo steckt laut ADR-0004 bereits im Ziel-Budget.
+// Geschlossen: Der Endsaldo steckt laut ADR-0004 bereits im Ziel.
 // Deshalb neutral statt gruen/rot — sonst wirkt er wie verfuegbares Geld.
 const balanceLabel = computed(() => (isClosed.value ? 'Endsaldo' : 'Saldo'))
-const closingDateLabel = computed(() => formatPlanningDate(budget.value?.closedAt ?? null))
-const predecessors = computed(() => budgets.value.filter((item) => item.carryoverToEnvelopeId === budgetId.value))
-const period = computed(() => (isClosed.value ? null : budget.value?.currentPeriod ?? null))
-// Ueberzogen nur bei offenen Budgets: ein geschlossenes hat seinen
+const closingDateLabel = computed(() => formatPlanningDate(envelope.value?.closedAt ?? null))
+const predecessors = computed(() => envelopes.value.filter((item) => item.carryoverToEnvelopeId === envelopeId.value))
+const period = computed(() => (isClosed.value ? null : envelope.value?.currentPeriod ?? null))
+// Ueberzogen nur bei offenen Umschlaegen: ein geschlossener hat seinen
 // (auch negativen) Endsaldo schon ans Ziel weitergegeben.
 const overdrawn = computed(() => !isClosed.value && balance.value < 0)
 
-async function loadBudgets() {
+async function loadEnvelopes() {
   if (!householdId.value) {
     loading.value = false
     return
@@ -95,13 +101,13 @@ async function loadBudgets() {
     // Alle Umschlaege statt eines Einzel-Endpoints: Die Seite braucht ohnehin
     // Namen fuer Vorgaenger/Nachfolger und die Ziel-Auswahl beim Schliessen.
     const data = await $fetch<{ envelopes: EnvelopeItem[] }>(`/api/households/${householdId.value}/envelopes`)
-    budgets.value = data.envelopes
+    envelopes.value = data.envelopes
     loaded.value = true
   } catch (error: any) {
     loadError.value = error.statusMessage || error.message || 'Unbekannter Fehler'
     // Schlaegt ein Neuladen nach einer Aktion fehl, bleibt die bisherige
     // Ansicht stehen und der Fehler kommt als Hinweis darueber.
-    if (budget.value) {
+    if (envelope.value) {
       notice.value = { severity: 'error', text: 'Umschlag konnte nicht neu geladen werden: ' + loadError.value }
     }
   } finally {
@@ -133,9 +139,9 @@ function isoDay(date: Date) {
 
 function historyFrom(to: Date): string {
   if (months.value === 0) {
-    // Ohne geladene Budget-Liste (erster Aufruf laeuft parallel) kennt die
+    // Ohne geladene Umschlag-Liste (erster Aufruf laeuft parallel) kennt die
     // Seite balanceSince noch nicht — dann das Server-Maximum.
-    return allHistoryFrom(budgetId.value, budgets.value, isoDay(to), MAX_HISTORY_DAYS)
+    return allHistoryFrom(envelopeId.value, envelopes.value, isoDay(to), MAX_HISTORY_DAYS)
   }
   const from = new Date(to)
   from.setMonth(from.getMonth() - months.value)
@@ -143,13 +149,13 @@ function historyFrom(to: Date): string {
 }
 
 async function loadHistory() {
-  if (!householdId.value || !UUID_PATTERN.test(budgetId.value)) return
+  if (!householdId.value || !UUID_PATTERN.test(envelopeId.value)) return
   historyLoading.value = true
   historyError.value = null
   const to = new Date()
   try {
     history.value = await $fetch<EnvelopeHistoryResponse>(
-      `/api/households/${householdId.value}/envelopes/${budgetId.value}/history`,
+      `/api/households/${householdId.value}/envelopes/${envelopeId.value}/history`,
       { query: { from: historyFrom(to), to: isoDay(to) } },
     )
   } catch (error: any) {
@@ -164,7 +170,7 @@ async function loadHistory() {
 }
 
 async function reload() {
-  await Promise.all([loadBudgets(), loadHistory()])
+  await Promise.all([loadEnvelopes(), loadHistory()])
 }
 
 onMounted(async () => {
@@ -174,7 +180,7 @@ onMounted(async () => {
 watch(householdId, reload)
 // Vorgaenger/Nachfolger-Links bleiben in derselben Komponente — bei neuer
 // ID alles neu laden statt veraltete Daten zu zeigen.
-watch(budgetId, () => {
+watch(envelopeId, () => {
   history.value = null
   notice.value = null
   reload()
@@ -186,19 +192,19 @@ function shortDate(date: string) {
   return `${day}.${month}.`
 }
 
-/** Fremdes Budget der Kette dazuschreiben — sonst ist "Zuteilung" mehrdeutig. */
+/** Fremden Umschlag der Kette dazuschreiben — sonst ist "Zuteilung" mehrdeutig. */
 function chainSuffix(item: { envelopeId: string; envelopeName: string | null }) {
-  return item.envelopeId === budgetId.value || !item.envelopeName ? '' : ` (${item.envelopeName})`
+  return item.envelopeId === envelopeId.value || !item.envelopeName ? '' : ` (${item.envelopeName})`
 }
 
-// Trendzeile nur mit eigener Information: offene Budgets gegenueber dem Ende
+// Trendzeile nur mit eigener Information: offene Umschläge gegenueber dem Ende
 // der Vorperiode. Ohne laufende Periode (geschlossen) die Veraenderung im
 // Zeitraum — aber nicht, wenn der Zeitraum bei 0 beginnt, dann waere sie
 // nur der Saldo noch einmal.
 const trend = computed<{ delta: number; text: string } | null>(() => {
   const points = history.value?.points ?? []
-  if (period.value && budget.value) {
-    const previous = trendVersusPreviousPeriod(points, period.value.start, budget.value.frequency)
+  if (period.value && envelope.value) {
+    const previous = trendVersusPreviousPeriod(points, period.value.start, envelope.value.frequency)
     return previous ? { delta: previous.delta, text: previous.label } : null
   }
   const range = balanceTrendOf(points)
@@ -208,7 +214,7 @@ const trend = computed<{ delta: number; text: string } | null>(() => {
 const rangeHeading = computed(() =>
   months.value === 0 ? 'gesamter Verlauf' : months.value === 1 ? 'letzter Monat' : `letzte ${months.value} Monate`,
 )
-// Budget ohne jede Bewegung: statt einer flachen Nulllinie mit
+// Umschlag ohne jede Bewegung: statt einer flachen Nulllinie mit
 // Phantom-Achse ("0,25 €") ein Leerzustand.
 const historyEmpty = computed(() =>
   Boolean(history.value && history.value.entries.length === 0 && history.value.points.every((point) => point.balance === 0)),
@@ -236,7 +242,7 @@ const chartEvents = computed<BalanceChartEvent[]>(() => {
 })
 
 const predecessorNames = computed(() =>
-  (history.value?.chain ?? []).filter((item) => item.id !== budgetId.value).map((item) => item.name),
+  (history.value?.chain ?? []).filter((item) => item.id !== envelopeId.value).map((item) => item.name),
 )
 
 // === Ereignisliste, nach Budgetperiode gruppiert =========================
@@ -264,44 +270,44 @@ function entryTitle(entry: EnvelopeHistoryEntry): string {
   }
 }
 
-/** Buchungsliste eines Budgets fuer eine Periode (`to` ist exklusiv). */
-function periodExpensesLink(budgetId: string, start: string, end: string | null) {
+/** Buchungsliste eines Umschlags fuer eine Periode (`to` ist exklusiv). */
+function periodExpensesLink(envelopeId: string, start: string, end: string | null) {
   return {
     path: '/transactions/expenses',
-    query: { envelopeId: budgetId, from: start, ...(end ? { to: end } : {}) },
+    query: { envelopeId: envelopeId, from: start, ...(end ? { to: end } : {}) },
   }
 }
 
 // Absprung pro Periode statt pro Buchung: einzelne Buchungen zu verlinken
 // fuehrte nur auf eine Ein-Tages-Liste, gesucht ist meist der Zeitraum.
 // Die Historie enthaelt auch Vorgaenger-Perioden (ADR-0004) — deren
-// Buchungen haengen am Vorgaenger, also dessen budgetId verwenden. Die
-// Buchungsliste filtert nur auf ein Budget; mischt eine Periode mehrere,
+// Buchungen haengen am Vorgaenger, also dessen envelopeId verwenden. Die
+// Buchungsliste filtert nur auf einen Umschlag; mischt eine Periode mehrere,
 // bleibt es beim aktuellen.
 function groupExpensesLink(group: { start: string; end: string | null; entries: EnvelopeHistoryEntry[] }) {
-  if (!budget.value) return null
-  const budgetIds = new Set(group.entries.filter((entry) => entry.type === 'expense').map((entry) => entry.envelopeId))
-  if (budgetIds.size === 0) return null
-  const [only] = budgetIds
-  return periodExpensesLink(budgetIds.size === 1 && only ? only : budget.value.id, group.start, group.end)
+  if (!envelope.value) return null
+  const envelopeIds = new Set(group.entries.filter((entry) => entry.type === 'expense').map((entry) => entry.envelopeId))
+  if (envelopeIds.size === 0) return null
+  const [only] = envelopeIds
+  return periodExpensesLink(envelopeIds.size === 1 && only ? only : envelope.value.id, group.start, group.end)
 }
 
 const groups = computed(() =>
-  history.value && budget.value
-    ? groupEntriesByPeriod(history.value.entries, budget.value.frequency, history.value.points)
+  history.value && envelope.value
+    ? groupEntriesByPeriod(history.value.entries, envelope.value.frequency, history.value.points)
     : [],
 )
 
 function groupLabel(group: { start: string; end: string | null }) {
-  if (!budget.value) return ''
-  return formatBudgetPeriodLabel(budget.value.frequency, `${group.start}T12:00:00`, group.end ? `${group.end}T12:00:00` : null)
+  if (!envelope.value) return ''
+  return formatBudgetPeriodLabel(envelope.value.frequency, `${group.start}T12:00:00`, group.end ? `${group.end}T12:00:00` : null)
 }
 
 // Laufende Periode offen, aeltere zu — die aktuelle ist fast immer die
 // gesuchte, die alten bleiben einen Tipp entfernt.
 const openGroups = ref<Set<string>>(new Set())
 watch(groups, (next) => {
-  const current = budget.value ? periodStartDay(isoDay(new Date()), budget.value.frequency) : null
+  const current = envelope.value ? periodStartDay(isoDay(new Date()), envelope.value.frequency) : null
   const initial = next.find((group) => group.start === current) ?? next[0]
   openGroups.value = new Set(initial ? [initial.start] : [])
 })
@@ -345,11 +351,11 @@ onBeforeUnmount(() => {
 // === Aktionen ==========================================================
 // Umbuchen ist eine Buchung (ADR-0005: auch MEMBER).
 function openTransfer() {
-  if (budget.value) dialogs.value?.openTransfer(budget.value)
+  if (envelope.value) dialogs.value?.openTransfer(envelope.value)
 }
 
 function openBalanceFix() {
-  if (budget.value) dialogs.value?.openTransfer(budget.value, { direction: 'in', amountCents: -balance.value })
+  if (envelope.value) dialogs.value?.openTransfer(envelope.value, { direction: 'in', amountCents: -balance.value })
 }
 
 const actionMenu = ref<InstanceType<typeof Menu> | null>(null)
@@ -362,7 +368,7 @@ function toggleActionMenu(event: Event) {
 // Owner-only (#128). Deaktivierte Eintraege bleiben sichtbar und sagen,
 // warum — ein fehlender Eintrag liesse nur raten.
 const actionItems = computed(() => {
-  const current = budget.value
+  const current = envelope.value
   const ownerHint = canManageHousehold.value ? null : 'Nur für Haushalts-Owner'
   const closedHint = hasClosingDate.value ? 'Umschlag ist geschlossen' : null
   const deleteHint = ownerHint ?? (current?.hasBookings ? 'Hat Buchungen – nur Schließen möglich' : null)
@@ -395,25 +401,58 @@ const actionItems = computed(() => {
 const asideOpen = ref(false)
 
 function periodTransactionsLink() {
-  if (!budget.value || !period.value) return null
-  return periodExpensesLink(budget.value.id, period.value.start, period.value.end)
+  if (!envelope.value || !period.value) return null
+  return periodExpensesLink(envelope.value.id, period.value.start, period.value.end)
+}
+
+// === Gebuchte Zuteilung aendern ==========================================
+// Nur der OWNER, nur der Betrag; 0 setzt die Periode aus (ADR-0005, Regel 3).
+const allocationEdit = ref<{ id: string; date: string; amount: number | null } | null>(null)
+const allocationSaving = ref(false)
+const allocationError = ref<string | null>(null)
+const allocationDialogOpen = computed({
+  get: () => allocationEdit.value !== null,
+  set: (open) => { if (!open) allocationEdit.value = null },
+})
+
+function openAllocationEdit(entry: EnvelopeHistoryEntry) {
+  allocationError.value = null
+  allocationEdit.value = { id: entry.id!, date: entry.date, amount: entry.amount / 100 }
+}
+
+async function saveAllocation() {
+  if (!allocationEdit.value || !householdId.value) return
+  allocationSaving.value = true
+  allocationError.value = null
+  try {
+    await $fetch(`/api/households/${householdId.value}/transfers/${allocationEdit.value.id}`, {
+      method: 'PATCH',
+      body: { amount: allocationEdit.value.amount ?? 0 },
+    })
+    allocationEdit.value = null
+    await reload()
+  } catch (error: any) {
+    allocationError.value = 'Zuteilung konnte nicht geändert werden: ' + (error.statusMessage || error.message)
+  } finally {
+    allocationSaving.value = false
+  }
 }
 
 function onDeleted(id: string) {
-  if (id === budgetId.value) router.push('/budgeting/budgets')
+  if (id === envelopeId.value) router.push('/budgeting/envelopes')
 }
 </script>
 
 <template>
-  <section class="budget-detail">
-    <NuxtLink to="/budgeting/budgets" class="back-link">
+  <section class="envelope-detail">
+    <NuxtLink to="/budgeting/envelopes" class="back-link">
       <i class="pi pi-arrow-left" aria-hidden="true" />
       Alle Umschläge
     </NuxtLink>
 
     <EmptyState
-      v-if="!notFound && !(loadError && !budget)"
-      :loading="loading && !budget"
+      v-if="!notFound && !(loadError && !envelope)"
+      :loading="loading && !envelope"
       :no-household="!loading && !activeHousehold"
       loading-title="Umschlag wird geladen"
       loading-text="Wir holen Saldo, Verlauf und Buchungen."
@@ -425,30 +464,31 @@ function onDeleted(id: string) {
       icon="pi pi-question-circle"
       icon-tone="muted"
       headline="Umschlag nicht gefunden"
-      description="Diesen Umschlag gibt es im aktiven Haushalt nicht (mehr). Vielleicht gehört es zu einem anderen Haushalt oder wurde gelöscht."
-      :cta="{ label: 'Zur Umschlag-Liste', onClick: () => router.push('/budgeting/budgets'), severity: 'primary' }"
+      description="Diesen Umschlag gibt es im aktiven Haushalt nicht (mehr). Vielleicht gehört er zu einem anderen Haushalt oder wurde gelöscht."
+      :cta="{ label: 'Zur Umschlag-Liste', onClick: () => router.push('/budgeting/envelopes'), severity: 'primary' }"
     />
 
     <EmptyState
-      v-if="loadError && !budget && !loading && !notFound"
+      v-if="loadError && !envelope && !loading && !notFound"
       variant="no-data"
       icon="pi pi-exclamation-triangle"
       icon-tone="warning"
       headline="Umschlag konnte nicht geladen werden"
       :description="`Bitte Verbindung prüfen und erneut versuchen. (${loadError})`"
-      :cta="{ label: 'Erneut versuchen', onClick: loadBudgets, severity: 'primary' }"
+      :cta="{ label: 'Erneut versuchen', onClick: loadEnvelopes, severity: 'primary' }"
     />
 
-    <template v-if="budget && !notFound">
+    <template v-if="envelope && !notFound">
       <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
 
       <!-- Kopf: Name + Menue, Saldo gross, Trend, laufende Periode -->
       <header class="detail-head">
         <div class="detail-head__top">
           <div class="detail-head__title">
-            <h1>{{ budget.name }}</h1>
+            <h1>{{ envelope.name }}</h1>
             <div class="detail-head__tags">
-              <span class="tag">{{ frequencyLabel(budget.frequency) }}</span>
+              <span class="tag">{{ envelopeGroupLabel }}</span>
+              <span v-if="envelope.allocationSource !== 'NONE'" class="tag">{{ frequencyLabel(envelope.frequency) }}</span>
               <span v-if="isClosed" class="tag tag--closed">geschlossen</span>
             </div>
           </div>
@@ -509,17 +549,29 @@ function onDeleted(id: string) {
           </button>
         </p>
 
-        <div v-if="period" class="period-strip">
+        <div v-if="targetPercent !== null && !isClosed" class="period-strip">
           <div class="period-strip__row">
-            <span class="period-strip__label">{{ formatBudgetPeriodLabel(budget.frequency, period.start, period.end) }}</span>
+            <span class="period-strip__label">Sparziel</span>
           </div>
           <ListProgressBar
+            :percent="Math.min(100, targetPercent)"
+            :tone="targetPercent >= 100 ? 'ok' : 'accent'"
+            :label="`${compactMoney(balance)} von ${compactMoney(envelope.targetAmount ?? 0)}`"
+          />
+        </div>
+
+        <div v-if="period" class="period-strip">
+          <div class="period-strip__row">
+            <span class="period-strip__label">{{ formatBudgetPeriodLabel(envelope.frequency, period.start, period.end) }}</span>
+          </div>
+          <ListProgressBar
+            v-if="envelope.group === 'RUNNING'"
             :percent="period.percentUsed"
-            :tone="budget.severity"
+            :tone="envelope.severity"
             :label="`${compactMoney(period.spent)} von ${compactMoney(period.available)} verfügbar`"
           />
           <p class="period-strip__info">
-            {{ compactMoney(period.allocation) }} zugeteilt<template v-if="budget.reserved > 0"> · +{{ compactMoney(budget.reserved) }} kommen bis Monatsende</template>
+            {{ compactMoney(period.allocation) }} zugeteilt<template v-if="envelope.reserved > 0"> · +{{ compactMoney(envelope.reserved) }} kommen bis Monatsende</template>
           </p>
           <NuxtLink v-if="periodTransactionsLink()" :to="periodTransactionsLink()!" class="text-link">
             Buchungen dieser Periode <i class="pi pi-arrow-right" aria-hidden="true" />
@@ -531,7 +583,7 @@ function onDeleted(id: string) {
       <Message v-if="hasClosingDate" severity="info" class="closed-banner">
         <template v-if="isClosed">Geschlossen am {{ closingDateLabel }} – der Saldo fließt in</template>
         <template v-else>Schließt am {{ closingDateLabel }} in</template>
-        <NuxtLink v-if="successor" :to="`/budgeting/budgets/${successor.id}`" class="closed-banner__link">
+        <NuxtLink v-if="successor" :to="`/budgeting/envelopes/${successor.id}`" class="closed-banner__link">
           „{{ successor.name }}“ <i class="pi pi-arrow-right" aria-hidden="true" />
         </NuxtLink>
         <template v-else>„Zu verteilen“</template>
@@ -571,7 +623,7 @@ function onDeleted(id: string) {
             :points="history.points"
             :events="chartEvents"
             :range="{ from: history.from, to: history.to }"
-            :frequency="budget.frequency"
+            :frequency="envelope.frequency"
             :format-money="formatMoney"
             @select="onChartSelect"
           />
@@ -642,9 +694,18 @@ function onDeleted(id: string) {
                   </NuxtLink>
                 </div>
                 <div v-show="openGroups.has(group.start)" :id="`period-${group.start}-list`">
-                  <!-- Nur wenn der Kopf-Zugang nicht allein aus der Zuteilung besteht -->
-                  <p v-if="group.allocation !== 0 && group.allocation !== group.inflow" class="period-group__allocation">
-                    davon Zuteilung {{ compactMoney(group.allocation) }}
+                  <!-- Gebuchte Zuteilungen: einzeln aenderbar, 0 heisst ausgesetzt (ADR-0005). -->
+                  <p v-for="entry in group.allocationEntries" :key="entry.id ?? entry.date" class="period-group__allocation">
+                    {{ entry.amount === 0 ? 'Zuteilung ausgesetzt' : `Zuteilung ${compactMoney(entry.amount)}` }}{{ chainSuffix(entry) }}
+                    <button
+                      v-if="canManageHousehold && entry.id"
+                      type="button"
+                      class="link-button"
+                      :aria-label="`Zuteilung vom ${shortDate(entry.date)} ändern`"
+                      @click="openAllocationEdit(entry)"
+                    >
+                      ändern
+                    </button>
                   </p>
                   <ul v-if="group.entries.length > 0" class="entries">
                     <li
@@ -660,7 +721,7 @@ function onDeleted(id: string) {
                           <span class="entry__date">{{ shortDate(entry.date) }}</span>
                           <template v-if="entry.type === 'carryover' && entry.counterpartId">
                             Übertrag aus
-                            <NuxtLink :to="`/budgeting/budgets/${entry.counterpartId}`">{{ entry.counterpartName ?? 'Vorgänger' }}</NuxtLink>
+                            <NuxtLink :to="`/budgeting/envelopes/${entry.counterpartId}`">{{ entry.counterpartName ?? 'Vorgänger' }}</NuxtLink>
                           </template>
                           <template v-else>{{ entryTitle(entry) }}</template>
                         </span>
@@ -679,36 +740,36 @@ function onDeleted(id: string) {
           </article>
         </div>
 
-        <!-- Betraege + verknuepfte Budgets: Desktop rechts, mobil unten und eingeklappt -->
+        <!-- Betraege + verknuepfte Umschläge: Desktop rechts, mobil unten und eingeklappt -->
         <aside class="detail-aside">
           <button
             type="button"
             class="aside-toggle"
             :aria-expanded="asideOpen"
-            aria-controls="budget-aside-body"
+            aria-controls="envelope-aside-body"
             @click="asideOpen = !asideOpen"
           >
             <span>Zuteilung{{ successor || predecessors.length > 0 ? ' & verknüpfte Umschläge' : '' }}</span>
             <i class="pi pi-chevron-down aside-toggle__chevron" aria-hidden="true" />
           </button>
-          <article id="budget-aside-body" class="panel aside-body" :class="{ 'is-open': asideOpen }">
+          <article id="envelope-aside-body" class="panel aside-body" :class="{ 'is-open': asideOpen }">
             <h2>Zuteilung</h2>
             <p class="aside-allocation">
-              <template v-if="budget.allocationSource === 'FIXED'">{{ formatMoney(budget.allocationAmount ?? 0) }} / {{ frequencyLabel(budget.frequency) }}</template>
-              <template v-else-if="budget.allocationSource === 'PLANS'">Aus Fixkosten-Plänen, {{ frequencyLabel(budget.frequency) }}</template>
+              <template v-if="envelope.allocationSource === 'FIXED'">{{ formatMoney(envelope.allocationAmount ?? 0) }} / {{ frequencyLabel(envelope.frequency) }}</template>
+              <template v-else-if="envelope.allocationSource === 'PLANS'">Aus Fixkosten-Plänen, {{ frequencyLabel(envelope.frequency) }}</template>
               <template v-else>Keine regelmäßige Zuteilung</template>
             </p>
             <h3 v-if="successor || predecessors.length > 0">Verknüpfte Umschläge</h3>
             <ul v-if="successor || predecessors.length > 0" class="links">
               <li v-if="successor">
                 <i class="pi pi-arrow-right" aria-hidden="true" />
-                Saldo fließt ab {{ formatPlanningDate(budget.closedAt) }} in
-                <NuxtLink :to="`/budgeting/budgets/${successor.id}`">{{ successor.name }}</NuxtLink>
+                Saldo fließt ab {{ formatPlanningDate(envelope.closedAt) }} in
+                <NuxtLink :to="`/budgeting/envelopes/${successor.id}`">{{ successor.name }}</NuxtLink>
               </li>
               <li v-for="predecessor in predecessors" :key="predecessor.id">
                 <i class="pi pi-arrow-left" aria-hidden="true" />
                 Übertrag aus
-                <NuxtLink :to="`/budgeting/budgets/${predecessor.id}`">{{ predecessor.name }}</NuxtLink>
+                <NuxtLink :to="`/budgeting/envelopes/${predecessor.id}`">{{ predecessor.name }}</NuxtLink>
                 (geschlossen zum {{ formatPlanningDate(predecessor.closedAt) }})
               </li>
             </ul>
@@ -716,11 +777,26 @@ function onDeleted(id: string) {
         </aside>
       </div>
 
-      <BudgetActionDialogs
+      <FormDialog
+        v-model:visible="allocationDialogOpen"
+        :header="`Zuteilung vom ${allocationEdit ? shortDate(allocationEdit.date) : ''} ändern`"
+        submit-label="Speichern"
+        :saving="allocationSaving"
+        @save="saveAllocation"
+        @cancel="allocationEdit = null"
+      >
+        <p class="allocation-hint">Mit 0 € setzt du diese Periode aus. Der Betrag kommt aus „Zu verteilen“.</p>
+        <FormFieldRow v-if="allocationEdit" label="Betrag" html-for="allocation-amount">
+          <MoneyInput id="allocation-amount" v-model="allocationEdit.amount" :currency="currencyCode" :min="0" />
+        </FormFieldRow>
+        <Message v-if="allocationError" severity="error" variant="simple">{{ allocationError }}</Message>
+      </FormDialog>
+
+      <EnvelopeActionDialogs
         v-if="householdId"
         ref="dialogs"
         :household-id="householdId"
-        :budgets="budgets"
+        :envelopes="envelopes"
         :currency="currencyCode"
         @changed="reload"
         @notice="notice = $event"
@@ -731,7 +807,7 @@ function onDeleted(id: string) {
 </template>
 
 <style scoped>
-.budget-detail {
+.envelope-detail {
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -1479,6 +1555,12 @@ function onDeleted(id: string) {
 }
 
 .links,
+.allocation-hint {
+  margin: 0 0 12px;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
 .aside-allocation {
   margin: 0;
   font-size: 0.85rem;

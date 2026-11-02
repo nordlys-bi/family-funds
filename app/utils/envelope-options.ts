@@ -6,6 +6,24 @@
  */
 export type EnvelopeGroup = 'RUNNING' | 'FIXED' | 'RESERVE' | 'SAVINGS' | 'PERSONAL'
 
+export type AllocationSource = 'NONE' | 'FIXED' | 'PLANS'
+
+/**
+ * Die Gruppen in Anzeigereihenfolge, mit der Vorgabe beim Anlegen. Nur eine
+ * Vorgabe — jede Gruppe darf jede Zuteilung haben (ADR-0005, "Gruppen").
+ */
+export const ENVELOPE_GROUPS: Array<{ value: EnvelopeGroup; label: string; hint: string; defaultAllocation: AllocationSource }> = [
+  { value: 'RUNNING', label: 'Laufende Ausgaben', hint: 'Regelmäßig gefüllt, zum Ausgeben: Lebensmittel, Tanken, Kinder.', defaultAllocation: 'FIXED' },
+  { value: 'FIXED', label: 'Fixkosten', hint: 'Reserviert für Verträge und Rechnungen: Wohnen, Abos, Versicherungen.', defaultAllocation: 'PLANS' },
+  { value: 'RESERVE', label: 'Rücklagen', hint: 'Ein Polster für Ausgaben, die sicher kommen: Autoreparatur, Kleidung, Weihnachten.', defaultAllocation: 'FIXED' },
+  { value: 'SAVINGS', label: 'Sparziele', hint: 'Sparen auf einen Zielbetrag: Urlaub, Notgroschen.', defaultAllocation: 'NONE' },
+  { value: 'PERSONAL', label: 'Persönlich', hint: 'Wächst nur durch Gutschriften und Umbuchungen, zum Beispiel je Elternteil.', defaultAllocation: 'NONE' },
+]
+
+export function isEnvelopeGroup(value: unknown): value is EnvelopeGroup {
+  return ENVELOPE_GROUPS.some((group) => group.value === value)
+}
+
 export type EnvelopeOption = {
   id: string
   name: string
@@ -14,7 +32,7 @@ export type EnvelopeOption = {
   closedAt?: string | Date | null
 }
 
-const GROUP_ORDER: EnvelopeGroup[] = ['RUNNING', 'FIXED', 'RESERVE', 'SAVINGS', 'PERSONAL']
+const GROUP_ORDER = ENVELOPE_GROUPS.map((group) => group.value)
 
 function dayKey(value: string | Date) {
   // Reines 'YYYY-MM-DD' (Formular-Format) als LOKALEN Tag lesen — `new Date`

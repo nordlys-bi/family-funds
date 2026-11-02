@@ -24,6 +24,12 @@ if (isClerkEnabled) {
 const themeInitScript = `(function(){try{var k='family-funds-theme';var s=localStorage.getItem(k);var p=(s==='light'||s==='dark')?s:'system';var isLight=p==='light'||(p==='system'&&window.matchMedia('(prefers-color-scheme: light)').matches);var h=document.documentElement;h.classList.add('my-app');if(isLight){h.setAttribute('data-theme','light');h.classList.remove('my-app-dark');}else{h.classList.add('my-app-dark');h.removeAttribute('data-theme');}}catch(e){}})();`
 
 export default defineNuxtConfig({
+  // ADR-0005: Alte Lesezeichen und Links weiterleiten.
+  routeRules: {
+    '/budgeting/budgets': { redirect: '/budgeting/envelopes' },
+    '/budgeting/budgets/**': { redirect: '/budgeting/envelopes/**' },
+    '/budgeting/savings': { redirect: '/budgeting/envelopes?group=SAVINGS' },
+  },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   modules,

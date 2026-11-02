@@ -19,7 +19,7 @@
  * Bewusst NICHT abgedeckt: Sparbuchungen. Die brauchen Goal-Auswahl +
  * Richtung (Einzahlen/Entnehmen) und haben keinen einzelnen primaeren
  * Create-Flow — der FAB/das Menue verlinkt dafuer weiter auf
- * /budgeting/savings (unveraendert).
+ * /budgeting/envelopes (unveraendert).
  */
 import { computed } from 'vue'
 import { useState } from '#app'

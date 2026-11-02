@@ -122,7 +122,7 @@ watch(
 const stepNavTargets: Record<string, string | null> = {
   household: null,
   invite: '/households/members',
-  budget: '/budgeting/budgets',
+  budget: '/budgeting/envelopes',
   transaction: '/transactions/expenses',
 }
 
@@ -194,20 +194,16 @@ onBeforeUnmount(() => {
           <i class="pi pi-list nav-icon"></i>
           <span>Buchungen</span>
         </NuxtLink>
-        <!-- Aktiv auch auf den Detailseiten /budgeting/budgets/:id — das sind
+        <!-- Aktiv auch auf den Detailseiten /budgeting/envelopes/:id — das sind
              Geschwister-Routen, active-class wuerde dort nicht greifen. -->
         <NuxtLink
-          to="/budgeting/budgets"
+          to="/budgeting/envelopes"
           class="nav-item"
-          :class="{ 'nav-item-active': route.path.startsWith('/budgeting/budgets') }"
-          :aria-current="route.path === '/budgeting/budgets' ? 'page' : undefined"
+          :class="{ 'nav-item-active': route.path.startsWith('/budgeting/envelopes') }"
+          :aria-current="route.path === '/budgeting/envelopes' ? 'page' : undefined"
         >
           <i class="pi pi-wallet nav-icon"></i>
-          <span>Budgets</span>
-        </NuxtLink>
-        <NuxtLink to="/budgeting/savings" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-star nav-icon"></i>
-          <span>Sparziele</span>
+          <span>Umschläge</span>
         </NuxtLink>
         <NuxtLink to="/budgeting/recurring" class="nav-item" active-class="nav-item-active">
           <i class="pi pi-sync nav-icon"></i>

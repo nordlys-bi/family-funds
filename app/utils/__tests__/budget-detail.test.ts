@@ -106,6 +106,16 @@ describe('periodStartDay / nextPeriodStartDay', () => {
 })
 
 describe('groupEntriesByPeriod', () => {
+  it('keeps the allocations of a group reachable for editing', () => {
+    const entries = [
+      { type: 'allocation', date: '2026-10-05', amount: 24000, id: 'a1' },
+      { type: 'expense', date: '2026-10-06', amount: -5000, id: 'e1' },
+    ]
+    const [group] = groupEntriesByPeriod(entries, 'WEEKLY', [{ date: '2026-10-06', balance: 19000 }])
+    expect(group?.allocationEntries.map((entry) => entry.id)).toEqual(['a1'])
+    expect(group?.entries.map((entry) => entry.id)).toEqual(['e1'])
+  })
+
   const entries = [
     { type: 'allocation', date: '2026-08-01', amount: 40000 },
     { type: 'expense', date: '2026-08-20', amount: -47000, id: 'e1' },

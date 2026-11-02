@@ -113,7 +113,7 @@ const overBudgetCount = computed(
           <i class="pi pi-exclamation-triangle" />
         </span>
         <div class="action-required__body">
-          <NuxtLink to="/budgeting/budgets" class="action-required__link">
+          <NuxtLink to="/budgeting/envelopes" class="action-required__link">
             <strong>
               {{ criticalBudgets.length === 1
                 ? `„${criticalBudgets[0].name}" ${criticalBudgets[0].severity === 'over' ? `ist im Minus (${formatMoney(criticalBudgets[0].balance.balance)})` : 'ist fast aufgebraucht'}`

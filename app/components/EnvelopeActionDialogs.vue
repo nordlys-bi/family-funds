@@ -1,7 +1,6 @@
 <!--
-  BudgetActionDialogs — Anlegen/Bearbeiten, Schließen, Umbuchen und Löschen
-  eines Umschlags (ADR-0005). Neu angelegte landen vorerst in der Gruppe
-  "Laufende Ausgaben"; die Wahl der Gruppe kommt mit #158. Ausgelagert aus der frueheren Budget-Seite,
+  EnvelopeActionDialogs — Anlegen/Bearbeiten, Schließen, Umbuchen und Löschen
+  eines Umschlags (ADR-0005). Ausgelagert aus der frueheren Umschlag-Seite,
   weil Liste (Anlegen, Swipe-Bearbeiten/-Loeschen, #140) und Detailseite
   (alle Aktionen) dieselben Dialoge brauchen.
 
@@ -14,11 +13,12 @@
 import { computed, ref, watch } from 'vue'
 import type { Frequency, Notice } from '~/types/planning'
 import type { EnvelopeItem } from '~/types/envelope'
+import { ENVELOPE_GROUPS, type EnvelopeGroup } from '~/utils/envelope-options'
 
 const props = defineProps<{
   householdId: string
   /** Alle Umschlaege des Haushalts (auch geschlossene) — fuer Ziel-Auswahl und Namen. */
-  budgets: EnvelopeItem[]
+  envelopes: EnvelopeItem[]
   currency: string
 }>()
 
@@ -26,114 +26,135 @@ const emit = defineEmits<{
   /** Daten haben sich geaendert, Seite soll neu laden. */
   changed: []
   notice: [notice: Notice]
-  /** Budget wurde geloescht (Detailseite navigiert dann zur Liste). */
-  deleted: [budgetId: string]
+  /** Umschlag wurde geloescht (Detailseite navigiert dann zur Liste). */
+  deleted: [envelopeId: string]
 }>()
 
 const confirm = useAskConfirm()
 const formatMoney = (value: number) => formatMoneyFromCents(value, props.currency)
-const balanceOf = (budget: EnvelopeItem | null) => budget?.balance.balance ?? 0
-const budgetsById = computed(() => new Map(props.budgets.map((budget) => [budget.id, budget] as const)))
+const balanceOf = (envelope: EnvelopeItem | null) => envelope?.balance.balance ?? 0
+const envelopesById = computed(() => new Map(props.envelopes.map((envelope) => [envelope.id, envelope] as const)))
 
 // === Anlegen / Bearbeiten =============================================
-const budgetDialogOpen = ref(false)
-const budgetSaving = ref(false)
-const budgetEditId = ref<string | null>(null)
-const budgetForm = ref({
+const envelopeDialogOpen = ref(false)
+const envelopeSaving = ref(false)
+const envelopeEditId = ref<string | null>(null)
+const blankForm = (group: EnvelopeGroup) => ({
   name: '',
+  group,
+  allocationSource: defaultAllocationOf(group),
   amount: null as number | null,
+  targetAmount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
   validFrom: getPeriodStartDate(new Date(), 'MONTHLY'),
 })
+const envelopeForm = ref(blankForm('RUNNING'))
 
-function openCreate() {
-  budgetEditId.value = null
-  budgetForm.value = {
-    name: '',
-    amount: null,
-    frequency: 'MONTHLY',
-    validFrom: getPeriodStartDate(new Date(), 'MONTHLY'),
-  }
-  budgetDialogOpen.value = true
+function defaultAllocationOf(group: EnvelopeGroup) {
+  return ENVELOPE_GROUPS.find((item) => item.value === group)?.defaultAllocation ?? 'NONE'
 }
 
-function openEdit(budget: EnvelopeItem) {
-  budgetEditId.value = budget.id
-  budgetForm.value = {
-    name: budget.name,
-    amount: budget.allocationAmount === null ? null : budget.allocationAmount / 100,
-    frequency: budget.frequency,
-    validFrom: new Date(budget.balanceSince),
-  }
-  budgetDialogOpen.value = true
+function openCreate(group: EnvelopeGroup = 'RUNNING') {
+  envelopeEditId.value = null
+  envelopeForm.value = blankForm(group)
+  envelopeDialogOpen.value = true
 }
+
+function openEdit(envelope: EnvelopeItem) {
+  envelopeEditId.value = envelope.id
+  envelopeForm.value = {
+    name: envelope.name,
+    group: envelope.group,
+    allocationSource: envelope.allocationSource,
+    amount: envelope.allocationAmount === null ? null : envelope.allocationAmount / 100,
+    targetAmount: envelope.targetAmount === null ? null : envelope.targetAmount / 100,
+    frequency: envelope.frequency,
+    validFrom: new Date(envelope.balanceSince),
+  }
+  envelopeDialogOpen.value = true
+}
+
+// Die Gruppe setzt beim Anlegen die Zuteilung vor (ADR-0005); danach darf man
+// sie frei aendern. Beim Bearbeiten aendert ein Gruppenwechsel nichts daran.
+watch(
+  () => envelopeForm.value.group,
+  (group) => {
+    if (!envelopeEditId.value) envelopeForm.value.allocationSource = defaultAllocationOf(group)
+  },
+)
 
 watch(
-  () => budgetForm.value.frequency,
+  () => envelopeForm.value.frequency,
   (frequency) => {
-    if (!budgetEditId.value) {
-      budgetForm.value.validFrom = getPeriodStartDate(new Date(), frequency)
+    if (!envelopeEditId.value) {
+      envelopeForm.value.validFrom = getPeriodStartDate(new Date(), frequency)
     }
   },
 )
 
-async function saveBudget() {
-  budgetSaving.value = true
+async function saveEnvelope() {
+  envelopeSaving.value = true
   try {
-    const isEdit = Boolean(budgetEditId.value)
+    const isEdit = Boolean(envelopeEditId.value)
     // Ein neuer Betrag wirkt ab der naechsten noch nicht gebuchten Periode
     // (ADR-0005); Frequenz und Start sind nach dem Anlegen fest.
-    if (budgetEditId.value) {
-      await $fetch(`/api/households/${props.householdId}/envelopes/${budgetEditId.value}`, {
-        method: 'PATCH',
-        body: { name: budgetForm.value.name, allocationAmount: budgetForm.value.amount },
-      })
+    const rule = {
+      name: envelopeForm.value.name,
+      group: envelopeForm.value.group,
+      allocationSource: envelopeForm.value.allocationSource,
+      allocationAmount: envelopeForm.value.allocationSource === 'FIXED' ? envelopeForm.value.amount : null,
+      targetAmount: envelopeForm.value.targetAmount || null,
+    }
+    if (envelopeEditId.value) {
+      await $fetch(`/api/households/${props.householdId}/envelopes/${envelopeEditId.value}`, { method: 'PATCH', body: rule })
     } else {
       await $fetch(`/api/households/${props.householdId}/envelopes`, {
         method: 'POST',
         body: {
-          name: budgetForm.value.name,
-          group: 'RUNNING',
-          frequency: budgetForm.value.frequency,
-          allocationAmount: budgetForm.value.amount,
-          balanceSince: formatDateToInputString(budgetForm.value.validFrom),
+          ...rule,
+          frequency: envelopeForm.value.allocationSource === 'NONE' ? 'MONTHLY' : envelopeForm.value.frequency,
+          balanceSince: formatDateToInputString(
+            envelopeForm.value.allocationSource === 'NONE'
+              ? getPeriodStartDate(envelopeForm.value.validFrom, 'MONTHLY')
+              : envelopeForm.value.validFrom,
+          ),
         },
       })
     }
-    budgetDialogOpen.value = false
+    envelopeDialogOpen.value = false
     emit('changed')
     emit('notice', { severity: 'success', text: isEdit ? 'Umschlag wurde aktualisiert.' : 'Umschlag wurde angelegt.' })
   } catch (error: any) {
     emit('notice', { severity: 'error', text: 'Umschlag konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) })
   } finally {
-    budgetSaving.value = false
+    envelopeSaving.value = false
   }
 }
 
 // === Löschen ==========================================================
 const deletingId = ref<string | null>(null)
 
-async function remove(budget: EnvelopeItem) {
-  // ConfirmSheet (issue #51): kein Undo fuer Budgets, also ist der Sheet
+async function remove(envelope: EnvelopeItem) {
+  // ConfirmSheet (issue #51): kein Undo fuer Umschläge, also ist der Sheet
   // die einzige Sicherung gegen Fehlklicks.
   const ok = await confirm.ask({
     title: 'Umschlag löschen?',
-    message: `„${budget.name}" wird endgültig entfernt. Das geht nur, solange noch nichts darauf gebucht wurde — sonst den Umschlag stattdessen schließen.`,
+    message: `„${envelope.name}" wird endgültig entfernt. Das geht nur, solange noch nichts darauf gebucht wurde — sonst den Umschlag stattdessen schließen.`,
     tone: 'danger',
     confirmLabel: 'Endgültig löschen',
   })
   if (!ok) return
 
-  deletingId.value = budget.id
+  deletingId.value = envelope.id
   try {
-    await $fetch(`/api/households/${props.householdId}/envelopes/${budget.id}`, { method: 'DELETE' })
-    emit('deleted', budget.id)
+    await $fetch(`/api/households/${props.householdId}/envelopes/${envelope.id}`, { method: 'DELETE' })
+    emit('deleted', envelope.id)
     emit('changed')
-    emit('notice', { severity: 'success', text: `„${budget.name}" wurde gelöscht.` })
+    emit('notice', { severity: 'success', text: `„${envelope.name}" wurde gelöscht.` })
   } catch (error: any) {
-    // ADR-0004: 409 = Budget hat Buchungen, Umbuchungen oder Vorgaenger.
+    // ADR-0004: 409 = Umschlag hat Buchungen, Umbuchungen oder Vorgaenger.
     emit('notice', error.statusCode === 409
-      ? { severity: 'warn', text: `„${budget.name}" hat bereits Buchungen und kann nicht gelöscht werden. Schließe ihn stattdessen.` }
+      ? { severity: 'warn', text: `„${envelope.name}" hat bereits Buchungen und kann nicht gelöscht werden. Schließe ihn stattdessen.` }
       : { severity: 'error', text: 'Umschlag konnte nicht gelöscht werden: ' + (error.statusMessage || error.message) })
   } finally {
     deletingId.value = null
@@ -148,27 +169,27 @@ const closeDialogOpen = ref(false)
 const closeSaving = ref(false)
 const closeError = ref<string | null>(null)
 const closeForm = ref({
-  budgetId: '',
+  envelopeId: '',
   closedAt: new Date() as Date | null,
   targetId: null as string | null,
 })
-const closingBudget = computed(() => budgetsById.value.get(closeForm.value.budgetId) ?? null)
-const closeDialogHeader = computed(() => `„${closingBudget.value?.name ?? ''}“ schließen`)
+const closingEnvelope = computed(() => envelopesById.value.get(closeForm.value.envelopeId) ?? null)
+const closeDialogHeader = computed(() => `„${closingEnvelope.value?.name ?? ''}“ schließen`)
 // Ziel: "Zu verteilen" oder ein anderer Umschlag, der am Stichtag noch offen
 // ist (sonst Zyklus). Eigener Wert statt '', weil das Ziel bewusst gewaehlt
 // sein muss und '' im Select wie "nichts gewaehlt" aussaehe.
 const UNASSIGNED_TARGET = 'unassigned'
 const closeTargetOptions = computed(() => [
   { label: 'Zu verteilen', value: UNASSIGNED_TARGET },
-  ...props.budgets
-    .filter((budget) => budget.id !== closeForm.value.budgetId && (!budget.closedAt || (closeForm.value.closedAt && isBudgetOpenOn(budget, closeForm.value.closedAt))))
-    .map((budget) => ({ label: budget.name, value: budget.id })),
+  ...props.envelopes
+    .filter((envelope) => envelope.id !== closeForm.value.envelopeId && (!envelope.closedAt || (closeForm.value.closedAt && isEnvelopeOpenOn(envelope, closeForm.value.closedAt))))
+    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
 ])
 
-function openClose(budget: EnvelopeItem) {
+function openClose(envelope: EnvelopeItem) {
   closeForm.value = {
-    budgetId: budget.id,
-    closedAt: getNextPeriodStartDate(new Date(), budget.frequency),
+    envelopeId: envelope.id,
+    closedAt: getNextPeriodStartDate(new Date(), envelope.frequency),
     targetId: null,
   }
   closeError.value = null
@@ -176,7 +197,7 @@ function openClose(budget: EnvelopeItem) {
 }
 
 async function saveClose() {
-  if (!closingBudget.value) return
+  if (!closingEnvelope.value) return
   if (!closeForm.value.closedAt) {
     closeError.value = 'Bitte einen Stichtag wählen.'
     return
@@ -188,7 +209,7 @@ async function saveClose() {
   closeSaving.value = true
   closeError.value = null
   try {
-    await $fetch(`/api/households/${props.householdId}/envelopes/${closingBudget.value.id}/close`, {
+    await $fetch(`/api/households/${props.householdId}/envelopes/${closingEnvelope.value.id}/close`, {
       method: 'POST',
       body: {
         closedAt: formatDateToInputString(closeForm.value.closedAt),
@@ -197,7 +218,7 @@ async function saveClose() {
     })
     closeDialogOpen.value = false
     emit('changed')
-    emit('notice', { severity: 'success', text: `„${closingBudget.value?.name ?? 'Umschlag'}" wurde geschlossen.` })
+    emit('notice', { severity: 'success', text: `„${closingEnvelope.value?.name ?? 'Umschlag'}" wurde geschlossen.` })
   } catch (error: any) {
     closeError.value = error.statusCode === 409
       ? 'Es gibt Buchungen ab dem Stichtag. Bitte zuerst auf einen anderen Umschlag umhängen oder einen späteren Stichtag wählen.'
@@ -214,21 +235,21 @@ const transferDialogOpen = ref(false)
 const transferSaving = ref(false)
 const transferError = ref<string | null>(null)
 const transferForm = ref({
-  budgetId: '',
+  envelopeId: '',
   counterpartId: '',
   direction: 'out' as 'out' | 'in',
   amount: null as number | null,
   date: new Date() as Date | null,
   note: '',
 })
-const transferBudget = computed(() => budgetsById.value.get(transferForm.value.budgetId) ?? null)
-const transferDialogHeader = computed(() => `Umbuchen: ${transferBudget.value?.name ?? ''}`)
-const transferNotePlaceholder = computed(() => `Umbuchung ${transferBudget.value?.name ?? ''}`)
+const transferEnvelope = computed(() => envelopesById.value.get(transferForm.value.envelopeId) ?? null)
+const transferDialogHeader = computed(() => `Umbuchen: ${transferEnvelope.value?.name ?? ''}`)
+const transferNotePlaceholder = computed(() => `Umbuchung ${transferEnvelope.value?.name ?? ''}`)
 const transferCounterpartOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
-  ...sortEnvelopes(envelopesBookableOn(props.budgets, transferForm.value.date))
-    .filter((budget) => budget.id !== transferForm.value.budgetId)
-    .map((budget) => ({ label: budget.name, value: budget.id })),
+  ...sortEnvelopes(envelopesBookableOn(props.envelopes, transferForm.value.date))
+    .filter((envelope) => envelope.id !== transferForm.value.envelopeId)
+    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
 ])
 const transferDirectionOptions = computed(() => [
   { label: 'Aus diesem Umschlag', value: 'out' },
@@ -238,9 +259,9 @@ const transferDirectionOptions = computed(() => [
 // negativ wird.
 const transferOverdraws = computed(() =>
   transferForm.value.direction === 'out'
-  && transferBudget.value !== null
+  && transferEnvelope.value !== null
   && transferForm.value.amount !== null
-  && Math.round(transferForm.value.amount * 100) > balanceOf(transferBudget.value),
+  && Math.round(transferForm.value.amount * 100) > balanceOf(transferEnvelope.value),
 )
 
 /**
@@ -248,10 +269,10 @@ const transferOverdraws = computed(() =>
  * Richtung in den Umschlag, Betrag = Ueberziehung. Ohne Preset der haeufigste
  * Fall: positiven Saldo weitergeben.
  */
-function openTransfer(budget: EnvelopeItem, preset?: { direction: 'out' | 'in'; amountCents: number }) {
-  const defaultCents = preset ? preset.amountCents : balanceOf(budget)
+function openTransfer(envelope: EnvelopeItem, preset?: { direction: 'out' | 'in'; amountCents: number }) {
+  const defaultCents = preset ? preset.amountCents : balanceOf(envelope)
   transferForm.value = {
-    budgetId: budget.id,
+    envelopeId: envelope.id,
     counterpartId: '',
     direction: preset?.direction ?? 'out',
     amount: defaultCents > 0 ? defaultCents / 100 : null,
@@ -263,7 +284,7 @@ function openTransfer(budget: EnvelopeItem, preset?: { direction: 'out' | 'in'; 
 }
 
 async function saveTransfer() {
-  if (!transferBudget.value) return
+  if (!transferEnvelope.value) return
   if (transferForm.value.amount == null || transferForm.value.amount <= 0) {
     transferError.value = 'Betrag muss größer als 0 sein.'
     return
@@ -275,7 +296,7 @@ async function saveTransfer() {
   transferSaving.value = true
   transferError.value = null
   try {
-    const own = transferBudget.value.id
+    const own = transferEnvelope.value.id
     const other = transferForm.value.counterpartId || null
     await $fetch(`/api/households/${props.householdId}/transfers`, {
       method: 'POST',
@@ -284,7 +305,7 @@ async function saveTransfer() {
         toEnvelopeId: transferForm.value.direction === 'out' ? other : own,
         amount: transferForm.value.amount,
         date: formatDateToInputString(transferForm.value.date),
-        note: transferForm.value.note || `Umbuchung ${transferBudget.value.name}`,
+        note: transferForm.value.note || `Umbuchung ${transferEnvelope.value.name}`,
       },
     })
     transferDialogOpen.value = false
@@ -302,17 +323,17 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
 
 <template>
   <FormDialog
-    v-model:visible="budgetDialogOpen"
-    :header="budgetEditId ? 'Umschlag bearbeiten' : 'Umschlag anlegen'"
-    :submit-label="budgetEditId ? 'Umschlag aktualisieren' : 'Umschlag anlegen'"
-    :saving="budgetSaving"
-    @save="saveBudget"
-    @cancel="budgetDialogOpen = false"
+    v-model:visible="envelopeDialogOpen"
+    :header="envelopeEditId ? 'Umschlag bearbeiten' : 'Umschlag anlegen'"
+    :submit-label="envelopeEditId ? 'Umschlag aktualisieren' : 'Umschlag anlegen'"
+    :saving="envelopeSaving"
+    @save="saveEnvelope"
+    @cancel="envelopeDialogOpen = false"
   >
-    <BudgetForm v-model="budgetForm" :currency="currency" :frequency-locked="Boolean(budgetEditId)" />
+    <EnvelopeForm v-model="envelopeForm" :currency="currency" :frequency-locked="Boolean(envelopeEditId)" />
   </FormDialog>
 
-  <!-- ADR-0004: Budget schließen — Saldo fließt per Verweis ins Ziel. -->
+  <!-- ADR-0004: Umschlag schließen — Saldo fließt per Verweis ins Ziel. -->
   <FormDialog
     v-model:visible="closeDialogOpen"
     :header="closeDialogHeader"
@@ -328,7 +349,7 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
     </Message>
     <p class="dialog-hint">
       Ab dem Stichtag bekommt der Umschlag keine Zuteilungen mehr und nimmt keine Buchungen mehr an.
-      Sein Saldo ({{ formatMoney(balanceOf(closingBudget)) }}) fließt ins Ziel — auch spätere Korrekturen von Buchungen vor dem Stichtag.
+      Sein Saldo ({{ formatMoney(balanceOf(closingEnvelope)) }}) fließt ins Ziel — auch spätere Korrekturen von Buchungen vor dem Stichtag.
       Für einen Wechsel der Frequenz zuerst den neuen Umschlag anlegen, dann den alten hinein schließen.
     </p>
     <FormFieldRow label="Stichtag" html-for="close-date">
@@ -356,7 +377,7 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
     @save="saveTransfer"
     @cancel="transferDialogOpen = false"
   >
-    <p class="dialog-hint">Aktueller Saldo: {{ formatMoney(balanceOf(transferBudget)) }}</p>
+    <p class="dialog-hint">Aktueller Saldo: {{ formatMoney(balanceOf(transferEnvelope)) }}</p>
     <FormFieldRow label="Richtung" html-for="transfer-direction" wide>
       <Select
         id="transfer-direction"
