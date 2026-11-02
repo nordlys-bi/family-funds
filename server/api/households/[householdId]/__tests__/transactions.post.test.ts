@@ -125,17 +125,6 @@ describe('POST /transactions — expense envelope assignment (regression guard)'
     expect(data).not.toHaveProperty('budgetId')
   })
 
-  it('still accepts the old budgetId name for expenses (until #156)', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
-
-    await handler(
-      makeEvent({ kind: 'expense', amount: 5000, date: '2026-08-27', budgetId: 'b-1' }),
-    )
-
-    const data = prismaMocks.expenseTransaction.create.mock.calls[0][0].data
-    expect(data.envelopeId).toBe('b-1')
-  })
-
   it('404s for an envelope outside the household', async () => {
     prismaMocks.envelope.findFirst.mockResolvedValue(null)
 

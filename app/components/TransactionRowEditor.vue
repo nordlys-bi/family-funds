@@ -27,19 +27,20 @@
 import { computed, ref, watch } from 'vue'
 import type { TransactionItem } from '~/composables/useTransactionList'
 import { fromDateInputValue, toDateInputValue } from '~/utils/form-helpers'
+import { isEnvelopeBookableOn } from '~/utils/envelope-options'
 
 export type TransactionEditPayload = {
   amount: number | null
   description: string
   date: string // YYYY-MM-DD
-  budgetId: string | null
+  envelopeId: string | null
 }
 
 const props = defineProps<{
   transaction: TransactionItem
-  /** Optionen fuer das Budget-Dropdown (nur fuer Expenses relevant).
-   *  Bei Income kann leer gelassen werden — Editor rendert das Feld nicht. */
-  budgetOptions?: Array<{ label: string; value: string; closedAt?: string | null }>
+  /** Optionen fuer das Umschlag-Dropdown. Ohne diese Prop rendert der Editor
+   *  das Feld nicht. */
+  envelopeOptions?: Array<{ label: string; value: string; balanceSince?: string | Date; closedAt?: string | Date | null }>
   /** Waehrungscode fuer den MoneyInput. */
   currency: string
   /** Saving-State — true waehrend PATCH läuft, disablest Inputs + Save. */
@@ -69,7 +70,7 @@ function initialDraft(t: TransactionItem): EditDraft {
     amount: t.amount / 100,
     description: t.description ?? '',
     date: fromDateInputValue(t.date),
-    budgetId: t.budgetId ?? null,
+    envelopeId: t.envelopeId ?? null,
   }
 }
 
@@ -77,14 +78,16 @@ function toPayload(value: EditDraft): TransactionEditPayload {
   return { ...value, date: toDateInputValue(value.date) }
 }
 
-// ADR-0004: Geschlossene Budgets nur anbieten, wenn das Entwurfs-Datum vor
-// ihrem Stichtag liegt. Das aktuell gesetzte Budget bleibt sichtbar, damit
-// der Select nicht leer wirkt — speichern mit Datum ab Stichtag lehnt der
-// Server ab und der Fehler erscheint unten.
-const availableBudgetOptions = computed(() =>
-  props.budgetOptions?.filter((option) =>
-    option.value === (draft.value.budgetId ?? '') || (!draft.value.date ? !option.closedAt : isBudgetOpenOn(option, draft.value.date)),
-  ),
+// ADR-0005: Umschlaege nur anbieten, wenn das Entwurfs-Datum in ihre Laufzeit
+// faellt. "Zu verteilen" hat keine Laufzeit. Der aktuell gesetzte Umschlag
+// bleibt sichtbar, damit der Select nicht leer wirkt — speichern mit einem
+// unpassenden Datum lehnt der Server ab und der Fehler erscheint unten.
+const availableEnvelopeOptions = computed(() =>
+  props.envelopeOptions?.filter((option) => {
+    if (!option.balanceSince || option.value === (draft.value.envelopeId ?? '')) return true
+    if (!draft.value.date) return !option.closedAt
+    return isEnvelopeBookableOn({ balanceSince: option.balanceSince, closedAt: option.closedAt }, draft.value.date)
+  }),
 )
 
 // Wenn Parent eine andere Transaktion in den Editor legt (z. B. nach
@@ -159,17 +162,17 @@ function handleCancel() {
     </div>
 
     <div
-      v-if="budgetOptions !== undefined"
-      class="row-editor__field row-editor__field--budget"
+      v-if="envelopeOptions !== undefined"
+      class="row-editor__field row-editor__field--envelope"
     >
-      <label :for="`tx-edit-budget-${transaction.id}`" class="row-editor__label">Budget</label>
+      <label :for="`tx-edit-envelope-${transaction.id}`" class="row-editor__label">Umschlag</label>
       <Select
-        :input-id="`tx-edit-budget-${transaction.id}`"
-        v-model="draft.budgetId"
-        :options="availableBudgetOptions"
+        :input-id="`tx-edit-envelope-${transaction.id}`"
+        v-model="draft.envelopeId"
+        :options="availableEnvelopeOptions"
         option-label="label"
         option-value="value"
-        placeholder="Sonstiges"
+        placeholder="Zu verteilen"
         :disabled="saving"
         fluid
       />

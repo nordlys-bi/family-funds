@@ -24,24 +24,24 @@
 import { computed } from 'vue'
 import { useState } from '#app'
 
-export type QuickCaptureKind = 'expense' | 'income'
+export type QuickCaptureKind = 'expense' | 'income' | 'transfer'
 
 type QuickCaptureState = {
   open: boolean
   kind: QuickCaptureKind
   /**
-   * Vorausgewaehltes Budget fuer den naechsten Open-Aufruf (z. B. von
-   * einer Budget-Karte auf dem Dashboard). Nur fuer `kind: 'expense'`
+   * Vorausgewaehlter Umschlag fuer den naechsten Open-Aufruf (z. B. von
+   * einer Karte auf dem Dashboard).
    * relevant — <QuickCaptureRoot> ignoriert es bei Einnahmen.
    */
-  budgetId: string | null
+  envelopeId: string | null
 }
 
 export function useQuickCapture() {
   const state = useState<QuickCaptureState>('quick-capture:state', () => ({
     open: false,
     kind: 'expense',
-    budgetId: null,
+    envelopeId: null,
   }))
 
   // Monoton steigender Zaehler, den <QuickCaptureRoot> nach jedem
@@ -51,15 +51,15 @@ export function useQuickCapture() {
 
   const isOpen = computed(() => state.value.open)
   const kind = computed(() => state.value.kind)
-  const budgetId = computed(() => state.value.budgetId)
+  const envelopeId = computed(() => state.value.envelopeId)
 
   /**
-   * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `budgetId`
-   * (optional) fuellt das Budget-Feld vor — z. B. beim Klick auf die
+   * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `envelopeId`
+   * (optional) fuellt das Umschlag-Feld vor — z. B. beim Klick auf die
    * "+"-Aktion einer Dashboard-Budget-Karte.
    */
-  function open(nextKind: QuickCaptureKind = 'expense', options?: { budgetId?: string | null }) {
-    state.value = { open: true, kind: nextKind, budgetId: options?.budgetId ?? null }
+  function open(nextKind: QuickCaptureKind = 'expense', options?: { envelopeId?: string | null }) {
+    state.value = { open: true, kind: nextKind, envelopeId: options?.envelopeId ?? null }
   }
 
   function close() {
@@ -76,5 +76,5 @@ export function useQuickCapture() {
     savedTick.value += 1
   }
 
-  return { isOpen, kind, budgetId, savedTick, open, close, setKind, markSaved }
+  return { isOpen, kind, envelopeId, savedTick, open, close, setKind, markSaved }
 }

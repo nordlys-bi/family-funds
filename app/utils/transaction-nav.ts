@@ -10,8 +10,8 @@
  *  - `month` (nur wenn ein gueltiges YYYY-MM — beide Seiten lassen den
  *    Default "aktueller Monat" aus der URL weg),
  *  - `userId` (Person-Filter, beide Seiten nutzen dieselben Mitglieds-IDs).
- * Ausgaben-spezifisches (`unassigned`, `from`/`to`, `budgetId`) und
- * Einmal-Trigger (`new`) werden verworfen: Einnahmen haben kein Budget, und
+ * Ausgaben-spezifisches (`unassigned`, `from`/`to`, `envelopeId`) und
+ * Einmal-Trigger (`new`) werden verworfen: Die Einnahmen-Seite filtert nicht nach Umschlag, und
  * ein Zeitraum-Chip von einer Budget-Karte gehoert nicht in die Einnahmen.
  */
 

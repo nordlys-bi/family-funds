@@ -16,8 +16,6 @@ type TransactionUpdateBody = {
   date?: string
   // ADR-0005: Umschlag, null = "Zu verteilen". Fuer Ausgaben und Einnahmen.
   envelopeId?: string | null
-  // Alter Name bis zur neuen Erfassung (#156), nur fuer Ausgaben.
-  budgetId?: string | null
 }
 
 /**
@@ -79,7 +77,7 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const envelopeId = parseEnvelopeChange(body.envelopeId !== undefined ? body.envelopeId : body.budgetId)
+    const envelopeId = parseEnvelopeChange(body.envelopeId)
 
     // ADR-0005: Gegen den resultierenden Umschlag und das Datum pruefen —
     // auch ein reines Datums-Update darf eine Ausgabe nicht hinter den
