@@ -62,6 +62,10 @@ const openRecurringCount = computed(
   () => (props.recurringDue?.fixedCostsOpen ?? 0) + (props.recurringDue?.incomeOpen ?? 0),
 )
 const hasRecurringDue = computed(() => openRecurringCount.value > 0)
+// Offene Fixkosten liegen bei den Fixkosten-Umschlaegen, offene Einnahmen bei den Einnahmen.
+const recurringDueLink = computed(() =>
+  (props.recurringDue?.fixedCostsOpen ?? 0) > 0 ? '/budgeting/envelopes?group=FIXED' : '/transactions/income',
+)
 const recurringDueLabel = computed(() => {
   const rd = props.recurringDue
   if (!rd) return ''
@@ -151,14 +155,14 @@ const overBudgetCount = computed(
       </li>
 
       <!-- 3. Fällige wiederkehrende Posten (issue #98) — gelber Hinweis.
-           Deep-Link auf /budgeting/recurring, wo der User sie per
+           Deep-Link zu den Plaenen, wo der User sie per
            „als bezahlt / erhalten markieren" abhakt. -->
       <li v-if="hasRecurringDue" class="action-required__item action-required__item--warn">
         <span class="action-required__icon action-required__icon--warn" aria-hidden="true">
           <i class="pi pi-sync" />
         </span>
         <div class="action-required__body">
-          <NuxtLink to="/budgeting/recurring" class="action-required__link">
+          <NuxtLink :to="recurringDueLink" class="action-required__link">
             <strong>{{ recurringDueLabel }}</strong>
             <span class="action-required__detail">
               Als bezahlt bzw. erhalten markieren, sobald die Buchung durch ist.

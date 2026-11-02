@@ -3,7 +3,7 @@
 
   Vier primäre Items (Dashboard, Buchungen, Budgets, Mehr) — Sparziele
   ist im "Mehr"-Bottom-Sheet, an erster Stelle der sekundären Items
-  (Haushalte, Mitglieder, Wiederkehrend, Einstellungen,
+  (Haushalte, Mitglieder, Einstellungen,
   Abmelden). Active-State wird route-basiert über
   `route.path.startsWith` ermittelt — primäre Items können ein eigenes
   `matchPrefix` haben, falls die exakte Route zu eng ist (z. B.
@@ -92,7 +92,6 @@ const navigateAndClose = (to: string) => {
 const secondaryItems: SecondaryItem[] = [
   { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   { key: 'members', label: 'Mitglieder', icon: 'pi pi-user-plus', to: '/households/members' },
-  { key: 'recurring', label: 'Wiederkehrend', icon: 'pi pi-sync', to: '/budgeting/recurring' },
   { key: 'settings', label: 'Einstellungen', icon: 'pi pi-cog', to: '/households/settings' },
   { key: 'logout', label: 'Abmelden', icon: 'pi pi-power-off', onClick: handleLogout, destructive: true },
 ]

@@ -6,7 +6,7 @@
     v-model="incomeForm"
     id-prefix="income"
     :currency="currencyCode"
-    :budgets="currentHousehold.budgets"
+    :envelopes="envelopes"
     name-placeholder="z. B. Gehalt"
   />
 
@@ -16,13 +16,9 @@
   - frequency (Frequency)
   - startDate (Date | null)
   - endDate (Date | null)
-  - budgetId (string | null) — Issue #59 polish, optionales Default-
-    Budget fuer Transaktionen aus diesem Plan. Hart gekoppelt (kein
-    per-Transaction-Override im Mark-Dialog), aber nachtraegliche
-    Aenderung im Transaction-Row-Editor bleibt moeglich.
-
-  Begründung: Income- und Fixed-Cost-Dialog in `pages/budgeting/recurring.vue`
-  waren 1:1 identisch (mit unterschiedlichen id-Prefixen und Placeholdern).
+  - envelopeId (string | null) — Umschlag des Plans (ADR-0005). Buchungen aus
+    dem Plan erben ihn, ein Fixkosten-Umschlag mit Zuteilung aus Plaenen teilt
+    daraus zu. null = "Zu verteilen".
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -34,7 +30,7 @@ export type RecurringPlanFormData = {
   frequency: Frequency
   startDate: Date | null
   endDate: Date | null
-  budgetId?: string | null
+  envelopeId?: string | null
 }
 
 const props = defineProps<{
@@ -45,9 +41,8 @@ const props = defineProps<{
   currency: string
   /** Placeholder für das Name-Feld. */
   namePlaceholder: string
-  /** Issue #59 polish: Liste der Haushalts-Budgets fuer das
-   *  Default-Budget-Dropdown. */
-  budgets: Array<{ id: string; name: string }>
+  /** Umschlaege des Haushalts fuer die Auswahl; geschlossene nur, wenn der Plan schon daran haengt. */
+  envelopes: Array<{ id: string; name: string; closedAt?: string | Date | null }>
 }>()
 
 const emit = defineEmits<{
@@ -61,11 +56,11 @@ function update<K extends keyof RecurringPlanFormData>(
   emit('update:modelValue', { ...props.modelValue, [key]: value })
 }
 
-// Issue #59 polish: Budget-Optionen mit "Kein Budget"-Default.
-// v-model-Value ist null = kein Default-Budget gesetzt.
-const budgetOptions = computed(() => [
-  { label: 'Kein Budget', value: null as string | null },
-  ...props.budgets.map((b) => ({ label: b.name, value: b.id as string | null })),
+const envelopeOptions = computed(() => [
+  { label: 'Zu verteilen', value: null as string | null },
+  ...props.envelopes
+    .filter((envelope) => !envelope.closedAt || envelope.id === props.modelValue.envelopeId)
+    .map((envelope) => ({ label: envelope.name, value: envelope.id as string | null })),
 ])
 </script>
 
@@ -96,20 +91,16 @@ const budgetOptions = computed(() => [
       optionValue="value"
     />
   </FormFieldRow>
-  <!-- Issue #59 polish: optionales Default-Budget. Wird beim
-       "Als bezahlt/erhalten markieren"-Flow an die neue Transaktion
-       vererbt. Recurring und Budget sind orthogonale Konzepte —
-       "Kein Budget" ist ein valider Default, falls der Plan bewusst
-       keinem Bucket zugeordnet werden soll. -->
-  <FormFieldRow label="Standard-Budget" :htmlFor="`${idPrefix}-budget`" wide>
+  <!-- Buchungen aus dem Plan erben den Umschlag (issue #59). -->
+  <FormFieldRow label="Umschlag" :htmlFor="`${idPrefix}-envelope`" wide>
     <Select
-      :id="`${idPrefix}-budget`"
-      :modelValue="modelValue.budgetId ?? null"
-      @update:modelValue="(v) => update('budgetId', v ?? null)"
-      :options="budgetOptions"
+      :id="`${idPrefix}-envelope`"
+      :modelValue="modelValue.envelopeId ?? null"
+      @update:modelValue="(v) => update('envelopeId', v ?? null)"
+      :options="envelopeOptions"
       optionLabel="label"
       optionValue="value"
-      placeholder="Kein Budget"
+      placeholder="Zu verteilen"
     />
   </FormFieldRow>
   <FormFieldRow label="Start" :htmlFor="`${idPrefix}-start`">

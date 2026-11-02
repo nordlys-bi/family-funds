@@ -53,17 +53,13 @@ export async function assertBookingEnvelope(householdId: string, envelopeId: str
   assertEnvelopeAcceptsBooking(envelope, date)
 }
 
-/**
- * Umschlag eines Fixkosten- oder Einnahmen-Plans: `envelopeId`, sonst der
- * alte Name `budgetId` (bis #159). `undefined` = nicht angegeben.
- */
+/** Umschlag eines Fixkosten- oder Einnahmen-Plans. `undefined` = nicht angegeben. */
 export async function parsePlanEnvelope(
   householdId: string,
-  body: { envelopeId?: string | null; budgetId?: string | null },
+  body: { envelopeId?: string | null },
 ): Promise<string | null | undefined> {
-  const raw = body.envelopeId !== undefined ? body.envelopeId : body.budgetId
-  if (raw === undefined) return undefined
-  const envelopeId = raw?.trim() || null
+  if (body.envelopeId === undefined) return undefined
+  const envelopeId = body.envelopeId?.trim() || null
   if (envelopeId) {
     const envelope = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { id: true } })
     if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })

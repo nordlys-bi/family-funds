@@ -1,6 +1,6 @@
 /*
  * useListSwipe — entscheidet, ob Swipe-Gesten (SwipeableListItem) auf den
- * Planungs-Listen (Budgets, Wiederkehrend, Sparziele) aktiv sind (issue #132).
+ * Planungs-Listen (Umschläge, Pläne) aktiv sind (issue #132).
  *
  * Swipe ist dort nur aktiv, wenn BEIDES zutrifft:
  *   - Mobil (< 640px): ab 640px ist `ItemCard` eine Karte mit Hover-Actions;
