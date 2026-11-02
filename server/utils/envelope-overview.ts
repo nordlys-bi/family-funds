@@ -11,12 +11,11 @@ import type { AllocationSource, EnvelopeGroup, Frequency } from '@prisma/client'
 import { prisma } from './prisma'
 import { dayKey } from './budget-balance'
 import { addPeriod, startOfPeriod, type PeriodSeverity } from './budget-evaluation'
-import { buildBudgetForecast } from './forecast'
 import {
   classifyEnvelopeSeverity,
   computePeriodAvailability,
+  computeRemainingTimeShare,
   listReservedAllocations,
-  projectPeriodEndBalance,
 } from './envelope-allocations'
 import { computeEnvelopeBalances, computeUnassignedBalance, type EnvelopeBalance } from './envelope-balance'
 import { ensureAllocations, loadEnvelopeBalanceInputs, toAllocationEnvelope } from './envelope-store'
@@ -30,8 +29,6 @@ export type EnvelopeCurrentPeriod = {
   /** Aktueller Saldo + Ausgaben der Periode, also auch Zufluesse in der Periode. */
   available: number
   percentUsed: number | null
-  /** Saldo am Periodenende bei gleichbleibendem Ausgabetempo (ADR-0003). */
-  projectedEndBalance: number
 }
 
 export type EnvelopeOverviewItem = {
@@ -147,7 +144,6 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
         .filter((expense) => expense.envelopeId === envelope.id && dayKey(expense.date) >= startKey && dayKey(expense.date) <= nowKey)
         .reduce((sum, expense) => sum + expense.amount, 0)
       const availability = computePeriodAvailability({ balance: balance.balance, spent })
-      const forecast = buildBudgetForecast(allocation, spent, start, end, now)
       currentPeriod = {
         start,
         end,
@@ -155,7 +151,6 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
         spent,
         available: availability.available,
         percentUsed: availability.percentUsed,
-        projectedEndBalance: projectPeriodEndBalance(balance.balance, spent, forecast.forecastTotal),
       }
     }
 
@@ -181,7 +176,13 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
       // Ein geschlossener Umschlag ist nie "ueberzogen": Sein Endsaldo steckt
       // schon im Ziel und wird dort bewertet.
       severity: isOpen
-        ? classifyEnvelopeSeverity({ balance: balance.balance, projectedPeriodEndBalance: currentPeriod?.projectedEndBalance ?? null })
+        ? classifyEnvelopeSeverity({
+            balance: balance.balance,
+            available: currentPeriod?.available ?? null,
+            remainingTimeShare: currentPeriod && envelope.group === 'RUNNING'
+              ? computeRemainingTimeShare(currentPeriod.start, currentPeriod.end, now)
+              : null,
+          })
         : 'ok',
       currentPeriod,
       reserved,

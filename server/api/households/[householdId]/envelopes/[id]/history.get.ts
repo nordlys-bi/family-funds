@@ -13,7 +13,8 @@ import { prisma } from '../../../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../../../utils/household-access'
 import { parseUuidParam } from '../../../../../utils/validation'
 import { parseDateInput } from '../../../../../utils/planning'
-import { getDefaultHistoryRange, getRangeDays, MAX_HISTORY_RANGE_DAYS } from '../../../../../utils/budget-balance-history'
+import { dayKey } from '../../../../../utils/budget-balance'
+import { formatDayKey, getDefaultHistoryRange, getRangeDays, MAX_HISTORY_RANGE_DAYS } from '../../../../../utils/budget-balance-history'
 import { ensureAllocations, envelopeBalanceSelect } from '../../../../../utils/envelope-store'
 import { computeEnvelopeHistoryPoints, getEnvelopeChain, listEnvelopeHistoryEntries } from '../../../../../utils/envelope-history'
 
@@ -75,15 +76,19 @@ export default defineEventHandler(async (event) => {
   ])
   const inputs = { expenses, incomes, transfers }
   const names = new Map(envelopes.map((envelope) => [envelope.id, envelope.name]))
+  // Tage als 'YYYY-MM-DD' in Serverzeit, damit der Client nicht umrechnen muss.
+  const day = (date: Date) => formatDayKey(dayKey(date))
 
   return {
     envelopeId,
-    from,
-    to,
+    from: day(from),
+    to: day(to),
     chain: chain.map((envelope) => ({ id: envelope.id, name: envelope.name, closedAt: envelope.closedAt })),
-    points: computeEnvelopeHistoryPoints(chain, inputs, from, to),
+    points: computeEnvelopeHistoryPoints(chain, inputs, from, to).map((point) => ({ ...point, date: day(point.date) })),
     entries: listEnvelopeHistoryEntries(chain, inputs, from, to).map((entry) => ({
       ...entry,
+      date: day(entry.date),
+      envelopeName: names.get(entry.envelopeId) ?? null,
       counterpartName: entry.counterpartId ? names.get(entry.counterpartId) ?? null : null,
     })),
   }

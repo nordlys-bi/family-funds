@@ -5,29 +5,30 @@
   nicht "Wie hoch waren meine Einnahmen?". Diese Sektion beantwortet
   genau das, in der Reihenfolge der Wichtigkeit:
 
-  1. Kritische Budgets (severity warning/over) — direkter Handlungsbedarf
-  2. Buchungen ohne Budget-Zuordnung — User muss entscheiden
+  1. Umschlaege im Minus oder kurz davor (severity over/warning)
+  2. Buchungen ohne Umschlag — User muss entscheiden
   3. Fällige wiederkehrende Posten (issue #98) — als bezahlt markieren
-  4. Freies Restbudget — informativ, am unteren Rand
+  4. Mehr verplant als in "Zu verteilen" da ist
 
   Issue #97: Die Liste wird nur gerendert, wenn es echten Handlungsbedarf
-  gibt (kritische Budgets, unzugeordnete Buchungen oder fällige Posten).
+  gibt (kritische Umschläge, unzugeordnete Buchungen oder fällige Posten).
   Sonst ein ruhiger Einzeiler ("Alles im grünen Bereich") — keine
   Feed-Zeilen ohne Aktion. Die "letzte Buchung" als Schnellzugriff lebt
   jetzt im "Letzte Buchungen"-Panel-Header, nicht mehr hier.
 -->
 <script setup lang="ts">
 const props = defineProps<{
-  budgetAlerts: Array<{
-    budgetId: string
+  /** ADR-0005: Umschlaege im Minus oder mit deutlich weniger Geld als Zeit uebrig zaehlen als kritisch. */
+  envelopes: Array<{
+    id: string
     name: string
-    plannedAmount: number
-    spentAmount: number
-    remainingAmount: number
-    percentUsed: number
     severity: 'ok' | 'warning' | 'over'
+    closedAt: string | null
+    balance: { balance: number }
   }>
   unassignedExpenses: number
+  /** Freies Geld in "Zu verteilen". */
+  unassignedFree: number
   /**
    * Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
    * diesen Monat. `null`, wenn der Server das Feld (noch) nicht liefert.
@@ -44,23 +45,16 @@ const props = defineProps<{
   formatMoney: (cents: number) => string
 }>()
 
-// Kritisch = warning oder over. "ok" ist der Normalzustand.
-const criticalBudgets = computed(() =>
-  props.budgetAlerts.filter((alert) => alert.severity !== 'ok'),
-)
-
-// Summe der remainingAmount ueber alle "ok"-Budgets.
-const freeBudgetTotal = computed(() =>
-  props.budgetAlerts
-    .filter((alert) => alert.severity === 'ok')
-    .reduce((sum, alert) => sum + alert.remainingAmount, 0),
-)
+// Kritisch = warning oder over. "ok" ist der Normalzustand. Geschlossene
+// bewertet der Server immer als ok.
+const criticalBudgets = computed(() => props.envelopes.filter((envelope) => envelope.severity !== 'ok'))
 
 // Welche Items zeigen wir im Block? Ein Item gilt als "aktiv", wenn es
 // entweder ueberhaupt Daten hat oder eine sinnvolle Aussage machen kann.
 const hasCritical = computed(() => criticalBudgets.value.length > 0)
 const hasUnassigned = computed(() => props.unassignedExpenses > 0)
-const hasFreeBudget = computed(() => freeBudgetTotal.value > 0)
+// ADR-0005: Negativ heisst, es ist mehr verplant als da ist.
+const isOverplanned = computed(() => props.unassignedFree < 0)
 
 // Issue #98: fällige Recurring-Pläne, die diesen Monat noch nicht
 // (voll) als bezahlt/erhalten markiert sind.
@@ -84,7 +78,7 @@ const recurringDueLabel = computed(() => {
 // Issue #97: "letzte Buchung" zaehlt nicht mehr als Handlungsbedarf —
 // eine ruhige Aktivitaet ist kein Grund, den Alarm-Block offen zu halten.
 const isAllClear = computed(
-  () => !hasCritical.value && !hasUnassigned.value && !hasRecurringDue.value,
+  () => !hasCritical.value && !hasUnassigned.value && !hasRecurringDue.value && !isOverplanned.value,
 )
 
 // Anzahl der ueber-Critical-Budgets (severity === 'over') fuer die Ampel-Label.
@@ -108,7 +102,7 @@ const overBudgetCount = computed(
       <i class="pi pi-check-circle" aria-hidden="true" />
       <div>
         <strong>Alles im grünen Bereich.</strong>
-        Keine kritischen Budgets, nichts ohne Zuordnung, keine offenen Posten.
+        Kein Umschlag im Minus, nichts ohne Zuordnung, keine offenen Posten.
       </div>
     </div>
 
@@ -122,12 +116,12 @@ const overBudgetCount = computed(
           <NuxtLink to="/budgeting/budgets" class="action-required__link">
             <strong>
               {{ criticalBudgets.length === 1
-                ? `Budget „${criticalBudgets[0].name}" ist ${criticalBudgets[0].severity === 'over' ? 'überzogen' : 'knapp'}`
-                : `${criticalBudgets.length} Budgets brauchen Aufmerksamkeit` }}
+                ? `„${criticalBudgets[0].name}" ${criticalBudgets[0].severity === 'over' ? `ist im Minus (${formatMoney(criticalBudgets[0].balance.balance)})` : 'ist fast aufgebraucht'}`
+                : `${criticalBudgets.length} Umschläge brauchen Aufmerksamkeit` }}
             </strong>
             <span v-if="criticalBudgets.length > 1" class="action-required__detail">
-              <template v-for="(alert, idx) in criticalBudgets.slice(0, 3)" :key="alert.budgetId">
-                <span>{{ alert.name }} ({{ alert.percentUsed.toFixed(0) }}%)</span><template v-if="idx < Math.min(criticalBudgets.length, 3) - 1">, </template>
+              <template v-for="(alert, idx) in criticalBudgets.slice(0, 3)" :key="alert.id">
+                <span>{{ alert.name }} ({{ formatMoney(alert.balance.balance) }})</span><template v-if="idx < Math.min(criticalBudgets.length, 3) - 1">, </template>
               </template>
               <template v-if="criticalBudgets.length > 3">…</template>
             </span>
@@ -147,9 +141,9 @@ const overBudgetCount = computed(
                zeigt nur Buchungen ohne BudgetId, ohne dass der User
                selbst nach "Sonstiges" filtern muss. -->
           <NuxtLink to="/transactions/expenses?unassigned=1" class="action-required__link">
-            <strong>{{ formatMoney(props.unassignedExpenses) }} ohne Budgetzuordnung diesen Monat</strong>
+            <strong>{{ formatMoney(props.unassignedExpenses) }} ohne Umschlag diesen Monat</strong>
             <span class="action-required__detail">
-              Ausgaben, die keinem Budget zugewiesen sind — entweder zuordnen oder als „Sonstiges" akzeptieren.
+              Sie gehen direkt von „Zu verteilen“ ab — entweder einem Umschlag zuordnen oder so lassen.
             </span>
           </NuxtLink>
         </div>
@@ -174,15 +168,15 @@ const overBudgetCount = computed(
         <i class="pi pi-arrow-right action-required__chevron" aria-hidden="true" />
       </li>
 
-      <!-- 4. Freies Restbudget — informativ, gruen, am unteren Rand -->
-      <li v-if="hasFreeBudget && !hasCritical" class="action-required__item action-required__item--ok">
-        <span class="action-required__icon action-required__icon--ok" aria-hidden="true">
-          <i class="pi pi-check" />
+      <!-- 4. Mehr verplant als da ist (ADR-0005) -->
+      <li v-if="isOverplanned" class="action-required__item action-required__item--warn">
+        <span class="action-required__icon action-required__icon--warn" aria-hidden="true">
+          <i class="pi pi-inbox" />
         </span>
         <div class="action-required__body">
-          <strong>{{ formatMoney(freeBudgetTotal) }} freies Restbudget diesen Monat</strong>
+          <strong>{{ formatMoney(-unassignedFree) }} mehr verplant als da ist</strong>
           <span class="action-required__detail">
-            Verteilt über alle Budgets, die aktuell im Plan liegen.
+            „Zu verteilen“ reicht nicht für die Vormerkungen bis Monatsende.
           </span>
         </div>
       </li>

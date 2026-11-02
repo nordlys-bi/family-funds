@@ -57,7 +57,7 @@ function patch<K extends keyof BudgetFormData>(
       placeholder="z. B. Lebensmittel"
     />
   </FormFieldRow>
-  <FormFieldRow label="Betrag" htmlFor="budget-amount">
+  <FormFieldRow label="Zuteilung je Periode" htmlFor="budget-amount">
     <MoneyInput
       id="budget-amount"
       :modelValue="modelValue.amount"
@@ -76,10 +76,10 @@ function patch<K extends keyof BudgetFormData>(
       :disabled="frequencyLocked"
     />
     <small v-if="frequencyLocked" class="budget-form__hint">
-      Frequenz ist fest. Für eine andere Frequenz ein neues Budget anlegen und dieses hinein schließen.
+      Frequenz ist fest. Für eine andere Frequenz einen neuen Umschlag anlegen und diesen hinein schließen.
     </small>
   </FormFieldRow>
-  <FormFieldRow label="Gültig ab" htmlFor="budget-valid-from">
+  <FormFieldRow v-if="!frequencyLocked" label="Gültig ab" htmlFor="budget-valid-from">
     <DatePicker
       id="budget-valid-from"
       :modelValue="modelValue.validFrom"

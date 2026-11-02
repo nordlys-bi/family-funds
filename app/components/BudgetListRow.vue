@@ -1,10 +1,11 @@
 <!--
-  BudgetListRow — eine Zeile der kompakten Budget-Liste (ADR-0004).
+  BudgetListRow — eine Zeile der kompakten Umschlag-Liste (ADR-0005).
 
   Der Saldo steht gross und farbig rechts, daneben der Trend der letzten
   3 Monate (gleiche Sparkline wie auf dem Dashboard) — er ist die Haupt-
-  zahl eines virtuellen Kontos. Die laufende Periode steht nur kompakt als
-  verbraucht/zugeteilt darunter; Details, Verlauf und Aktionen liegen auf
+  zahl eines virtuellen Kontos und bestimmt die Farbe. Die laufende Periode
+  steht nur als Information darunter (Ausgaben und Zuteilung), der Balken
+  misst die Ausgaben am Verfuegbaren; Details, Verlauf und Aktionen liegen auf
   der Detailseite, auf die die ganze Zeile verlinkt.
 
   Slot `actions`: Platz fuer Zeilen-Aktionen (Umbuchen) NEBEN dem Link —
@@ -13,17 +14,17 @@
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { BudgetListItem } from '~/types/budget'
+import type { EnvelopeItem } from '~/types/envelope'
 
 const props = defineProps<{
-  budget: BudgetListItem
+  budget: EnvelopeItem
   formatMoney: (cents: number) => string
-  /** Name des Ziel-Budgets bei geschlossenen Budgets. */
+  /** Name des Ziels bei geschlossenen Umschlaegen. */
   targetName?: string | null
 }>()
 
-const balance = computed(() => props.budget.balance?.balance ?? 0)
-// Stichtag erreicht: Der Endsaldo steckt bereits im Ziel-Budget (ADR-0004),
+const balance = computed(() => props.budget.balance.balance)
+// Stichtag erreicht: Der Endsaldo steckt bereits im Ziel (ADR-0005),
 // also neutral statt gruen/rot. Ein Stichtag in der Zukunft ist noch offen.
 const isClosed = computed(() => Boolean(props.budget.closedAt && new Date(props.budget.closedAt) <= new Date()))
 const period = computed(() => props.budget.currentPeriod)
@@ -40,27 +41,30 @@ const periodLabel = computed(() =>
         <span class="budget-row__sub">
           <span class="budget-row__tag">{{ frequencyLabel(budget.frequency) }}</span>
           <span v-if="isClosed" class="budget-row__closed">
-            geschlossen → {{ targetName ?? '—' }}
+            geschlossen → {{ targetName ?? 'Zu verteilen' }}
           </span>
           <span v-else-if="budget.closedAt" class="budget-row__closed">
-            schließt am {{ formatPlanningDate(budget.closedAt) }} → {{ targetName ?? "—" }}
+            schließt am {{ formatPlanningDate(budget.closedAt) }} → {{ targetName ?? 'Zu verteilen' }}
           </span>
           <span v-if="!isClosed && period" class="budget-row__period">
-            {{ periodLabel }}: {{ formatMoney(period.spentAmount) }} / {{ formatMoney(period.plannedAmount) }}
+            {{ periodLabel }}: {{ formatMoney(period.spent) }} ausgegeben, {{ formatMoney(period.allocation) }} zugeteilt
+          </span>
+          <span v-if="!isClosed && budget.reserved > 0" class="budget-row__period">
+            +{{ formatMoney(budget.reserved) }} kommen bis Monatsende
           </span>
         </span>
         <ListProgressBar
           v-if="!isClosed && period"
           class="budget-row__progress"
           :percent="period.percentUsed"
-          :tone="period.severity"
+          :tone="budget.severity"
         />
       </div>
       <div class="budget-row__aside">
         <span
           class="budget-row__balance"
           :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
-          :title="isClosed ? 'Endsaldo — steckt bereits im Ziel-Budget' : undefined"
+          :title="isClosed ? 'Endsaldo — steckt bereits im Ziel' : undefined"
         >{{ formatMoney(balance) }}</span>
         <BudgetBalanceSparkline :values="budget.balanceTrend" :width="64" :height="18" />
       </div>

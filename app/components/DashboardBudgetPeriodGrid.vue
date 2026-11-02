@@ -13,94 +13,74 @@
   (useQuickCapture, issue #91) mit vorausgewaehltem Budget — kein
   eigener Dialog noetig.
 
+  ADR-0005: Die Karte rechnet vom Verfuegbaren zum Saldo, ihre Farbe kommt aus
+  der Bewertung nach Saldo — nicht aus dem Vergleich mit der Zuteilung.
+
   Klick auf die Karte (oberhalb des "Erfassen"-Buttons) oeffnet die
-  Budget-Detailseite (ADR-0004: Saldo + Verlauf sind dort die Hauptansicht).
+  Detailseite (Saldo + Verlauf sind dort die Hauptansicht).
   Frueher fuehrte er direkt in die nach Budget und Perioden-Spanne
   gefilterte Buchungsliste — dieser Link ("Buchungen dieser Periode")
   sitzt jetzt auf der Detailseite.
 -->
 <script setup lang="ts">
-import type { Frequency } from '~/types/planning'
-
-type PeriodCard = {
-  budgetId: string
-  key: string
-  name: string
-  frequency: Frequency
-  periodStart: string
-  periodEnd: string | null
-  plannedAmount: number
-  spentAmount: number
-  remainingAmount: number
-  percentUsed: number
-  severity: 'ok' | 'warning' | 'over'
-  /** ADR-0004: fortlaufender Saldo des Budgets (ueber alle Perioden). */
-  balance?: number
-  /** ADR-0004: Saldo im Wochenraster der letzten 3 Monate, fuer die Sparkline. */
-  balanceTrend?: number[]
-}
+import type { EnvelopeItem } from '~/types/envelope'
 
 defineProps<{
-  cards: PeriodCard[]
+  envelopes: EnvelopeItem[]
   formatMoney: (cents: number) => string
 }>()
 
 const quickCapture = useQuickCapture()
 
-function captureExpense(budgetId: string) {
-  quickCapture.open('expense', { envelopeId: budgetId })
-}
-
-function detailLink(card: PeriodCard) {
-  return `/budgeting/budgets/${card.budgetId}`
+function captureExpense(envelopeId: string) {
+  quickCapture.open('expense', { envelopeId })
 }
 </script>
 
 <template>
-  <div v-if="cards.length === 0" class="empty">
-    Noch keine aktiven Budgets — lege ein Budget an, um den aktuellen Stand zu sehen.
+  <div v-if="envelopes.length === 0" class="empty">
+    Noch keine laufenden Ausgaben — lege einen Umschlag an, um den aktuellen Stand zu sehen.
   </div>
   <div v-else class="grid">
-    <article v-for="card in cards" :key="card.budgetId" class="card" :class="`card--${card.severity}`">
-      <NuxtLink :to="detailLink(card)" class="card__main">
+    <article v-for="envelope in envelopes" :key="envelope.id" class="card" :class="`card--${envelope.severity}`">
+      <NuxtLink :to="`/budgeting/budgets/${envelope.id}`" class="card__main">
         <div class="card__head">
-          <span class="card__name">{{ card.name }}</span>
-          <span class="card__period">{{ formatBudgetPeriodLabel(card.frequency, card.periodStart, card.periodEnd) }}</span>
+          <span class="card__name">{{ envelope.name }}</span>
+          <span v-if="envelope.currentPeriod" class="card__period">{{ formatBudgetPeriodLabel(envelope.frequency, envelope.currentPeriod.start, envelope.currentPeriod.end) }}</span>
         </div>
-        <div class="card__body">
-          <BudgetPeriodRing :percent="card.percentUsed" :severity="card.severity" :size="56" class="card__ring" />
+        <div v-if="envelope.currentPeriod" class="card__body">
+          <!-- ADR-0005: Der Ring misst die Ausgaben am Verfuegbaren; nichts verfuegbar heisst voll. -->
+          <BudgetPeriodRing :percent="envelope.currentPeriod.percentUsed ?? 100" :severity="envelope.severity" :size="56" class="card__ring" />
           <dl class="card__amounts">
             <div class="card__amount-row">
-              <dt class="sr-only">Budget</dt>
+              <dt class="sr-only">Verfügbar</dt>
               <span class="card__op" aria-hidden="true"></span>
-              <dd>{{ formatMoney(card.plannedAmount) }}</dd>
+              <dd>{{ formatMoney(envelope.currentPeriod.available) }}</dd>
             </div>
             <div class="card__amount-row">
               <dt class="sr-only">Ausgaben</dt>
               <span class="card__op" aria-hidden="true">−</span>
-              <dd>{{ formatMoney(card.spentAmount) }}</dd>
+              <dd>{{ formatMoney(envelope.currentPeriod.spent) }}</dd>
             </div>
-            <div class="card__amount-row card__amount-row--saldo" :class="{ 'is-negative': card.remainingAmount < 0 }">
+            <div class="card__amount-row card__amount-row--saldo" :class="{ 'is-negative': envelope.balance.balance < 0 }">
               <dt class="sr-only">Saldo</dt>
               <span class="card__op" aria-hidden="true">=</span>
-              <dd>{{ formatMoney(card.remainingAmount) }}</dd>
+              <dd>{{ formatMoney(envelope.balance.balance) }}</dd>
             </div>
           </dl>
         </div>
-        <!-- ADR-0004: Perioden-Rest oben beantwortet "wie liegen wir in
-             dieser Periode?", der Saldo hier "wie viel ist insgesamt da?". -->
-        <div v-if="card.balance !== undefined" class="card__balance" :class="{ 'is-negative': card.balance < 0 }">
-          <span class="card__balance-label">Saldo gesamt {{ formatMoney(card.balance) }}</span>
+        <div class="card__balance">
+          <span v-if="envelope.reserved > 0" class="card__balance-label">+{{ formatMoney(envelope.reserved) }} kommen bis Monatsende</span>
           <!-- Trend der letzten 3 Monate ueber die volle Kartenbreite (#148);
-               Details mit Ereignissen auf der Budget-Seite. -->
-          <BudgetBalanceSparkline v-if="card.balanceTrend" :values="card.balanceTrend" :width="160" :height="22" fluid />
+               Details mit Ereignissen auf der Detailseite. -->
+          <BudgetBalanceSparkline :values="envelope.balanceTrend" :width="160" :height="22" fluid />
         </div>
       </NuxtLink>
       <button
         type="button"
         class="card__footer"
-        :aria-label="`Ausgabe für ${card.name} erfassen`"
-        @click="captureExpense(card.budgetId)"
+        :aria-label="`Ausgabe für ${envelope.name} erfassen`"
+        @click="captureExpense(envelope.id)"
       >
         <i class="pi pi-plus" aria-hidden="true" />
         <span>Erfassen</span>
@@ -124,10 +104,6 @@ function detailLink(card: PeriodCard) {
   /* Rechtsbuendig wie die Betragsspalte darueber (#148). */
   text-align: right;
   font-variant-numeric: tabular-nums;
-}
-
-.card__balance.is-negative {
-  color: var(--color-accent-danger-text);
 }
 
 .empty {

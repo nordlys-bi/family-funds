@@ -42,22 +42,6 @@ export function balanceTrendOf(points: BalancePoint[]): { since: string; delta: 
   return { since: first.date, delta: last.balance - first.balance }
 }
 
-/**
- * Saldo am Periodenende, wenn die Ausgaben im bisherigen Tempo weiterlaufen:
- * heutiger Saldo minus die noch erwarteten Ausgaben dieser Periode
- * (Forecast nach ADR-0003 minus bereits Ausgegebenes). Clientseitig aus den
- * vorhandenen Listen-Daten, nichts Neues vom Server. Die Zuteilung der
- * naechsten Periode ist bewusst nicht enthalten — "Ende" heisst vor dem
- * naechsten Periodenbeginn.
- */
-export function projectedPeriodEndBalance(
-  balance: number,
-  period: { spentAmount: number; forecast: { forecastTotal: number } | null } | null,
-): number | null {
-  if (!period?.forecast) return null
-  return balance - Math.max(0, period.forecast.forecastTotal - period.spentAmount)
-}
-
 export type BalanceHistorySummary = {
   start: number
   end: number
@@ -221,15 +205,15 @@ export function groupEntriesByPeriod<E extends GroupableEntry>(
  * `maxDays` vor `today`, weil der Server laengere Zeitraeume ablehnt.
  */
 export function allHistoryFrom(
-  budgetId: string,
-  budgets: Array<{ id: string; balanceSince: string; carryoverToBudgetId: string | null }>,
+  envelopeId: string,
+  budgets: Array<{ id: string; balanceSince: string; carryoverToEnvelopeId: string | null }>,
   today: string,
   maxDays: number,
 ): string {
   const byTarget = new Map<string, typeof budgets>()
   for (const budget of budgets) {
-    if (!budget.carryoverToBudgetId) continue
-    byTarget.set(budget.carryoverToBudgetId, [...(byTarget.get(budget.carryoverToBudgetId) ?? []), budget])
+    if (!budget.carryoverToEnvelopeId) continue
+    byTarget.set(budget.carryoverToEnvelopeId, [...(byTarget.get(budget.carryoverToEnvelopeId) ?? []), budget])
   }
   const seen = new Set<string>()
   let earliest = today
@@ -242,7 +226,7 @@ export function allHistoryFrom(
     if (since < earliest) earliest = since
     for (const predecessor of byTarget.get(id) ?? []) visit(predecessor.id)
   }
-  visit(budgetId)
+  visit(envelopeId)
   const limit = addDays(today, -maxDays)
   return earliest < limit ? limit : earliest
 }
@@ -251,20 +235,6 @@ function toLocalDay(value: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const date = new Date(value)
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
-/**
- * Prognose "Periodenende ≈ X" nur, solange nach heute noch Tage der
- * laufenden Periode kommen. Am letzten Tag zaehlt die ADR-0003-Formel heute
- * als vollen Resttag und rechnet eine ganze Tagesrate drauf, obwohl die
- * Periode praktisch vorbei ist (Fall: Wochenbudget am Sonntag zeigte
- * "≈ −94 €"). Ohne Periodenende (ONCE) gibt es nichts hochzurechnen.
- * `periodEnd` ist exklusiv (Beginn der Folgeperiode), wie vom Server.
- */
-export function showsPeriodForecast(periodEnd: string | null, today: string): boolean {
-  if (!periodEnd) return false
-  const lastDay = addDays(toLocalDay(periodEnd), -1)
-  return today < lastDay
 }
 
 const PREVIOUS_PERIOD_LABELS: Record<Frequency, string | null> = {
