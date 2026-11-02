@@ -10,13 +10,14 @@
  *   npm run db:seed:demo
  *
  * Zufallswerte kommen aus einem festen Seed, damit zwei Laeufe am selben Tag
- * dieselben Daten erzeugen. Bildet ADR-0004 ab: Wochen- und Monatsbudgets mit
- * fortlaufendem Saldo, eine Betragsaenderung, ein in ein Monatsbudget
- * geschlossenes Wochenbudget (Frequenzwechsel), Umbuchungen Budget <-> Spartopf
- * und eine Doppelbuchung nach ADR-0001 (Urlaub aus dem Spartopf bezahlt).
+ * dieselben Daten erzeugen. Bildet ADR-0005 ab: alle fuenf Gruppen von
+ * Umschlaegen, gebuchte Zuteilungen (eine geaenderte, eine ausgelassene),
+ * Fixkosten-Umschlaege aus Plaenen, ein in einen Monatsumschlag geschlossener
+ * Wochenumschlag (Frequenzwechsel), Gutschriften auf Umschlaege, Umbuchungen
+ * und Ausgaben aus Sparzielen.
  */
-import { PrismaClient, Role, type Frequency } from '@prisma/client'
-import { randomUUID } from 'node:crypto'
+import { PrismaClient, Role, type AllocationSource, type EnvelopeGroup, type Frequency } from '@prisma/client'
+import { ensureAllocations } from '../server/utils/envelope-store'
 
 const prisma = new PrismaClient()
 const HOUSEHOLD_NAME = 'Familie Demo'
@@ -55,14 +56,22 @@ const isPast = (date: Date) => date <= today
 const START_WEEK = day(2026, 7, 27) // Montag
 const START_MONTH = day(2026, 8, 1)
 const MONTHS: Array<[number, number]> = [[2026, 8], [2026, 9], [2026, 10]]
+// Startpunkt von "Zu verteilen": vor allen Zuteilungen, damit jede davon
+// von dort abgeht und die Invariante aus ADR-0005 ohne Altbestand aufgeht.
+const LEDGER_SINCE = day(2026, 7, 20)
 
 async function main() {
   const existing = await prisma.household.findMany({ where: { name: HOUSEHOLD_NAME }, select: { id: true } })
   if (existing.length > 0) {
-    // Budgets mit Uebertrags-Verweis zuerst entkoppeln (onDelete: NoAction).
+    // Uebertrags-Verweise zuerst entkoppeln (onDelete: NoAction). Budget nur
+    // fuer Haushalte, die noch aus der Zeit vor ADR-0005 stammen.
     await prisma.budget.updateMany({
       where: { householdId: { in: existing.map((h) => h.id) } },
       data: { carryoverToBudgetId: null },
+    })
+    await prisma.envelope.updateMany({
+      where: { householdId: { in: existing.map((h) => h.id) } },
+      data: { carryoverToEnvelopeId: null },
     })
     await prisma.household.deleteMany({ where: { id: { in: existing.map((h) => h.id) } } })
     console.log(`Bestehenden Haushalt "${HOUSEHOLD_NAME}" entfernt.`)
@@ -84,6 +93,8 @@ async function main() {
     data: {
       name: HOUSEHOLD_NAME,
       currency: 'EUR',
+      ledgerSince: LEDGER_SINCE,
+      openingBalance: 300000,
       members: {
         create: [
           { userId: jan.id, role: Role.OWNER },
@@ -94,58 +105,77 @@ async function main() {
   })
   const householdId = household.id
 
-  // --- Budgets ------------------------------------------------------------
+  // --- Umschlaege ---------------------------------------------------------
 
-  async function createBudget(
+  async function createEnvelope(
     name: string,
+    group: EnvelopeGroup,
     frequency: Frequency,
     balanceSince: Date,
-    versions: Array<[Date, number]>,
+    rule: { source: AllocationSource; amount?: number; target?: number },
   ) {
-    return prisma.budget.create({
+    return prisma.envelope.create({
       data: {
         householdId,
-        key: `budget_${randomUUID().replace(/-/g, '')}`,
         name,
+        group,
         frequency,
         balanceSince,
-        versions: { create: versions.map(([validFrom, amount]) => ({ validFrom, amount: amount * 100 })) },
+        allocationSource: rule.source,
+        allocationAmount: rule.amount === undefined ? null : rule.amount * 100,
+        targetAmount: rule.target === undefined ? null : rule.target * 100,
       },
     })
   }
+  const fixedAmount = (amount: number) => ({ source: 'FIXED' as const, amount })
+  const fromPlans = { source: 'PLANS' as const }
+  const noAllocation = { source: 'NONE' as const }
 
-  // Lebensmittel: 220 €/Woche, ab September 240 € (Betragsaenderung).
-  const groceries = await createBudget('Lebensmittel', 'WEEKLY', START_WEEK, [
-    [START_WEEK, 220],
-    [day(2026, 9, 7), 240],
-  ])
-  const drugstore = await createBudget('Drogerie', 'MONTHLY', START_MONTH, [[START_MONTH, 60]])
-  const kids = await createBudget('Kinder', 'MONTHLY', START_MONTH, [[START_MONTH, 150]])
-  const leisure = await createBudget('Freizeit & Ausgehen', 'MONTHLY', START_MONTH, [[START_MONTH, 120]])
-  const gifts = await createBudget('Geschenke', 'MONTHLY', START_MONTH, [[START_MONTH, 50]])
-  // Frequenzwechsel (ADR-0004): "Tanken" lief woechentlich und wurde zum
-  // 31.08. in das neue Monatsbudget "Mobilität" geschlossen.
-  const fuelWeekly = await createBudget('Tanken (wöchentlich)', 'WEEKLY', START_WEEK, [[START_WEEK, 45]])
-  const mobility = await createBudget('Mobilität', 'MONTHLY', day(2026, 9, 1), [[day(2026, 9, 1), 190]])
-  await prisma.budget.update({
-    where: { id: fuelWeekly.id },
-    data: { closedAt: day(2026, 8, 31), carryoverToBudgetId: mobility.id },
-  })
+  // Laufende Ausgaben. Lebensmittel: 220 €/Woche, ab 7.9. 240 € — die alten
+  // Wochen werden unten auf ihren damaligen Betrag gesetzt.
+  const groceries = await createEnvelope('Lebensmittel', 'RUNNING', 'WEEKLY', START_WEEK, fixedAmount(240))
+  const drugstore = await createEnvelope('Drogerie', 'RUNNING', 'MONTHLY', START_MONTH, fixedAmount(60))
+  const kids = await createEnvelope('Kinder', 'RUNNING', 'MONTHLY', START_MONTH, fixedAmount(150))
+  const leisure = await createEnvelope('Freizeit & Ausgehen', 'RUNNING', 'MONTHLY', START_MONTH, fixedAmount(120))
+  // Frequenzwechsel: "Tanken" lief woechentlich und wurde zum 31.08. in den
+  // neuen Monatsumschlag "Mobilität" geschlossen.
+  const fuelWeekly = await createEnvelope('Tanken (wöchentlich)', 'RUNNING', 'WEEKLY', START_WEEK, fixedAmount(45))
+  const mobility = await createEnvelope('Mobilität', 'RUNNING', 'MONTHLY', day(2026, 9, 1), fixedAmount(190))
+
+  // Fixkosten: Zuteilung aus den verknuepften Plaenen.
+  const housing = await createEnvelope('Wohnen', 'FIXED', 'MONTHLY', START_MONTH, fromPlans)
+  const contracts = await createEnvelope('Verträge & Abos', 'FIXED', 'MONTHLY', START_MONTH, fromPlans)
+  const childcare = await createEnvelope('Kinderbetreuung', 'FIXED', 'MONTHLY', START_MONTH, fromPlans)
+  const insurance = await createEnvelope('Versicherungen', 'FIXED', 'MONTHLY', START_MONTH, fromPlans)
+
+  // Ruecklagen: regelmaessig, ohne festes Ziel.
+  const gifts = await createEnvelope('Geschenke', 'RESERVE', 'MONTHLY', START_MONTH, fixedAmount(50))
+  const clothes = await createEnvelope('Kleidung', 'RESERVE', 'MONTHLY', START_MONTH, fixedAmount(40))
+  await createEnvelope('Weihnachten', 'RESERVE', 'MONTHLY', START_MONTH, fixedAmount(60))
+
+  // Sparziele. "Auto-Reparatur" mit Zuteilung, der Rest wird von Hand bespart.
+  const vacation = await createEnvelope('Urlaub', 'SAVINGS', 'MONTHLY', START_MONTH, { source: 'FIXED', amount: 150, target: 2500 })
+  const emergency = await createEnvelope('Notgroschen', 'SAVINGS', 'MONTHLY', START_MONTH, { source: 'NONE', target: 5000 })
+  const car = await createEnvelope('Auto-Reparatur', 'SAVINGS', 'MONTHLY', START_MONTH, { source: 'FIXED', amount: 75, target: 1500 })
+
+  // Persoenlich: waechst nur durch Gutschriften und Umbuchungen.
+  const janPersonal = await createEnvelope('Jan', 'PERSONAL', 'MONTHLY', START_MONTH, noAllocation)
+  const sarahPersonal = await createEnvelope('Sarah', 'PERSONAL', 'MONTHLY', START_MONTH, noAllocation)
 
   // --- Plaene: Fixkosten und Einnahmen ------------------------------------
 
-  type PlanSpec = { name: string; amount: number; frequency: Frequency; dayOfMonth: number; months?: number[]; budgetId?: string }
+  type PlanSpec = { name: string; amount: number; frequency: Frequency; dayOfMonth: number; months?: number[]; envelopeId?: string }
   const fixedCostSpecs: PlanSpec[] = [
-    { name: 'Miete', amount: 1250, frequency: 'MONTHLY', dayOfMonth: 1 },
-    { name: 'Strom (Abschlag)', amount: 85, frequency: 'MONTHLY', dayOfMonth: 5 },
-    { name: 'Internet', amount: 39.99, frequency: 'MONTHLY', dayOfMonth: 8 },
-    { name: 'Handyverträge', amount: 29.98, frequency: 'MONTHLY', dayOfMonth: 15 },
-    { name: 'Kita-Beitrag', amount: 210, frequency: 'MONTHLY', dayOfMonth: 3 },
-    { name: 'Deutschlandticket', amount: 58, frequency: 'MONTHLY', dayOfMonth: 1 },
-    { name: 'Streaming', amount: 13.99, frequency: 'MONTHLY', dayOfMonth: 20, budgetId: leisure.id },
-    { name: 'Rundfunkbeitrag', amount: 55.08, frequency: 'QUARTERLY', dayOfMonth: 15, months: [7, 10] },
-    { name: 'Kfz-Versicherung', amount: 142.3, frequency: 'QUARTERLY', dayOfMonth: 1, months: [7, 10] },
-    { name: 'Privathaftpflicht', amount: 74.9, frequency: 'YEARLY', dayOfMonth: 12, months: [9] },
+    { name: 'Miete', amount: 1250, frequency: 'MONTHLY', dayOfMonth: 1, envelopeId: housing.id },
+    { name: 'Strom (Abschlag)', amount: 85, frequency: 'MONTHLY', dayOfMonth: 5, envelopeId: housing.id },
+    { name: 'Internet', amount: 39.99, frequency: 'MONTHLY', dayOfMonth: 8, envelopeId: housing.id },
+    { name: 'Rundfunkbeitrag', amount: 55.08, frequency: 'QUARTERLY', dayOfMonth: 15, months: [7, 10], envelopeId: housing.id },
+    { name: 'Handyverträge', amount: 29.98, frequency: 'MONTHLY', dayOfMonth: 15, envelopeId: contracts.id },
+    { name: 'Deutschlandticket', amount: 58, frequency: 'MONTHLY', dayOfMonth: 1, envelopeId: contracts.id },
+    { name: 'Streaming', amount: 13.99, frequency: 'MONTHLY', dayOfMonth: 20, envelopeId: contracts.id },
+    { name: 'Kita-Beitrag', amount: 210, frequency: 'MONTHLY', dayOfMonth: 3, envelopeId: childcare.id },
+    { name: 'Kfz-Versicherung', amount: 142.3, frequency: 'QUARTERLY', dayOfMonth: 1, months: [7, 10], envelopeId: insurance.id },
+    { name: 'Privathaftpflicht', amount: 74.9, frequency: 'YEARLY', dayOfMonth: 12, months: [9], envelopeId: insurance.id },
   ]
   const incomeSpecs: PlanSpec[] = [
     { name: 'Gehalt Jan', amount: 3240, frequency: 'MONTHLY', dayOfMonth: 28 },
@@ -163,13 +193,14 @@ async function main() {
         amount: Math.round(spec.amount * 100),
         frequency: spec.frequency,
         startDate: planStart(spec),
-        budgetId: spec.budgetId ?? null,
+        envelopeId: spec.envelopeId ?? null,
       },
     })
-    for (const [y, m] of [[2026, 7] as [number, number], ...MONTHS]) {
+    // Erst ab August: Davor gibt es die Fixkosten-Umschlaege noch nicht.
+    for (const [y, m] of MONTHS) {
       if (spec.months && !spec.months.includes(m)) continue
       const date = day(y, m, spec.dayOfMonth)
-      if (date < day(2026, 7, 20) || !isPast(date)) continue
+      if (!isPast(date)) continue
       await prisma.expenseTransaction.create({
         data: {
           householdId,
@@ -178,7 +209,7 @@ async function main() {
           description: spec.name,
           date,
           fixedCostPlanId: plan.id,
-          budgetId: spec.budgetId ?? null,
+          envelopeId: spec.envelopeId ?? null,
         },
       })
     }
@@ -196,7 +227,7 @@ async function main() {
     })
     for (const [y, m] of [[2026, 7] as [number, number], ...MONTHS]) {
       const date = day(y, m, spec.dayOfMonth)
-      if (date < day(2026, 7, 20) || !isPast(date)) continue
+      if (date < LEDGER_SINCE || !isPast(date)) continue
       await prisma.incomeTransaction.create({
         data: {
           householdId,
@@ -209,22 +240,23 @@ async function main() {
       })
     }
   }
-  await prisma.incomeTransaction.create({
-    data: {
-      householdId,
-      userId: sarah.id,
-      amount: 6000,
-      description: 'Kinderfahrrad verkauft (Kleinanzeigen)',
-      date: day(2026, 9, 21),
-    },
-  })
+
+  // Gutschriften: Verkaeufe zugunsten eines Umschlags.
+  const credits: Array<{ envelopeId: string; userId: string; amount: number; description: string; date: Date }> = [
+    { envelopeId: kids.id, userId: sarah.id, amount: 6000, description: 'Kinderfahrrad verkauft (Kleinanzeigen)', date: day(2026, 9, 21) },
+    { envelopeId: janPersonal.id, userId: jan.id, amount: 18000, description: 'Alte Kamera verkauft', date: day(2026, 8, 16) },
+    { envelopeId: sarahPersonal.id, userId: sarah.id, amount: 9500, description: 'Kleiderschrank verkauft', date: day(2026, 9, 6) },
+  ]
+  for (const credit of credits) {
+    await prisma.incomeTransaction.create({ data: { householdId, ...credit } })
+  }
 
   // --- Alltagsausgaben ----------------------------------------------------
 
-  type Expense = { budgetId: string | null; amount: number; description: string; date: Date }
+  type Expense = { envelopeId: string | null; amount: number; description: string; date: Date }
   const expenses: Expense[] = []
-  const add = (budgetId: string | null, amount: number, description: string, date: Date) => {
-    if (isPast(date)) expenses.push({ budgetId, amount, description, date })
+  const add = (envelopeId: string | null, amount: number, description: string, date: Date) => {
+    if (isPast(date)) expenses.push({ envelopeId, amount, description, date })
   }
 
   // Lebensmittel: Wocheneinkauf + 2–3 kleinere Einkaeufe + Baecker.
@@ -256,7 +288,7 @@ async function main() {
     add(drugstore.id, euros(12, 26), pick(['dm', 'Rossmann']), day(y, m, 19))
 
     add(kids.id, euros(25, 45), pick(['Schwimmkurs', 'Turnverein']), day(y, m, 2))
-    add(kids.id, euros(18, 40), pick(['Kinderkleidung C&A', 'Schuhe Deichmann']), day(y, m, 14))
+    add(clothes.id, euros(18, 40), pick(['Kinderkleidung C&A', 'Schuhe Deichmann']), day(y, m, 14))
     if (m === 8) add(kids.id, 7450, 'Schulranzen & Schulbedarf', day(y, m, 25))
     if (m === 9) add(kids.id, 2400, 'Kita-Ausflug Zoo', day(y, m, 18))
     if (m === 10) add(kids.id, euros(15, 25), 'Bastelbedarf Herbst', day(y, m, 9))
@@ -266,14 +298,20 @@ async function main() {
     if (random() < 0.7) add(leisure.id, euros(8, 15), 'Eisdiele', day(y, m, 22))
 
     // Geschenke: nicht jeden Monat — der Saldo waechst und wird im Oktober
-    // teilweise in den Urlaubstopf umgebucht.
+    // teilweise in den Urlaub umgebucht.
     if (m === 8) add(gifts.id, 3500, 'Geburtstag Oma', day(y, m, 11))
     if (m === 10) add(gifts.id, 2290, 'Kindergeburtstag Lea', day(y, m, 8))
 
-    // Ohne Budget ("Sonstiges")
+    // Ohne Umschlag: geht direkt von "Zu verteilen" ab.
     add(null, euros(9, 25), pick(['Apotheke', 'Post / Paket', 'Schlüsseldienst Ersatzschlüssel']), day(y, m, 13))
   }
-  add(null, 48000, 'Ferienwohnung Ostsee (aus Spartopf)', day(2026, 10, 3))
+  // Ein Umschlag im Minus, damit die Bewertung nach Saldo etwas zu zeigen hat.
+  add(leisure.id, 28000, 'Konzertkarten', day(2026, 10, 24))
+  // Ausgaben aus Sparzielen und persoenlichen Umschlaegen sind normale Ausgaben.
+  add(vacation.id, 48000, 'Ferienwohnung Ostsee', day(2026, 10, 3))
+  add(car.id, 18900, 'Werkstatt: Bremsbeläge vorne', day(2026, 9, 29))
+  add(janPersonal.id, 6490, 'Fachbuch & Kopfhörer', day(2026, 9, 12))
+  add(sarahPersonal.id, 3200, 'Nähkurs', day(2026, 10, 7))
 
   for (const expense of expenses) {
     await prisma.expenseTransaction.create({
@@ -285,7 +323,7 @@ async function main() {
     data: {
       householdId,
       userId: sarah.id,
-      budgetId: groceries.id,
+      envelopeId: groceries.id,
       amount: 1999,
       description: 'Doppelt erfasst',
       date: day(2026, 10, 6),
@@ -293,57 +331,52 @@ async function main() {
     },
   })
 
-  // --- Spartoepfe -----------------------------------------------------------
+  // --- Zuteilungen und Umbuchungen -----------------------------------------
 
-  async function createGoal(name: string, target: number, rate: number) {
-    return prisma.savingsGoal.create({
-      data: { householdId, name, targetAmount: target * 100, monthlyRate: rate * 100, startDate: day(2026, 7, 1) },
-    })
-  }
-  const vacation = await createGoal('Urlaub', 2500, 150)
-  const emergency = await createGoal('Notgroschen', 5000, 200)
-  const car = await createGoal('Auto-Reparatur', 1500, 75)
-
-  const executions: Array<{ savingsGoalId: string; amount: number; date: Date; note?: string; sourceBudgetId?: string }> = [
-    { savingsGoalId: vacation.id, amount: 60000, date: day(2026, 7, 20), note: 'Startguthaben' },
-    { savingsGoalId: emergency.id, amount: 180000, date: day(2026, 7, 20), note: 'Startguthaben' },
-  ]
-  for (const [y, m] of MONTHS) {
-    const date = day(y, m, 2)
-    if (!isPast(date)) continue
-    executions.push({ savingsGoalId: vacation.id, amount: 15000, date, note: 'Monatsrate' })
-    executions.push({ savingsGoalId: emergency.id, amount: 20000, date, note: 'Monatsrate' })
-    executions.push({ savingsGoalId: car.id, amount: 7500, date, note: 'Monatsrate' })
-  }
-  // ADR-0001: Ferienwohnung als Ausgabe oben + Entnahme aus dem Topf.
-  executions.push({ savingsGoalId: vacation.id, amount: -48000, date: day(2026, 10, 3), note: 'Ferienwohnung Ostsee' })
-  // ADR-0004: Geschenke-Rest in den Urlaubstopf, Lebensmittel-Ueberziehung aus dem Notgroschen.
-  executions.push({ savingsGoalId: vacation.id, amount: 5000, date: day(2026, 10, 1), note: 'Rest Geschenke-Budget', sourceBudgetId: gifts.id })
-  executions.push({ savingsGoalId: emergency.id, amount: -4000, date: day(2026, 8, 24), note: 'Ausgleich Grillfest-Woche', sourceBudgetId: groceries.id })
-  // Werkstatt aus dem Auto-Topf (Doppelbuchung).
-  executions.push({ savingsGoalId: car.id, amount: -18900, date: day(2026, 9, 29), note: 'Bremsbeläge vorne' })
-  await prisma.expenseTransaction.create({
-    data: {
-      householdId,
-      userId: jan.id,
-      budgetId: null,
-      amount: 18900,
-      description: 'Werkstatt: Bremsbeläge vorne (aus Spartopf)',
-      date: day(2026, 9, 29),
-    },
+  await prisma.envelope.update({
+    where: { id: fuelWeekly.id },
+    data: { closedAt: day(2026, 8, 31), carryoverToEnvelopeId: mobility.id },
   })
 
-  for (const execution of executions.filter((e) => isPast(e.date))) {
-    await prisma.savingsGoalExecution.create({ data: execution })
+  // Derselbe Weg wie in der App: Zuteilungen bucht `ensureAllocations`.
+  await ensureAllocations(householdId, today, prisma)
+  // Gebuchte Zuteilungen liegen fest und lassen sich einzeln aendern: die
+  // alten Lebensmittel-Wochen vor der Erhoehung, und Geschenke im Oktober
+  // ausgesetzt (Betrag 0, nicht geloescht).
+  await prisma.envelopeTransfer.updateMany({
+    where: { toEnvelopeId: groceries.id, allocationPeriodStart: { lt: day(2026, 9, 7) } },
+    data: { amount: 22000 },
+  })
+  await prisma.envelopeTransfer.updateMany({
+    where: { toEnvelopeId: gifts.id, allocationPeriodStart: day(2026, 10, 1) },
+    data: { amount: 0, note: 'Diesen Monat ausgesetzt' },
+  })
+
+  // Umbuchungen; `null` ist "Zu verteilen".
+  const transfers: Array<{ fromEnvelopeId: string | null; toEnvelopeId: string | null; amount: number; date: Date; note: string }> = [
+    { fromEnvelopeId: null, toEnvelopeId: vacation.id, amount: 60000, date: START_MONTH, note: 'Startguthaben' },
+    { fromEnvelopeId: null, toEnvelopeId: emergency.id, amount: 180000, date: START_MONTH, note: 'Startguthaben' },
+    // Der Jahresbeitrag der Haftpflicht kommt, bevor sein Anteil angespart ist.
+    { fromEnvelopeId: null, toEnvelopeId: insurance.id, amount: 7500, date: START_MONTH, note: 'Startguthaben' },
+    { fromEnvelopeId: gifts.id, toEnvelopeId: vacation.id, amount: 5000, date: day(2026, 10, 1), note: 'Rest Geschenke' },
+    { fromEnvelopeId: emergency.id, toEnvelopeId: groceries.id, amount: 4000, date: day(2026, 8, 24), note: 'Ausgleich Grillfest-Woche' },
+  ]
+  for (const [y, m] of MONTHS) {
+    // Ueberschuss des Monats beiseitelegen, sonst waechst "Zu verteilen" nur.
+    transfers.push({ fromEnvelopeId: null, toEnvelopeId: emergency.id, amount: 150000, date: day(y, m, 30), note: 'Monatsüberschuss' })
+  }
+  for (const transfer of transfers.filter((item) => isPast(item.date))) {
+    await prisma.envelopeTransfer.create({ data: { householdId, userId: jan.id, ...transfer } })
   }
 
-  const [expenseCount, incomeCount, executionCount] = await Promise.all([
+  const [envelopeCount, expenseCount, incomeCount, transferCount] = await Promise.all([
+    prisma.envelope.count({ where: { householdId } }),
     prisma.expenseTransaction.count({ where: { householdId } }),
     prisma.incomeTransaction.count({ where: { householdId } }),
-    prisma.savingsGoalExecution.count({ where: { savingsGoal: { householdId } } }),
+    prisma.envelopeTransfer.count({ where: { householdId } }),
   ])
   console.log(`Haushalt "${HOUSEHOLD_NAME}" angelegt (${householdId}):`)
-  console.log(`  ${expenseCount} Ausgaben, ${incomeCount} Einnahmen, ${executionCount} Topf-Bewegungen`)
+  console.log(`  ${envelopeCount} Umschläge, ${expenseCount} Ausgaben, ${incomeCount} Einnahmen, ${transferCount} Zuteilungen und Umbuchungen`)
 }
 
 main()

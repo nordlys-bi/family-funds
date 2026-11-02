@@ -6,6 +6,7 @@ async function main() {
   console.log('Seeding database...')
 
   // Clear existing data in reverse dependency order
+  await prisma.envelopeTransfer.deleteMany()
   await prisma.savingsGoalExecution.deleteMany()
   await prisma.savingsGoal.deleteMany()
   await prisma.expenseTransaction.deleteMany()
@@ -13,6 +14,7 @@ async function main() {
   await prisma.budget.deleteMany()
   await prisma.fixedCostPlan.deleteMany()
   await prisma.incomePlan.deleteMany()
+  await prisma.envelope.deleteMany()
   await prisma.householdMember.deleteMany()
   await prisma.household.deleteMany()
   await prisma.user.deleteMany()
