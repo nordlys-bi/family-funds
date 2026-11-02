@@ -15,9 +15,6 @@ type TransactionCreateBody = {
   // ADR-0005: Umschlag der Buchung, null = "Zu verteilen". Auch fuer
   // Einnahmen (Gutschrift auf einen Umschlag).
   envelopeId?: string | null
-  // Alter Name bis zur neuen Erfassung (#156) — die IDs migrierter Budgets
-  // sind die ihrer Umschlaege. Nur fuer Ausgaben ausgewertet.
-  budgetId?: string | null
   // Issue #59: optionaler FK auf einen Recurring-Plan, gesetzt wenn
   // der User die Transaktion ueber den "Als bezahlt markieren"-Flow
   // angelegt hat. Wird nur fuer die jeweilige Kind-Seite ausgewertet
@@ -53,7 +50,7 @@ export default defineEventHandler(async (event) => {
 
   if (kind === 'expense') {
     const fixedCostPlanId = body.fixedCostPlanId?.trim() || null
-    let envelopeId = (body.envelopeId ?? body.budgetId)?.trim() || null
+    let envelopeId = body.envelopeId?.trim() || null
 
     if (fixedCostPlanId) {
       const plan = await prisma.fixedCostPlan.findFirst({
@@ -101,9 +98,7 @@ export default defineEventHandler(async (event) => {
   // kind === 'income'
   //
   // ADR-0005: Eine Einnahme kann einem Umschlag gutgeschrieben werden
-  // (Verkauf → Kinder), sonst geht sie nach "Zu verteilen". Nur
-  // `envelopeId` zaehlt — `budgetId` bleibt bei Einnahmen bewusst
-  // ignoriert (issue #105: das alte UI schickt dort Ausgaben-Budgets mit).
+  // (Verkauf → Kinder), sonst geht sie nach "Zu verteilen".
   const incomePlanId = body.incomePlanId?.trim() || null
   let envelopeId = body.envelopeId?.trim() || null
 

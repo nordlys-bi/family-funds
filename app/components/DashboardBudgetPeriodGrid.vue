@@ -48,7 +48,7 @@ defineProps<{
 const quickCapture = useQuickCapture()
 
 function captureExpense(budgetId: string) {
-  quickCapture.open('expense', { budgetId })
+  quickCapture.open('expense', { envelopeId: budgetId })
 }
 
 function detailLink(card: PeriodCard) {

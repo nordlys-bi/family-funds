@@ -107,13 +107,12 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
     expect(call?.where?.envelopeId).toBeUndefined()
   })
 
-  it('does not affect the income findMany when unassigned=1', async () => {
-    // Income hat kein budgetId-Feld in der Schema — der Filter ist
-    // semantisch nur auf Expenses anwendbar. Der Income-Read soll
-    // nicht ausgehebelt werden, falls die Page unassigned=1 setzt.
+  it('restricts the income findMany to incomes without envelope when unassigned=1', async () => {
+    // ADR-0005: Einnahmen koennen einem Umschlag gutgeschrieben sein.
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     const call = prismaMocks.incomeTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.envelopeId).toBeUndefined()
+    expect(call?.where?.envelopeId).toBeNull()
+    expect(call?.where).not.toHaveProperty('fixedCostPlanId')
   })
 
   it('combines unassigned filter with month filter', async () => {
@@ -166,15 +165,14 @@ describe('GET /transactions — ?unassigned=1 effect on summary', () => {
     expect(response.summary.incomeTotal).toBe(50000)
   })
 
-  it('incomeTotal aggregate is not affected by unassigned=1', async () => {
-    // Mock: unassigned=1 darf den income-Aggregate nicht beruehren.
+  it('incomeTotal aggregate only counts incomes without envelope when unassigned=1', async () => {
     prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: 75000 } })
     prismaMocks.expenseTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
 
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     expect(prismaMocks.incomeTransaction.aggregate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.not.objectContaining({ envelopeId: expect.anything() }),
+        where: expect.objectContaining({ envelopeId: null }),
       }),
     )
   })
