@@ -4,7 +4,7 @@ import {
   classifyEnvelopeSeverity,
   computeAllocationAmount,
   computePeriodAvailability,
-  computeReservedAmount,
+  getAllocationBookingDate,
   getReservationHorizon,
   listDueAllocations,
   listReservedAllocations,
@@ -222,7 +222,7 @@ describe('listReservedAllocations', () => {
       day(2026, 11, 23),
       day(2026, 11, 30),
     ])
-    expect(computeReservedAmount([groceries], day(2026, 11, 3))).toBe(120000)
+    expect(reserved.reduce((sum, item) => sum + item.amount, 0)).toBe(120000)
   })
 
   it('keeps a week spanning the month boundary in the month of its Monday', () => {
@@ -266,17 +266,40 @@ describe('listReservedAllocations', () => {
   })
 })
 
+describe('getAllocationBookingDate', () => {
+  const today = day(2026, 11, 20)
+
+  it('keeps the period start from ledgerSince onwards', () => {
+    expect(getAllocationBookingDate(day(2026, 11, 16), day(2026, 11, 2), today)).toEqual(day(2026, 11, 16))
+    expect(getAllocationBookingDate(day(2026, 11, 2), day(2026, 11, 2, 18), today)).toEqual(day(2026, 11, 2))
+  })
+
+  it('moves an earlier period start to ledgerSince so "Zu verteilen" is debited', () => {
+    // Neuer Haushalt am 15., Monatsumschlag startet am 1.
+    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 11, 15, 18), today)).toEqual(day(2026, 11, 15))
+  })
+
+  it('keeps the period start while ledgerSince is still in the future', () => {
+    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 12, 1), today)).toEqual(day(2026, 11, 1))
+  })
+})
+
 describe('computePeriodAvailability', () => {
-  it('adds the carried balance to the period allocation', () => {
-    // Tanken aus dem Feedback: 79,15 € Vorsaldo + 300 € Zuteilung, 353,29 € ausgegeben → Saldo 25,86 €
-    const result = computePeriodAvailability({ balanceBeforePeriod: 7915, periodAllocation: 30000, spent: 35329 })
+  it('leaves exactly the balance as the gap', () => {
+    // Tanken aus dem Feedback: 353,29 € ausgegeben, Saldo 25,86 €
+    const result = computePeriodAvailability({ balance: 2586, spent: 35329 })
     expect(result.available).toBe(37915)
     expect(result.available - result.spent).toBe(2586)
     expect(result.percentUsed).toBeCloseTo(93.18, 2)
   })
 
+  it('counts an income within the period as available', () => {
+    // Vorsaldo -100 €, Zuteilung 100 €, Verkauf +200 €, 50 € ausgegeben → Saldo 150 €
+    expect(computePeriodAvailability({ balance: 15000, spent: 5000 })).toMatchObject({ available: 20000, percentUsed: 25 })
+  })
+
   it('returns no percentage when nothing was available', () => {
-    expect(computePeriodAvailability({ balanceBeforePeriod: -40000, periodAllocation: 25000, spent: 1000 }).percentUsed).toBeNull()
+    expect(computePeriodAvailability({ balance: -15000, spent: 1000 }).percentUsed).toBeNull()
   })
 })
 

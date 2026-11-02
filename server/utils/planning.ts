@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import { createError } from 'h3'
 
-export const planningKinds = ['budget', 'incomePlan', 'fixedCostPlan', 'savingsGoal'] as const
+// ADR-0005: Budgets und Sparziele sind Umschlaege (POST .../envelopes).
+export const planningKinds = ['incomePlan', 'fixedCostPlan'] as const
 export type PlanningKind = (typeof planningKinds)[number]
 
 export const frequencies = ['WEEKLY', 'MONTHLY', 'QUARTERLY', 'YEARLY', 'ONCE'] as const

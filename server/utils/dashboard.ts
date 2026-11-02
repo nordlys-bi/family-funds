@@ -225,7 +225,8 @@ type RecentExpense = {
   description: string | null
   date: Date
   budgetId: string | null
-  budget: { name: string; key: string } | null
+  // Umschlaege (ADR-0005) haben keinen `key` mehr.
+  budget: { name: string; key?: string | null } | null
   user: { displayName: string | null }
 }
 

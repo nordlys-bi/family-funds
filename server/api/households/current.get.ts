@@ -1,9 +1,7 @@
 import { defineEventHandler, createError, getCookie } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
-import { buildBudgetOverview, getBudgetExpenseQueryWindow, getMonthWindow, withVersionFrequency } from '../../utils/budget-evaluation'
-import { budgetBalanceSelect, loadBudgetBalances } from '../../utils/budget-balance-query'
-import { buildSavingsMonthlyProgress } from '../../utils/savings-progress'
+import { getMonthWindow } from '../../utils/budget-evaluation'
 import { computePlanCoverage, indexPaidBuckets } from '../../utils/recurring-coverage'
 
 export default defineEventHandler(async (event) => {
@@ -83,36 +81,11 @@ export default defineEventHandler(async (event) => {
           },
         },
       },
-      budgets: {
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          key: true,
-          name: true,
-          ...budgetBalanceSelect,
-          createdAt: true,
-          updatedAt: true,
-          versions: {
-            orderBy: {
-              validFrom: 'desc',
-            },
-            select: {
-              id: true,
-              amount: true,
-              validFrom: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          },
-        },
-      },
       incomePlans: {
         orderBy: {
           createdAt: 'desc',
         },
-        // Issue #59 polish: budgetId wird im Frontend fuer das
+        // Issue #59 polish: envelopeId wird im Frontend fuer das
         // Plan-Edit-Dropdown gebraucht. select statt include, damit
         // nur das noetige Feld geladen wird.
         select: {
@@ -123,7 +96,7 @@ export default defineEventHandler(async (event) => {
           startDate: true,
           endDate: true,
           createdAt: true,
-          budgetId: true,
+          envelopeId: true,
         },
       },
       fixedCosts: {
@@ -138,23 +111,7 @@ export default defineEventHandler(async (event) => {
           startDate: true,
           endDate: true,
           createdAt: true,
-          budgetId: true,
-        },
-      },
-      savingsGoals: {
-        orderBy: {
-          createdAt: 'desc',
-        },
-        // Issue #56: fuer die monatliche Plan-vs-Ist-Aggregation
-        // brauchen wir pro Execution `amount` + `date`. select statt
-        // include, damit wir nur die noetigen Felder laden.
-        include: {
-          executions: {
-            select: {
-              amount: true,
-              date: true,
-            },
-          },
+          envelopeId: true,
         },
       },
     },
@@ -167,60 +124,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // Aggregation: pro SavingsGoal die Summe aller Executions in Cent
-  // (issue #12, erweitert in issue #56 um die monatliche
-  // Plan-vs-Ist-Breakdown). Die Execution-Daten kommen jetzt direkt
-  // aus dem Household-Query oben (kein separates groupBy mehr noetig),
-  // das spart einen Roundtrip und haelt die Logik an einer Stelle.
-  const savingsGoals = household.savingsGoals.map((goal) => {
-    const currentAmount = goal.executions.reduce((sum, exec) => sum + exec.amount, 0)
-    const progressPercent =
-      goal.targetAmount > 0
-        ? Math.min(999, Math.round((currentAmount / goal.targetAmount) * 1000) / 10)
-        : 0
-    return {
-      ...goal,
-      currentAmount,
-      progressPercent,
-      // Issue #56: monatliche Plan-vs-Ist-Breakdown fuer die Card.
-      // Default 3 Monate (current + 2 previous). Helper uebernimmt
-      // Month-Window-Berechnung und Edge-Cases (planned=0, negative
-      // rate, leere executions). Siehe savings-progress.ts.
-      monthlyProgress: buildSavingsMonthlyProgress(
-        { monthlyRate: goal.monthlyRate, executions: goal.executions },
-        3,
-      ),
-    }
-  })
-
   const { monthStart, monthEnd } = getMonthWindow()
-  const expenseWindow = getBudgetExpenseQueryWindow(monthStart, monthEnd)
-  const expenses = await prisma.expenseTransaction.findMany({
-    where: {
-      householdId,
-      date: {
-        gte: expenseWindow.start,
-        lt: expenseWindow.end,
-      },
-      deletedAt: null,
-    },
-    select: {
-      amount: true,
-      date: true,
-      budgetId: true,
-    },
-  })
-
-  // ADR-0004: Frequenz kommt vom Budget; an die Versionen gehaengt, damit
-  // Auswertung und Frontend (Versions-Historie) unveraendert lesen koennen.
-  const budgetsWithFrequency = household.budgets.map(withVersionFrequency)
-  const budgetOverview = buildBudgetOverview(budgetsWithFrequency, expenses, monthStart)
-  const balances = await loadBudgetBalances(householdId, budgetsWithFrequency)
-  const budgets = budgetsWithFrequency.map((budget) => ({
-    ...budget,
-    balance: balances.get(budget.id)?.balance ?? 0,
-  }))
-
   // Issue #59: monatliche Coverage-Berechnung fuer Income- und
   // Fixkosten-Plaene. Wir laden alle Transaktionen im aktuellen
   // Monat, die einen Plan-FK haben — eine Query pro Tabelle, dann
@@ -270,16 +174,19 @@ export default defineEventHandler(async (event) => {
     monthEnd,
   )
 
+  // `budgetId` als alter Name von `envelopeId` bis #159 (Plan-Dropdowns im
+  // bestehenden UI) — migrierte Budgets haben die ID ihres Umschlags.
   const fixedCosts = household.fixedCosts.map((plan) =>
-    attachPlanCoverage(plan, paidBucketsByFixedPlan, monthStart, monthEnd),
+    ({ ...attachPlanCoverage(plan, paidBucketsByFixedPlan, monthStart, monthEnd), budgetId: plan.envelopeId }),
   )
   const incomePlans = household.incomePlans.map((plan) =>
-    attachPlanCoverage(plan, paidBucketsByIncomePlan, monthStart, monthEnd),
+    ({ ...attachPlanCoverage(plan, paidBucketsByIncomePlan, monthStart, monthEnd), budgetId: plan.envelopeId }),
   )
 
+  // ADR-0005: Budgets, Sparziele und die Budget-Auswertung kommen nicht mehr
+  // mit dem Haushaltskontext, sondern ueber GET .../envelopes.
   return {
-    household: { ...household, budgets, savingsGoals, fixedCosts, incomePlans },
-    budgetOverview,
+    household: { ...household, fixedCosts, incomePlans },
   }
 })
 

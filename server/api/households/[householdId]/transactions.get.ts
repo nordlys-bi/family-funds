@@ -182,7 +182,10 @@ export default defineEventHandler(async (event) => {
   // Die Filter gelten fuer Liste UND Summary-Aggregates, damit die Badge zur
   // sichtbaren Liste passt (siehe Doc-Kommentar oben).
   const userIdParam = parseOptionalUuidQuery(query, 'userId')
-  const budgetIdParam = parseOptionalUuidQuery(query, 'budgetId')
+  // ADR-0005: `?envelopeId=`; `?budgetId=` bleibt als alter Name bis #156
+  // (Deep-Links aus Budget-Karten) — migrierte Budgets haben die ID ihres
+  // Umschlags.
+  const budgetIdParam = parseOptionalUuidQuery(query, 'envelopeId') ?? parseOptionalUuidQuery(query, 'budgetId')
   const userFilter = userIdParam ? { userId: userIdParam } : {}
 
   // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
@@ -197,11 +200,11 @@ export default defineEventHandler(async (event) => {
   // #134 leer, als der Budget-Filter noch im Client lief).
   const budgetFilter =
     unassignedOnly && budgetIdParam
-      ? { budgetId: { in: [] as string[] } }
+      ? { envelopeId: { in: [] as string[] } }
       : unassignedOnly
-        ? { budgetId: null, fixedCostPlanId: null }
+        ? { envelopeId: null, fixedCostPlanId: null }
         : budgetIdParam
-          ? { budgetId: budgetIdParam }
+          ? { envelopeId: budgetIdParam }
           : {}
 
   // Basis-Zeitraum als eigener Wert: `monthEnd` ist nur bei explizitem
@@ -247,12 +250,11 @@ export default defineEventHandler(async (event) => {
         date: true,
         createdAt: true,
         updatedAt: true,
-        budgetId: true,
-        budget: {
+        envelopeId: true,
+        envelope: {
           select: {
             id: true,
             name: true,
-            key: true,
           },
         },
         user: {
@@ -277,6 +279,8 @@ export default defineEventHandler(async (event) => {
         date: true,
         createdAt: true,
         updatedAt: true,
+        envelopeId: true,
+        envelope: { select: { name: true } },
         user: {
           select: {
             id: true,
@@ -305,7 +309,7 @@ export default defineEventHandler(async (event) => {
             ...softDeleteFilter,
             ...userFilter,
             date: dateRangeFilter,
-            budgetId: null,
+            envelopeId: null,
             // Gleiche Definition wie `?unassigned=1` und die Dashboard-
             // Meldung: Fixkosten zaehlen nicht als "ohne Budget".
             fixedCostPlanId: null,
@@ -323,9 +327,11 @@ export default defineEventHandler(async (event) => {
       date: transaction.date,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
-      budgetId: transaction.budgetId,
-      budgetName: transaction.budget?.name ?? null,
-      budgetKey: transaction.budget?.key ?? null,
+      envelopeId: transaction.envelopeId,
+      envelopeName: transaction.envelope?.name ?? null,
+      // Alte Namen bis zur neuen Liste (#156).
+      budgetId: transaction.envelopeId,
+      budgetName: transaction.envelope?.name ?? null,
       user: transaction.user,
     })),
     ...incomes.map((transaction) => ({
@@ -336,6 +342,8 @@ export default defineEventHandler(async (event) => {
       date: transaction.date,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
+      envelopeId: transaction.envelopeId,
+      envelopeName: transaction.envelope?.name ?? null,
       user: transaction.user,
     })),
   ]

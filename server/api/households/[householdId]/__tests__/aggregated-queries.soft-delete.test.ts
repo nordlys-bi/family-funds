@@ -15,7 +15,6 @@
  * Endpoint `deletedAt: null` in seine Prisma-where-Clauses packt.
  *
  * Betroffene Endpoints (Stand Issue #65):
- *   - GET /api/households/:id/budget-overview
  *   - GET /api/households/:id/dashboard
  *   - GET /api/households/:id/activity
  *
@@ -36,6 +35,7 @@ import type { H3Event } from 'h3'
 
 const prismaMocks = vi.hoisted(() => ({
   budget: { findMany: vi.fn(), count: vi.fn() },
+  envelope: { count: vi.fn() },
   expenseTransaction: { findMany: vi.fn(), aggregate: vi.fn(), count: vi.fn() },
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   savingsGoal: { findMany: vi.fn() },
@@ -54,9 +54,16 @@ vi.mock('../../../../utils/prisma', () => ({ prisma: prismaMocks }))
 vi.mock('../../../../utils/household-access', () => ({
   requireHouseholdMembership: authMocks.requireHouseholdMembership,
 }))
+// Die Umschlag-Uebersicht hat eigene Tests (envelope-store/-balance); hier
+// geht es nur um die Buchungs-Queries des Dashboards selbst.
+vi.mock('../../../../utils/envelope-overview', () => ({
+  loadEnvelopeOverview: vi.fn().mockResolvedValue({
+    envelopes: [],
+    unassigned: { balance: 0, reserved: 0, free: 0, ledgerSince: new Date(), openingBalance: 0 },
+  }),
+}))
 
 // Handler-Imports NACH den vi.mock-Calls.
-import budgetOverviewHandler from '../budget-overview.get'
 import dashboardHandler from '../dashboard.get'
 import activityHandler from '../activity.get'
 
@@ -107,25 +114,6 @@ beforeEach(() => {
 })
 
 // ---------------------------------------------------------------------------
-// budget-overview
-// ---------------------------------------------------------------------------
-
-describe('GET /budget-overview — soft-delete filter (issue #65)', () => {
-  it('applies deletedAt: null to the month-expense findMany', async () => {
-    await budgetOverviewHandler(makeEvent(HH_ID))
-
-    // Mindestens ein findMany-Call auf expenseTransaction muss
-    // deletedAt: null im where-Clause haben. Wir pruefen alle
-    // Calls, weil der Handler in Zukunft mehr hinzufuegen koennte.
-    const findManyCalls = prismaMocks.expenseTransaction.findMany.mock.calls
-    expect(findManyCalls.length).toBeGreaterThan(0)
-    for (const call of findManyCalls) {
-      expect(call[0]?.where).toMatchObject({ deletedAt: null })
-    }
-  })
-})
-
-// ---------------------------------------------------------------------------
 // dashboard
 // ---------------------------------------------------------------------------
 
@@ -148,6 +136,13 @@ describe('GET /dashboard — soft-delete filter (issue #65)', () => {
     const incomeFindManyCalls = prismaMocks.incomeTransaction.findMany.mock.calls
     expect(incomeFindManyCalls.length).toBeGreaterThan(0)
     for (const call of incomeFindManyCalls) {
+      expect(call[0]?.where).toMatchObject({ deletedAt: null })
+    }
+
+    // Monatssummen kommen per `_sum` (Ausgaben gesamt und ohne Umschlag).
+    const expenseAggregateCalls = prismaMocks.expenseTransaction.aggregate.mock.calls
+    expect(expenseAggregateCalls.length).toBeGreaterThan(0)
+    for (const call of expenseAggregateCalls) {
       expect(call[0]?.where).toMatchObject({ deletedAt: null })
     }
 

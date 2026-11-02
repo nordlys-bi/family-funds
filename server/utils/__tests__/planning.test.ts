@@ -30,8 +30,8 @@ function expectBadRequest(fn: () => unknown, message: string | RegExp): void {
 }
 
 describe('planningKinds / assertPlanningKind', () => {
-  it('exposes the four canonical kinds', () => {
-    expect(planningKinds).toEqual(['budget', 'incomePlan', 'fixedCostPlan', 'savingsGoal'])
+  it('exposes the plan kinds — budgets and savings goals are envelopes (ADR-0005)', () => {
+    expect(planningKinds).toEqual(['incomePlan', 'fixedCostPlan'])
   })
 
   it('returns valid kinds unchanged', () => {

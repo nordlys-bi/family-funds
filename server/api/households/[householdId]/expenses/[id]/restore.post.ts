@@ -15,7 +15,7 @@ import { prisma } from '../../../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../../../utils/household-access'
 import { defineApiResponse } from '../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../utils/validation'
-import { assertBudgetOpenOn } from '../../../../../utils/budget-lifecycle'
+import { assertEnvelopeOpenOn } from '../../../../../utils/envelope-lifecycle'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
       id: expenseId,
       householdId,
     },
-    select: { id: true, deletedAt: true, date: true, budget: { select: { closedAt: true } } },
+    select: { id: true, deletedAt: true, date: true, envelope: { select: { closedAt: true } } },
   })
 
   if (!existing) {
@@ -46,12 +46,14 @@ export default defineEventHandler(async (event) => {
     return defineApiResponse({ kind: 'expense', restored: true, alreadyActive: true })
   }
 
-  // ADR-0004: Eine Wiederherstellung wirkt wie eine neue Buchung — ab dem
-  // Stichtag eines geschlossenen Budgets ist sie deshalb nicht erlaubt
-  // (sonst laege wieder eine Ausgabe hinter dem Stichtag auf einem Budget,
-  // das ab dann nichts mehr fuehrt — sie gehoert zum Nachfolger).
-  if (existing.budget) {
-    assertBudgetOpenOn(existing.budget, existing.date)
+  // ADR-0005: Eine Wiederherstellung wirkt wie eine neue Buchung — ab dem
+  // Stichtag eines geschlossenen Umschlags ist sie deshalb nicht erlaubt
+  // (sonst laege wieder eine Ausgabe hinter dem Stichtag auf einem Umschlag,
+  // das ab dann nichts mehr fuehrt — sie gehoert zum Nachfolger). Der
+  // Startpunkt zaehlt hier bewusst nicht: Die Buchung existierte schon,
+  // Altbestand vor dem Start bliebe sonst fuer immer geloescht.
+  if (existing.envelope) {
+    assertEnvelopeOpenOn(existing.envelope, existing.date)
   }
 
   await prisma.expenseTransaction.update({

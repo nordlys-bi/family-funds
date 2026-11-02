@@ -13,6 +13,24 @@ enum Role {
   MEMBER
 }
 
+// ADR-0005: Anwendungsfall eines Umschlags. Steuert Darstellung und
+// Vorgaben beim Anlegen, verbietet aber keine Eigenschaft.
+enum EnvelopeGroup {
+  RUNNING
+  FIXED
+  RESERVE
+  SAVINGS
+  PERSONAL
+}
+
+// ADR-0005: Woher die Zuteilung eines Umschlags kommt. PLANS = Summe der
+// verknuepften FixedCostPlans, auf die Umschlag-Frequenz umgelegt.
+enum AllocationSource {
+  NONE
+  FIXED
+  PLANS
+}
+
 enum Frequency {
   WEEKLY
   MONTHLY
@@ -32,6 +50,7 @@ model User {
   householdInvitations HouseholdInvitation[] @relation("UserHouseholdInvitations")
   expenses     ExpenseTransaction[]
   incomes      IncomeTransaction[]
+  envelopeTransfers EnvelopeTransfer[]
   // Onboarding-Tour-State (issue #16). Per-User, nicht per-Household,
   // weil ein User mehrere Haushalte haben kann und der Onboarding-Flow
   // sich auf den User bezieht, nicht auf den Haushalt-Kontext.
@@ -55,6 +74,13 @@ model Household {
   expenses           ExpenseTransaction[]
   incomeTransactions IncomeTransaction[]
   savingsGoals       SavingsGoal[]
+  envelopes          Envelope[]
+  envelopeTransfers  EnvelopeTransfer[]
+  // ADR-0005: Ab hier zaehlen Einnahmen, Ausgaben und Umbuchungen in
+  // "Zu verteilen"; openingBalance ist das freie Geld zu diesem Zeitpunkt,
+  // zusaetzlich zu dem, was dann schon in Umschlaegen steckt.
+  ledgerSince        DateTime             @default(now())
+  openingBalance     Int                  @default(0)
 }
 
 model HouseholdInvitation {
@@ -87,6 +113,76 @@ model HouseholdMember {
   household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
 
   @@unique([userId, householdId])
+}
+
+// ADR-0005: Umschlag = virtuelles Konto mit Saldo. Loest Budget und
+// SavingsGoal ab; beide bleiben bis #160 als Altbestand im Schema (die
+// Migration hat ihre IDs uebernommen), werden aber nicht mehr beschrieben.
+model Envelope {
+  id               String            @id @default(uuid())
+  householdId      String
+  name             String
+  group            EnvelopeGroup
+  // Unveraenderlich wie bei Budget (ADR-0004); ein Wechsel ist ein neuer
+  // Umschlag. Auch ohne Zuteilung gesetzt, damit das Periodenraster fuer
+  // Ansichten definiert ist.
+  frequency        Frequency         @default(MONTHLY)
+  allocationSource AllocationSource  @default(NONE)
+  // Nur bei allocationSource = FIXED. Keine Versionen: Vergangene Perioden
+  // sind gebucht (EnvelopeTransfer mit allocationPeriodStart), eine
+  // Aenderung wirkt ab der naechsten noch nicht gebuchten.
+  allocationAmount Int?              // Cent value
+  targetAmount     Int?              // Cent value, Sparziel
+  targetDate       DateTime?
+  balanceSince     DateTime
+  closedAt         DateTime?
+  // Nur bei closedAt: Ziel des Endsaldos. null = "Zu verteilen".
+  // NoAction statt Restrict, siehe Budget.carryoverToBudgetId.
+  carryoverToEnvelopeId String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  household        Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  carryoverTo      Envelope?         @relation("EnvelopeCarryover", fields: [carryoverToEnvelopeId], references: [id], onDelete: NoAction)
+  predecessors     Envelope[]        @relation("EnvelopeCarryover")
+  expenses         ExpenseTransaction[]
+  incomes          IncomeTransaction[]
+  transfersOut     EnvelopeTransfer[] @relation("EnvelopeTransferFrom")
+  transfersIn      EnvelopeTransfer[] @relation("EnvelopeTransferTo")
+  fixedCostPlans   FixedCostPlan[]
+  incomePlans      IncomePlan[]
+
+  @@index([householdId])
+}
+
+// ADR-0005: Geld zwischen zwei Umschlaegen; null auf einer Seite heisst
+// "Zu verteilen". Zuteilungen sind Umbuchungen aus "Zu verteilen" mit
+// allocationPeriodStart — der Unique-Index verhindert, dass parallele
+// Requests eine Periode doppelt zuteilen (gewoehnliche Umbuchungen haben
+// null und sind nicht betroffen, Postgres erlaubt mehrere NULLs).
+model EnvelopeTransfer {
+  id                    String    @id @default(uuid())
+  householdId           String
+  fromEnvelopeId        String?
+  toEnvelopeId          String?
+  amount                Int       // Cent value, >= 0 (0 = ausgelassene Zuteilung)
+  date                  DateTime
+  note                  String?
+  // null bei Zuteilungen und migrierten Topf-Bewegungen.
+  userId                String?
+  allocationPeriodStart DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  household             Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromEnvelope          Envelope? @relation("EnvelopeTransferFrom", fields: [fromEnvelopeId], references: [id], onDelete: Cascade)
+  toEnvelope            Envelope? @relation("EnvelopeTransferTo", fields: [toEnvelopeId], references: [id], onDelete: Cascade)
+  user                  User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([toEnvelopeId, allocationPeriodStart])
+  @@index([householdId, date])
+  @@index([fromEnvelopeId, date])
+  @@index([toEnvelopeId, date])
 }
 
 model Budget {
@@ -177,6 +273,9 @@ model IncomePlan {
   // aus gleichem Grund wie der Rueckwaerts-Pointer oben.
   budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
+  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand).
+  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelopeId   String?
 }
 
 model FixedCostPlan {
@@ -199,6 +298,9 @@ model FixedCostPlan {
   // Aenderung im Transaction-Row-Editor bleibt moeglich.
   budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
+  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand).
+  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelopeId   String?
 }
 
 model ExpenseTransaction {
@@ -226,6 +328,9 @@ model ExpenseTransaction {
   // ohne Buchung zu verlieren (analog zu Budget).
   fixedCostPlan FixedCostPlan?   @relation(fields: [fixedCostPlanId], references: [id], onDelete: SetNull)
   fixedCostPlanId String?
+  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand). null = "Zu verteilen".
+  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelopeId   String?
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Composite-Indizes fuer Hot-Path-Queries (Dashboard-Month-Window +
@@ -235,6 +340,7 @@ model ExpenseTransaction {
   // Sort, skaliert linear mit Household-Volumen.
   @@index([householdId, date(sort: Desc)])
   @@index([budgetId, date(sort: Desc)])
+  @@index([envelopeId, date(sort: Desc)])
   // Issue #59: Index fuer Coverage-Queries ("wie viele Buchungen mit
   // diesem fixedCostPlanId in Monat X?"). FK-Lookups ueber den Plan
   // sind ohne Index Full-Table-Scan.
@@ -268,6 +374,9 @@ model IncomeTransaction {
   // ohne Buchung zu verlieren.
   incomePlan   IncomePlan?       @relation(fields: [incomePlanId], references: [id], onDelete: SetNull)
   incomePlanId String?
+  // ADR-0005: Gutschrift auf einen Umschlag; null = "Zu verteilen".
+  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelopeId   String?
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([householdId, date(sort: Desc)])
@@ -275,6 +384,7 @@ model IncomeTransaction {
   @@index([householdId, deletedAt])
   // Issue #59: Index fuer Coverage-Queries, siehe ExpenseTransaction.
   @@index([incomePlanId, date(sort: Desc)])
+  @@index([envelopeId, date(sort: Desc)])
 }
 
 model SavingsGoal {

@@ -1,28 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { H3Event } from 'h3'
-import { Frequency, Role } from '@prisma/client'
+import { Role } from '@prisma/client'
 
 /**
  * HTTP-Integration-Tests fuer `GET /api/households/:householdId/dashboard`.
  *
  * Die Prisma-Client- und Auth-Helpers werden gemockt, weil der Endpoint
- * ohne laufende DB getestet werden soll. Das Verhalten der Aggregations-
- * Logik (`buildBudgetAlerts`, `buildRecentActivity`, `buildSavingsGoalsProgress`)
- * wird hier indirekt ueberprueft — Detailtests dafuer liegen in
- * `server/utils/__tests__/dashboard.test.ts`.
+ * ohne laufende DB getestet werden soll. Die Umschlag-Uebersicht
+ * (`loadEnvelopeOverview`) ist ebenfalls gemockt — ihre Rechenlogik testen
+ * `envelope-balance`, `envelope-allocations` und `envelope-store`; hier geht
+ * es darum, dass das Dashboard sie unveraendert durchreicht und seine
+ * eigenen Bloecke (Monatssummen, letzte Aktivitaet, Handlungsbedarf) richtig
+ * baut.
  */
 
-// ---------------------------------------------------------------------------
-// Mock-Slots: vi.hoisted, weil vi.mock vor allen Imports aufgeloest wird.
-// ---------------------------------------------------------------------------
-
 const prismaMocks = vi.hoisted(() => ({
-  budget: { findMany: vi.fn() },
-  expenseTransaction: { findMany: vi.fn() },
+  expenseTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
   incomeTransaction: { findMany: vi.fn(), aggregate: vi.fn() },
-  savingsGoal: { findMany: vi.fn() },
-  // ADR-0004: Umbuchungen Budget -> Spartopf fuer den Budget-Saldo.
-  savingsGoalExecution: { findMany: vi.fn() },
   // Issue #98: Recurring-Coverage-Queries fuer den Handlungsbedarf-Block.
   fixedCostPlan: { findMany: vi.fn() },
   incomePlan: { findMany: vi.fn() },
@@ -32,31 +26,32 @@ const authMocks = vi.hoisted(() => ({
   requireHouseholdMembership: vi.fn(),
 }))
 
+const overviewMocks = vi.hoisted(() => ({
+  loadEnvelopeOverview: vi.fn(),
+}))
+
 vi.mock('../../../../utils/prisma', () => ({ prisma: prismaMocks }))
 vi.mock('../../../../utils/household-access', () => ({
   requireHouseholdMembership: authMocks.requireHouseholdMembership,
+}))
+vi.mock('../../../../utils/envelope-overview', () => ({
+  loadEnvelopeOverview: overviewMocks.loadEnvelopeOverview,
 }))
 
 // Import nach den Mocks.
 import handler from '../dashboard.get'
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function makeEvent(householdId: string | undefined): H3Event {
-  return {
-    context: {
-      params: { householdId },
-    },
-  } as unknown as H3Event
+  return { context: { params: { householdId } } } as unknown as H3Event
 }
 
 const sampleUser = { id: 'user-1', email: 'jan@example.com', displayName: 'Jan' }
-
-// gültige UUID-Form, weil der Endpoint seit Backend-#12 parseUuidParam nutzt
-// und ungültige IDs schon im Test gegen 400 laufen.
 const HH_ID = '9bff8d9f-7d2e-4f1a-b3c8-1234567890ab'
+
+const emptyOverview = {
+  envelopes: [],
+  unassigned: { balance: 0, reserved: 0, free: 0, ledgerSince: new Date(2026, 10, 2, 12), openingBalance: 0 },
+}
 
 function mockAuthSuccess() {
   authMocks.requireHouseholdMembership.mockResolvedValue({
@@ -65,192 +60,30 @@ function mockAuthSuccess() {
   })
 }
 
-function mockAuthFailure(statusCode: number, statusMessage: string) {
-  authMocks.requireHouseholdMembership.mockRejectedValue({
-    statusCode,
-    statusMessage,
-  })
-}
-
-function resetDbMocks() {
-  prismaMocks.savingsGoalExecution.findMany.mockReset()
-  prismaMocks.savingsGoalExecution.findMany.mockResolvedValue([])
-  prismaMocks.budget.findMany.mockReset()
-  prismaMocks.expenseTransaction.findMany.mockReset()
-  prismaMocks.incomeTransaction.findMany.mockReset()
-  prismaMocks.incomeTransaction.aggregate.mockReset()
-  // Default fuer aggregate: leeres Result, damit endpoint nicht crasht,
-  // wenn ein Test das aggregate-Mock nicht explizit setzt.
-  prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
-  prismaMocks.savingsGoal.findMany.mockReset()
-  // Issue #98: Default = keine Recurring-Pläne. Tests, die den
-  // Handlungsbedarf-Zähler prüfen, überschreiben das gezielt.
-  prismaMocks.fixedCostPlan.findMany.mockReset()
-  prismaMocks.incomePlan.findMany.mockReset()
-  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
-  prismaMocks.incomePlan.findMany.mockResolvedValue([])
-}
-
-function mockEmptyHousehold() {
-  prismaMocks.budget.findMany.mockResolvedValue([])
-  // 4 calls to expenseTransaction.findMany — month + recent — both empty.
-  prismaMocks.expenseTransaction.findMany.mockResolvedValue([])
-  // income.findMany ist neuerdings NUR fuer die Recent-Query noetig
-  // (Monats-Summe kommt jetzt als `_sum`-Aggregate). Default: leer.
-  prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
-  // income-aggregate liefert fuer leere Haushalte { _sum: { amount: null } }.
-  prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
-  prismaMocks.savingsGoal.findMany.mockResolvedValue([])
-  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
-  prismaMocks.incomePlan.findMany.mockResolvedValue([])
-}
-
-// ---------------------------------------------------------------------------
-// Test-Fixture: ein typischer Haushalt mit
-//  - 3 Budgets: Lebensmittel (warning, 85%), Sonstiges (unassigned, NICHT in alerts),
-//    Fixkosten (over, 110%), Freizeit (ok, 30%)
-//  - Monats-Expenses + Incomes
-//  - 6 Transaktionen in den letzten 7 Tagen (Erwartung: nur die 5 neuesten)
-//  - 2 Sparziele
-// ---------------------------------------------------------------------------
-
-function setupTypicalHousehold() {
-  prismaMocks.budget.findMany.mockResolvedValue([
-    {
-      id: 'b-food',
-      key: 'food',
-      name: 'Lebensmittel',
-      // ADR-0004: Frequenz + Saldo-Start am Budget
-      frequency: Frequency.MONTHLY,
-      balanceSince: new Date('2026-01-01'),
-      closedAt: null,
-      carryoverToBudgetId: null,
-      versions: [
-        { id: 'v-1', amount: 50000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
-      ],
-    },
-    {
-      id: 'b-fix',
-      key: 'fix',
-      name: 'Fixkosten',
-      // ADR-0004: Frequenz + Saldo-Start am Budget
-      frequency: Frequency.MONTHLY,
-      balanceSince: new Date('2026-01-01'),
-      closedAt: null,
-      carryoverToBudgetId: null,
-      versions: [
-        { id: 'v-2', amount: 100000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
-      ],
-    },
-    {
-      id: 'b-leisure',
-      key: 'leisure',
-      name: 'Freizeit',
-      // ADR-0004: Frequenz + Saldo-Start am Budget
-      frequency: Frequency.MONTHLY,
-      balanceSince: new Date('2026-01-01'),
-      closedAt: null,
-      carryoverToBudgetId: null,
-      versions: [
-        { id: 'v-3', amount: 20000, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
-      ],
-    },
-  ])
-
-  // Monats-Expenses: 42500 (food, 85%) + 110000 (fix, 110%) + 6000 (leisure, 30%) + 5000 (unassigned)
-  prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
-    if (args?.where?.date?.gte && args?.select?.budget === undefined) {
-      // Monats-Query (nur amount/date/budgetId)
-      return [
-        { amount: 42500, date: new Date(), budgetId: 'b-food' },
-        { amount: 110000, date: new Date(), budgetId: 'b-fix' },
-        { amount: 6000, date: new Date(), budgetId: 'b-leisure' },
-        { amount: 5000, date: new Date(), budgetId: null },
-      ]
-    }
-    // Recent-Query (volle Transaktion mit Joins)
-    const now = new Date()
-    return [
-      { id: 'e-1', amount: 1200, description: 'Brot', date: new Date(now.getTime() - 1 * 86400000), budgetId: 'b-food', budget: { name: 'Lebensmittel', key: 'food' }, user: { displayName: 'Jan' } },
-      { id: 'e-2', amount: 3500, description: 'Miete', date: new Date(now.getTime() - 2 * 86400000), budgetId: 'b-fix', budget: { name: 'Fixkosten', key: 'fix' }, user: { displayName: 'Jan' } },
-      { id: 'e-3', amount: 850, description: 'Kino', date: new Date(now.getTime() - 4 * 86400000), budgetId: 'b-leisure', budget: { name: 'Freizeit', key: 'leisure' }, user: { displayName: 'Jan' } },
-      { id: 'e-4', amount: 2300, description: 'Apfel', date: new Date(now.getTime() - 5 * 86400000), budgetId: 'b-food', budget: { name: 'Lebensmittel', key: 'food' }, user: { displayName: 'Jan' } },
-      { id: 'e-5', amount: 1500, description: 'Bus', date: new Date(now.getTime() - 7 * 86400000), budgetId: null, budget: null, user: { displayName: 'Jan' } },
-    ]
-  })
-
-  prismaMocks.incomeTransaction.findMany.mockImplementation(async (args: any) => {
-    if (args?.where?.date?.gte && args?.select?.user === undefined) {
-      // Monats-Query
-      return [
-        { amount: 250000 },
-        { amount: 50000 },
-      ]
-    }
-    // Recent-Query
-    const now = new Date()
-    return [
-      { id: 'i-1', amount: 250000, description: 'Gehalt', date: new Date(now.getTime() - 3 * 86400000), user: { displayName: 'Jan' } },
-      { id: 'i-2', amount: 50000, description: 'Bonus', date: new Date(now.getTime() - 6 * 86400000), user: { displayName: 'Jan' } },
-    ]
-  })
-
-  // Income-Aggregate fuer Monats-Summe: deckungsgleich mit den Monats-Rows.
-  prismaMocks.incomeTransaction.aggregate.mockImplementation(async () => ({
-    _sum: { amount: 250000 + 50000 },
-  }))
-
-  prismaMocks.savingsGoal.findMany.mockResolvedValue([
-    {
-      id: 'g-1',
-      name: 'Urlaub',
-      targetAmount: 200000,
-      monthlyRate: 10000,
-      executions: [{ amount: 80000 }, { amount: 20000 }],
-    },
-    {
-      id: 'g-2',
-      name: 'Notgroschen',
-      targetAmount: 500000,
-      monthlyRate: 25000,
-      executions: [{ amount: 50000 }],
-    },
-  ])
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 beforeEach(() => {
-  resetDbMocks()
-  authMocks.requireHouseholdMembership.mockReset()
+  vi.clearAllMocks()
+  prismaMocks.expenseTransaction.findMany.mockResolvedValue([])
+  prismaMocks.expenseTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
+  prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
+  prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: null } })
+  prismaMocks.fixedCostPlan.findMany.mockResolvedValue([])
+  prismaMocks.incomePlan.findMany.mockResolvedValue([])
+  overviewMocks.loadEnvelopeOverview.mockResolvedValue(emptyOverview)
 })
 
 describe('GET /api/households/:id/dashboard — Auth', () => {
   it('returns 401 when the user is not authenticated', async () => {
-    mockAuthFailure(401, 'Unauthorized')
-
-    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({
-      statusCode: 401,
-    })
-    // DB sollte nicht angefasst werden, wenn Auth schon scheitert.
-    expect(prismaMocks.budget.findMany).not.toHaveBeenCalled()
+    authMocks.requireHouseholdMembership.mockRejectedValue({ statusCode: 401, statusMessage: 'Authentication required.' })
+    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({ statusCode: 401 })
   })
 
   it('returns 403 when the user is authenticated but not a household member', async () => {
-    mockAuthFailure(403, 'You do not have access to this household.')
-
-    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({
-      statusCode: 403,
-    })
-    expect(prismaMocks.budget.findMany).not.toHaveBeenCalled()
+    authMocks.requireHouseholdMembership.mockRejectedValue({ statusCode: 403, statusMessage: 'You do not have access to this household.' })
+    await expect(handler(makeEvent(HH_ID))).rejects.toMatchObject({ statusCode: 403 })
   })
 
   it('returns 400 when householdId is missing', async () => {
-    await expect(handler(makeEvent(undefined))).rejects.toMatchObject({
-      statusCode: 400,
-    })
+    await expect(handler(makeEvent(undefined))).rejects.toMatchObject({ statusCode: 400 })
     expect(authMocks.requireHouseholdMembership).not.toHaveBeenCalled()
   })
 })
@@ -258,34 +91,54 @@ describe('GET /api/households/:id/dashboard — Auth', () => {
 describe('GET /api/households/:id/dashboard — Empty State', () => {
   it('returns zero-everything response for a freshly created household', async () => {
     mockAuthSuccess()
-    mockEmptyHousehold()
 
     const response = await handler(makeEvent(HH_ID))
 
-    expect(response.householdId).toBe(HH_ID)
-    expect(response.monthSummary).toEqual({
-      income: 0,
-      expenses: 0,
-      balance: 0,
-      unassignedExpenses: 0,
-    })
-    expect(response.budgetAlerts).toEqual([])
-    expect(response.budgetPeriodCards).toEqual([])
+    expect(response.monthSummary).toEqual({ income: 0, expenses: 0, balance: 0, unassignedExpenses: 0 })
+    expect(response.envelopes).toEqual([])
+    expect(response.unassigned).toEqual(emptyOverview.unassigned)
     expect(response.recentActivity).toEqual([])
-    expect(response.savingsGoals).toEqual([])
-    expect(response.recurringDue).toEqual({
-      fixedCostsOpen: 0,
-      fixedCostsDue: 0,
-      incomeOpen: 0,
-      incomeDue: 0,
-    })
+    expect(response.recurringDue).toEqual({ fixedCostsOpen: 0, fixedCostsDue: 0, incomeOpen: 0, incomeDue: 0 })
+  })
+})
+
+describe('GET /api/households/:id/dashboard — Umschlaege (ADR-0005)', () => {
+  it('passes the envelope overview through unchanged', async () => {
+    mockAuthSuccess()
+    const overview = {
+      envelopes: [{ id: 'env-food', name: 'Lebensmittel', group: 'RUNNING', severity: 'ok' }],
+      unassigned: { balance: 50000, reserved: 120000, free: -70000, ledgerSince: new Date(2026, 10, 2, 12), openingBalance: 0 },
+    }
+    overviewMocks.loadEnvelopeOverview.mockResolvedValue(overview)
+
+    const response = await handler(makeEvent(HH_ID))
+
+    expect(overviewMocks.loadEnvelopeOverview).toHaveBeenCalledWith(HH_ID, expect.any(Date))
+    expect(response.envelopes).toBe(overview.envelopes)
+    expect(response.unassigned).toBe(overview.unassigned)
+  })
+})
+
+describe('GET /api/households/:id/dashboard — monthSummary', () => {
+  it('sums income and expenses of the month and counts expenses without envelope', async () => {
+    mockAuthSuccess()
+    prismaMocks.incomeTransaction.aggregate.mockResolvedValue({ _sum: { amount: 400000 } })
+    prismaMocks.expenseTransaction.aggregate.mockImplementation(async (args: any) => (
+      args?.where?.envelopeId === null ? { _sum: { amount: 4200 } } : { _sum: { amount: 150000 } }
+    ))
+
+    const response = await handler(makeEvent(HH_ID))
+
+    expect(response.monthSummary).toEqual({ income: 400000, expenses: 150000, balance: 250000, unassignedExpenses: 4200 })
+    // Fixkosten zaehlen nicht als "ohne Umschlag", wie `?unassigned=1`.
+    const unassignedCall = prismaMocks.expenseTransaction.aggregate.mock.calls.find((call: any[]) => call[0]?.where?.envelopeId === null)
+    expect(unassignedCall?.[0].where).toMatchObject({ envelopeId: null, fixedCostPlanId: null, deletedAt: null })
   })
 })
 
 describe('GET /api/households/:id/dashboard — recurringDue (issue #98)', () => {
   it('zaehlt faellige, ungedeckte Fixkosten- und Einnahmen-Plaene', async () => {
     mockAuthSuccess()
-    mockEmptyHousehold()
 
     // Zwei monatliche Fixkosten-Plaene, aktiv seit letztem Monat.
     const lastMonth = new Date()
@@ -299,253 +152,45 @@ describe('GET /api/households/:id/dashboard — recurringDue (issue #98)', () =>
     ])
     // fc-1 hat diesen Monat schon eine Buchung (= gedeckt), fc-2 nicht.
     prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
-      if (args?.where?.fixedCostPlanId) {
-        return [{ date: new Date(), fixedCostPlanId: 'fc-1' }]
-      }
+      if (args?.where?.fixedCostPlanId) return [{ date: new Date(), fixedCostPlanId: 'fc-1' }]
       return []
     })
-    // ip-1 ist offen (keine Buchung).
-    prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
 
     const response = await handler(makeEvent(HH_ID))
 
-    expect(response.recurringDue).toEqual({
-      fixedCostsOpen: 1,
-      fixedCostsDue: 2,
-      incomeOpen: 1,
-      incomeDue: 1,
-    })
+    expect(response.recurringDue).toEqual({ fixedCostsOpen: 1, fixedCostsDue: 2, incomeOpen: 1, incomeDue: 1 })
   })
 })
 
-describe('GET /api/households/:id/dashboard — Happy Path', () => {
-  it('aggregates month summary, budget alerts, recent activity and savings goals', async () => {
-    mockAuthSuccess()
-    setupTypicalHousehold()
-
-    const response = await handler(makeEvent(HH_ID))
-
-    // monthSummary: income 300000, expenses 163500, balance 136500, unassigned 5000
-    expect(response.monthSummary).toEqual({
-      income: 300000,
-      expenses: 163500,
-      balance: 136500,
-      unassignedExpenses: 5000,
-    })
+describe('GET /api/households/:id/dashboard — recentActivity', () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 86400000)
+  const expense = (id: string, date: Date, envelope: { name: string } | null = null) => ({
+    id, amount: 100, description: id, date, envelopeId: envelope ? `env-${id}` : null, envelope, user: { displayName: 'Jan' },
   })
 
-  it('returns budget alerts sorted by severity (over > warning > ok)', async () => {
+  it('returns at most 5 entries from the last 7 days, newest first, with the envelope name', async () => {
     mockAuthSuccess()
-    setupTypicalHousehold()
-
-    const response = await handler(makeEvent(HH_ID))
-
-    const severities = response.budgetAlerts.map((alert) => alert.severity)
-    // Erwartete Reihenfolge: over (fix), warning (food), ok (leisure)
-    expect(severities).toEqual(['over', 'warning', 'ok'])
-  })
-
-  it('does NOT include the "Sonstiges" unassigned bucket in budgetAlerts', async () => {
-    mockAuthSuccess()
-    setupTypicalHousehold()
-
-    const response = await handler(makeEvent(HH_ID))
-
-    const keys = response.budgetAlerts.map((alert) => alert.key)
-    expect(keys).not.toContain('sonstiges')
-    // Aber unassignedExpenses im monthSummary ist trotzdem 5000.
-    expect(response.monthSummary.unassignedExpenses).toBe(5000)
-  })
-
-  it('returns at most 5 recent activity entries, newest first, only from last 7 days', async () => {
-    mockAuthSuccess()
-    setupTypicalHousehold()
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.recentActivity).toHaveLength(5)
-
-    // Neueste zuerst: e-1 (1d ago), e-2 (2d), i-1 (3d), e-3 (4d), e-4 (5d).
-    // i-2 (6d ago) ist die 6. — faellt raus, weil nur die Top-5 genommen werden.
-    const ids = response.recentActivity.map((entry) => entry.id)
-    expect(ids).toEqual(['e-1', 'e-2', 'i-1', 'e-3', 'e-4'])
-
-    // Sortierung: absteigend nach Datum.
-    const dates = response.recentActivity.map((entry) => entry.date.getTime())
-    for (let i = 1; i < dates.length; i += 1) {
-      expect(dates[i - 1]!).toBeGreaterThanOrEqual(dates[i]!)
-    }
-  })
-
-  it('sorts savings goals by percentToTarget descending', async () => {
-    mockAuthSuccess()
-    setupTypicalHousehold()
-
-    const response = await handler(makeEvent(HH_ID))
-
-    // g-1 (Urlaub): 100000/200000 = 50%
-    // g-2 (Notgroschen): 50000/500000 = 10%
-    expect(response.savingsGoals.map((goal) => goal.name)).toEqual(['Urlaub', 'Notgroschen'])
-    expect(response.savingsGoals[0]).toMatchObject({
-      id: 'g-1',
-      currentAmount: 100000,
-      targetAmount: 200000,
-      monthlyRate: 10000,
-      percentToTarget: 50,
-    })
-  })
-})
-
-describe('GET /api/households/:id/dashboard — Severity-Grenzwerte', () => {
-  function mockSingleBudget(plannedCents: number, spentCents: number) {
-    prismaMocks.budget.findMany.mockResolvedValue([
-      {
-        id: 'b-1',
-        key: 'food',
-        name: 'Lebensmittel',
-        // ADR-0004: Frequenz + Saldo-Start am Budget
-        frequency: Frequency.MONTHLY,
-        balanceSince: new Date('2026-01-01'),
-        closedAt: null,
-        carryoverToBudgetId: null,
-        versions: [
-          { id: 'v-1', amount: plannedCents, frequency: Frequency.MONTHLY, validFrom: new Date('2026-01-01') },
-        ],
-      },
-    ])
     prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
-      if (args?.select?.budget === undefined) {
-        return [{ amount: spentCents, date: new Date(), budgetId: 'b-1' }]
-      }
-      return []
-    })
-    prismaMocks.incomeTransaction.findMany.mockImplementation(async (args: any) => {
-      return args?.select?.user === undefined ? [] : []
-    })
-    prismaMocks.savingsGoal.findMany.mockResolvedValue([])
-  }
-
-  it('classifies exactly 80% as warning (nicht ok)', async () => {
-    mockAuthSuccess()
-    mockSingleBudget(10000, 8000) // 80.0%
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.budgetAlerts[0]!.severity).toBe('warning')
-    expect(response.budgetAlerts[0]!.percentUsed).toBe(80)
-  })
-
-  it('classifies exactly 100% as warning (nicht over)', async () => {
-    mockAuthSuccess()
-    mockSingleBudget(10000, 10000) // 100.0%
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.budgetAlerts[0]!.severity).toBe('warning')
-    expect(response.budgetAlerts[0]!.percentUsed).toBe(100)
-  })
-
-  it('classifies >100% as over', async () => {
-    mockAuthSuccess()
-    mockSingleBudget(10000, 12500) // 125.0%
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.budgetAlerts[0]!.severity).toBe('over')
-    expect(response.budgetAlerts[0]!.percentUsed).toBe(125)
-  })
-
-  it('classifies 79.9% as ok', async () => {
-    mockAuthSuccess()
-    mockSingleBudget(10000, 7990) // 79.9%
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.budgetAlerts[0]!.severity).toBe('ok')
-    expect(response.budgetAlerts[0]!.percentUsed).toBe(79.9)
-  })
-})
-
-describe('GET /api/households/:id/dashboard — budgetPeriodCards (Perioden-Bugfix)', () => {
-  it('YEARLY-Budget zeigt den vollen Jahresbetrag unabhaengig vom aktuellen Kalendermonat', async () => {
-    mockAuthSuccess()
-
-    // "now" ist real (dashboard.get.ts nutzt new Date(), kein Fake-Timer
-    // in dieser Testdatei) — Jan 1 des laufenden Jahres liegt immer <= now.
-    const currentYear = new Date().getFullYear()
-    const yearlyValidFrom = new Date(currentYear, 0, 1)
-
-    prismaMocks.budget.findMany.mockResolvedValue([
-      {
-        id: 'b-yearly',
-        key: 'yearly',
-        name: 'Jahresbudget',
-        // ADR-0004: Frequenz + Saldo-Start am Budget
-        frequency: Frequency.YEARLY,
-        balanceSince: yearlyValidFrom,
-        closedAt: null,
-        carryoverToBudgetId: null,
-        versions: [
-          { id: 'v-1', amount: 120000, frequency: Frequency.YEARLY, validFrom: yearlyValidFrom },
-        ],
-      },
-    ])
-
-    prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
-      // Die neue Perioden-Query filtert explizit auf budgetId != null
-      // (dashboard.get.ts) — eindeutig von Monats-/Recent-/RecurringTx-
-      // Queries unterscheidbar, die kein `where.budgetId` setzen.
-      if (args?.where?.budgetId?.not === null) {
-        return [{ amount: 30000, date: new Date(), budgetId: 'b-yearly' }]
-      }
-      return []
-    })
-    prismaMocks.incomeTransaction.findMany.mockResolvedValue([])
-    prismaMocks.savingsGoal.findMany.mockResolvedValue([])
-
-    const response = await handler(makeEvent(HH_ID))
-
-    expect(response.budgetPeriodCards).toHaveLength(1)
-    const card = response.budgetPeriodCards[0]!
-    expect(card.budgetId).toBe('b-yearly')
-    expect(card.frequency).toBe('YEARLY')
-    expect(card.plannedAmount).toBe(120000)
-    expect(card.spentAmount).toBe(30000)
-    expect(card.remainingAmount).toBe(90000)
-    expect(card.percentUsed).toBe(25)
-    expect(card.severity).toBe('ok')
-    expect(new Date(card.periodStart).getFullYear()).toBe(currentYear)
-    expect(new Date(card.periodStart).getMonth()).toBe(0)
-    expect(new Date(card.periodEnd!).getFullYear()).toBe(currentYear + 1)
-    // ADR-0004: Sparkline-Raster (woechentlich, 3 Monate) endet beim aktuellen Saldo
-    expect(card.balanceTrend.length).toBeGreaterThanOrEqual(13)
-    expect(card.balanceTrend.at(-1)).toBe(card.balance)
-  })
-})
-
-describe('GET /api/households/:id/dashboard — 7-Tage-Fenster fuer recentActivity', () => {
-  it('excludes transactions older than 7 days', async () => {
-    mockAuthSuccess()
-
-    const now = new Date()
-    const eightDaysAgo = new Date(now.getTime() - 8 * 86400000)
-    const sixDaysAgo = new Date(now.getTime() - 6 * 86400000)
-
-    prismaMocks.budget.findMany.mockResolvedValue([])
-    prismaMocks.expenseTransaction.findMany.mockImplementation(async (args: any) => {
-      if (args?.select?.budget === undefined) return []
+      if (args?.select?.envelope === undefined) return []
       return [
-        // Aelter als 7 Tage — sollte rausfallen.
-        { id: 'old', amount: 100, description: 'old', date: eightDaysAgo, budgetId: null, budget: null, user: { displayName: 'Jan' } },
-        // Innerhalb 7 Tage — sollte bleiben.
-        { id: 'new', amount: 200, description: 'new', date: sixDaysAgo, budgetId: null, budget: null, user: { displayName: 'Jan' } },
+        expense('e1', daysAgo(1), { name: 'Lebensmittel' }),
+        expense('e2', daysAgo(2)),
+        expense('e3', daysAgo(3)),
+        expense('e4', daysAgo(5)),
+        expense('old', daysAgo(8)),
       ]
     })
-    prismaMocks.incomeTransaction.findMany.mockImplementation(async () => [])
-    prismaMocks.savingsGoal.findMany.mockResolvedValue([])
+    prismaMocks.incomeTransaction.findMany.mockImplementation(async (args: any) => {
+      if (args?.where?.incomePlanId) return []
+      return [
+        { id: 'i1', amount: 5000, description: 'Verkauf', date: daysAgo(0.5), user: { displayName: 'Sarah' } },
+        { id: 'i2', amount: 5000, description: 'alt', date: daysAgo(6), user: { displayName: 'Sarah' } },
+      ]
+    })
 
     const response = await handler(makeEvent(HH_ID))
 
-    expect(response.recentActivity.map((entry) => entry.id)).toEqual(['new'])
+    expect(response.recentActivity.map((entry) => entry.id)).toEqual(['i1', 'e1', 'e2', 'e3', 'e4'])
+    expect(response.recentActivity[1]).toMatchObject({ budgetId: 'env-e1', budgetName: 'Lebensmittel' })
   })
 })

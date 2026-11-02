@@ -11,6 +11,7 @@ import { prisma } from '../../../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../../../utils/household-access'
 import { defineApiResponse } from '../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../utils/validation'
+import { assertEnvelopeOpenOn } from '../../../../../utils/envelope-lifecycle'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
       id: incomeId,
       householdId,
     },
-    select: { id: true, deletedAt: true },
+    select: { id: true, deletedAt: true, date: true, envelope: { select: { closedAt: true } } },
   })
 
   if (!existing) {
@@ -35,6 +36,11 @@ export default defineEventHandler(async (event) => {
 
   if (existing.deletedAt === null) {
     return defineApiResponse({ kind: 'income', restored: true, alreadyActive: true })
+  }
+
+  // ADR-0005: Wie bei Ausgaben — keine Gutschrift hinter dem Stichtag.
+  if (existing.envelope) {
+    assertEnvelopeOpenOn(existing.envelope, existing.date)
   }
 
   await prisma.incomeTransaction.update({

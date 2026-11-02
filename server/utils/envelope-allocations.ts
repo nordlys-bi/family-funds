@@ -166,6 +166,23 @@ export function listDueAllocations(
     .map((periodStart) => ({ periodStart, amount: computeAllocationAmount(envelope, periodStart) }))
 }
 
+/**
+ * Buchungsdatum einer Zuteilung: der Periodenbeginn, aber nicht vor dem
+ * Startpunkt von "Zu verteilen". Sonst bekaeme der Umschlag das Geld, ohne
+ * dass "Zu verteilen" belastet wird — und zwar im Normalfall: Ein am 15.
+ * angelegter Monatsumschlag startet am 1. und laege vor `ledgerSince`.
+ * `allocationPeriodStart` bleibt der Periodenbeginn.
+ *
+ * Liegt `ledgerSince` noch in der Zukunft, gilt das nicht: Die Zuteilung
+ * zaehlt zum Bestand am Stichtag, und mit einem kuenftigen Datum waere sie
+ * bis dahin nicht im Saldo.
+ */
+export function getAllocationBookingDate(periodStart: Date, ledgerSince: Date, today: Date): Date {
+  const ledgerKey = dayKey(ledgerSince)
+  if (dayKey(periodStart) >= ledgerKey || ledgerKey > dayKey(today)) return periodStart
+  return new Date(ledgerKey)
+}
+
 /** Erster Tag des Folgemonats von `today` — Ende des Vormerk-Horizonts (exklusiv). */
 export function getReservationHorizon(today: Date): Date {
   const value = new Date(dayKey(today))
@@ -188,15 +205,8 @@ export function listReservedAllocations(envelope: AllocationEnvelope, today: Dat
     .map((periodStart) => ({ periodStart, amount: computeAllocationAmount(envelope, periodStart) }))
 }
 
-export function computeReservedAmount(envelopes: AllocationEnvelope[], today: Date): number {
-  return envelopes.reduce(
-    (total, envelope) => total + listReservedAllocations(envelope, today).reduce((sum, item) => sum + item.amount, 0),
-    0,
-  )
-}
-
 export type PeriodAvailability = {
-  /** Saldo zu Periodenbeginn (vor der Zuteilung) + Zuteilung der Periode. */
+  /** Aktueller Saldo + Ausgaben der Periode. */
   available: number
   spent: number
   /** Ausgaben ÷ verfuegbar in %; null, wenn nichts verfuegbar war. */
@@ -205,15 +215,12 @@ export type PeriodAvailability = {
 
 /**
  * Wie viel in dieser Periode zur Verfuegung stand und wie viel davon
- * ausgegeben ist. Die Luecke `available − spent` ist der aktuelle Saldo
- * (ohne Gutschriften und Umbuchungen in der Periode).
+ * ausgegeben ist. Vom aktuellen Saldo aus gerechnet, damit auch Gutschriften
+ * und Umbuchungen in der Periode zaehlen: Die Luecke `available − spent` ist
+ * immer genau der Saldo, Balken und Zahl koennen sich nicht widersprechen.
  */
-export function computePeriodAvailability(input: {
-  balanceBeforePeriod: number
-  periodAllocation: number
-  spent: number
-}): PeriodAvailability {
-  const available = input.balanceBeforePeriod + input.periodAllocation
+export function computePeriodAvailability(input: { balance: number; spent: number }): PeriodAvailability {
+  const available = input.balance + input.spent
   return {
     available,
     spent: input.spent,

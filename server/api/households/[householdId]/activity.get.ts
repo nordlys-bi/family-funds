@@ -22,7 +22,8 @@ export default defineEventHandler(async (event) => {
   // Parallel fuer minimaler Latenz (alle Counts gleichzeitig).
   const [memberCount, budgetCount, transactionCount] = await Promise.all([
     prisma.householdMember.count({ where: { householdId } }),
-    prisma.budget.count({ where: { householdId } }),
+    // ADR-0005: Umschlaege statt Budgets; der Feldname bleibt fuer die Tour.
+    prisma.envelope.count({ where: { householdId } }),
     prisma.expenseTransaction.count({
       where: { householdId, deletedAt: null },
     }),

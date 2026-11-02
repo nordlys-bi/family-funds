@@ -71,7 +71,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
   it('adds budgetId: null to the expense findMany where when unassigned=1', async () => {
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeNull()
+    expect(call?.where?.envelopeId).toBeNull()
   })
 
   it('excludes fixed-cost expenses (fixedCostPlanId: null) when unassigned=1', async () => {
@@ -87,7 +87,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
   it('unassignedExpenseTotal never counts fixed-cost expenses', async () => {
     await handler(makeEvent({ month: '2026-05' }))
     const unassignedCall = prismaMocks.expenseTransaction.aggregate.mock.calls[1][0]
-    expect(unassignedCall?.where).toMatchObject({ budgetId: null, fixedCostPlanId: null })
+    expect(unassignedCall?.where).toMatchObject({ envelopeId: null, fixedCostPlanId: null })
     const listCall = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
     expect(listCall?.where?.fixedCostPlanId).toBeUndefined()
   })
@@ -95,7 +95,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
   it('does not add budgetId filter when unassigned is not "1"', async () => {
     await handler(makeEvent({ month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeUndefined()
+    expect(call?.where?.envelopeId).toBeUndefined()
   })
 
   it('does not add budgetId filter for any other unassigned value (e.g. "true")', async () => {
@@ -104,7 +104,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
     // includeDeleted=1, month=YYYY-MM etc.
     await handler(makeEvent({ unassigned: 'true', month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeUndefined()
+    expect(call?.where?.envelopeId).toBeUndefined()
   })
 
   it('does not affect the income findMany when unassigned=1', async () => {
@@ -113,13 +113,13 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
     // nicht ausgehebelt werden, falls die Page unassigned=1 setzt.
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     const call = prismaMocks.incomeTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeUndefined()
+    expect(call?.where?.envelopeId).toBeUndefined()
   })
 
   it('combines unassigned filter with month filter', async () => {
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeNull()
+    expect(call?.where?.envelopeId).toBeNull()
     const dateFilter = call?.where?.date as { gte?: Date; lt?: Date }
     expect(dateFilter.gte!.getMonth()).toBe(4) // Mai
     expect(dateFilter.lt!.getMonth()).toBe(5) // Juni
@@ -128,7 +128,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
   it('combines unassigned filter with cursor (before)', async () => {
     await handler(makeEvent({ unassigned: '1', month: '2026-05', before: '2026-05-15' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeNull()
+    expect(call?.where?.envelopeId).toBeNull()
     const dateFilter = call?.where?.date as { gte?: Date; lt?: Date }
     expect(dateFilter.lt!.getDate()).toBe(15) // Cursor-Datum, nicht monthEnd
   })
@@ -138,7 +138,7 @@ describe('GET /transactions — ?unassigned=1 filter', () => {
     // unabhängig voneinander funktionieren.
     await handler(makeEvent({ unassigned: '1', includeDeleted: '1', month: '2026-05' }))
     const call = prismaMocks.expenseTransaction.findMany.mock.calls[0][0]
-    expect(call?.where?.budgetId).toBeNull()
+    expect(call?.where?.envelopeId).toBeNull()
     expect(call?.where?.deletedAt).toBeUndefined()
   })
 
@@ -174,7 +174,7 @@ describe('GET /transactions — ?unassigned=1 effect on summary', () => {
     await handler(makeEvent({ unassigned: '1', month: '2026-05' }))
     expect(prismaMocks.incomeTransaction.aggregate).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.not.objectContaining({ budgetId: expect.anything() }),
+        where: expect.not.objectContaining({ envelopeId: expect.anything() }),
       }),
     )
   })
