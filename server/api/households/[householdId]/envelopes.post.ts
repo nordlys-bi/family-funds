@@ -24,7 +24,7 @@ import { requireHouseholdOwner } from '../../../utils/household-access'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 import { assertFrequency, assertPeriodStart, parseDateInput, parseOptionalDateInput } from '../../../utils/planning'
-import { startOfPeriod } from '../../../utils/budget-evaluation'
+import { startOfPeriod } from '../../../utils/period'
 import {
   assertAllocationRule,
   defaultAllocationSource,

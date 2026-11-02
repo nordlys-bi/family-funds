@@ -19,9 +19,9 @@
  *                 sobald t ≥ max(v.closedAt, ledgerSince)
  *               jeweils mit Datum in [ledgerSince, t]
  *
- * Vergleiche laufen tagesgenau ueber `dayKey`, wie in `budget-balance.ts`.
+ * Vergleiche laufen tagesgenau ueber `dayKey`.
  */
-import { dayKey } from './budget-balance'
+import { dayKey } from './period'
 
 export type BalanceEnvelope = {
   id: string

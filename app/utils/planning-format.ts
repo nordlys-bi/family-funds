@@ -109,7 +109,7 @@ function shortYear(year: number): string {
  * Kuerzestmoegliches Datumsformat fuer eine Perioden-Spanne, z. B.
  * "1.-30.9.26". Nur noch fuer ONCE-Perioden mit Nachfolge-Version genutzt
  * (alle anderen Frequenzen haben ein eigenes, lesbareres Label — siehe
- * `formatBudgetPeriodLabel`). `start` und `endInclusive` sind beide
+ * `formatEnvelopePeriodLabel`). `start` und `endInclusive` sind beide
  * inklusiv — der Aufrufer zieht bei einem exklusiven Ende (periodEnd)
  * vorher einen Tag ab.
  *
@@ -182,13 +182,13 @@ function formatWeekRange(start: Date, endInclusive: Date): string {
  * Karte, frequenzabhaengig: Nutzer denken bei einem Monatsbudget an
  * "Sept. 2026", nicht an den Tag-Range "1.-30.9.26" — die exakte Spanne
  * bleibt trotzdem ueberpruefbar, weil ein Klick auf die Karte exakt danach
- * filtert (siehe `transactionsLink` in `DashboardBudgetPeriodGrid.vue`).
+ * filtert (siehe `transactionsLink` in `DashboardEnvelopeGrid.vue`).
  *
  * Beispiele: "KW 38 (14.-20. Sept.)" (WEEKLY) / "Sept. 2026" (MONTHLY) /
  * "Q3 2026" (QUARTERLY) / "2026" (YEARLY) / "seit 27.7.26" (ONCE, offen) /
  * "5.3.-31.7.26" (ONCE mit Nachfolge-Version).
  */
-export function formatBudgetPeriodLabel(
+export function formatEnvelopePeriodLabel(
   frequency: Frequency,
   periodStart: string,
   periodEnd: string | null,
@@ -251,4 +251,31 @@ export function getPeriodStartDate(value: Date, frequency: Frequency): Date {
       break
   }
   return date
+}
+
+/**
+ * Naechster Periodenbeginn nach `value` — Default-Stichtag im
+ * Schliessen-Dialog, damit die laufende Periode noch voll genutzt wird.
+ * ONCE hat kein Raster, dort ist jeder Tag gueltig (→ morgen).
+ */
+export function getNextPeriodStartDate(value: Date, frequency: Frequency): Date {
+  const start = getPeriodStartDate(value, frequency)
+  switch (frequency) {
+    case 'WEEKLY':
+      start.setDate(start.getDate() + 7)
+      break
+    case 'MONTHLY':
+      start.setMonth(start.getMonth() + 1, 1)
+      break
+    case 'QUARTERLY':
+      start.setMonth(start.getMonth() + 3, 1)
+      break
+    case 'YEARLY':
+      start.setFullYear(start.getFullYear() + 1, 0, 1)
+      break
+    case 'ONCE':
+      start.setDate(start.getDate() + 1)
+      break
+  }
+  return start
 }

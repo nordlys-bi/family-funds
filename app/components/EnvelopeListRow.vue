@@ -37,7 +37,7 @@ const targetPercent = computed(() => {
   return target ? Math.max(0, balance.value / target) * 100 : null
 })
 const periodLabel = computed(() =>
-  period.value ? formatBudgetPeriodLabel(props.envelope.frequency, period.value.start, period.value.end) : null,
+  period.value ? formatEnvelopePeriodLabel(props.envelope.frequency, period.value.start, period.value.end) : null,
 )
 </script>
 
@@ -86,7 +86,7 @@ const periodLabel = computed(() =>
           :class="{ 'is-negative': balance < 0 && !isClosed, 'is-closed': isClosed }"
           :title="isClosed ? 'Endsaldo — steckt bereits im Ziel' : undefined"
         >{{ formatMoney(balance) }}</span>
-        <BudgetBalanceSparkline :values="envelope.balanceTrend" :width="64" :height="18" />
+        <EnvelopeBalanceSparkline :values="envelope.balanceTrend" :width="64" :height="18" />
       </div>
       <i class="pi pi-chevron-right envelope-row__chevron" aria-hidden="true" />
     </NuxtLink>

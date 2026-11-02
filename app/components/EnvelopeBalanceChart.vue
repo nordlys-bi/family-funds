@@ -1,7 +1,7 @@
 <!--
-  BudgetBalanceChart — Stufenlinie des Budgetsaldos (ADR-0004).
+  EnvelopeBalanceChart — Stufenlinie des Budgetsaldos (ADR-0004).
 
-  Handgeschriebenes SVG wie BudgetPeriodRing.vue, keine Chart-Library. Die
+  Handgeschriebenes SVG wie EnvelopePeriodRing.vue, keine Chart-Library. Die
   Geometrie kommt aus `~/utils/balance-chart` (getestet), hier wird nur
   gezeichnet. Breite folgt dem Container (ResizeObserver) statt eines
   verzerrten viewBox, damit Schrift und Marker auch auf Handybreite
@@ -26,7 +26,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { balanceAxisTicks, buildBalanceChartGeometry, compactMoneyLabel, type BalancePoint } from '~/utils/balance-chart'
-import { nearestIndex, periodTicks, summarizeBalanceHistory } from '~/utils/budget-detail'
+import { nearestIndex, periodTicks, summarizeBalanceHistory } from '~/utils/envelope-detail'
 import type { Frequency } from '~/types/planning'
 
 export type BalanceChartEvent = {

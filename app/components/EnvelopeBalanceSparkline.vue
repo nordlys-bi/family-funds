@@ -1,6 +1,6 @@
 <!--
-  BudgetBalanceSparkline — kompakter Saldo-Trend ohne Achsen fuers Dashboard
-  (ADR-0004). Gleiche Geometrie und Farblogik wie BudgetBalanceChart.vue,
+  EnvelopeBalanceSparkline — kompakter Saldo-Trend ohne Achsen fuers Dashboard
+  (ADR-0004). Gleiche Geometrie und Farblogik wie EnvelopeBalanceChart.vue,
   nur auf Wochen-Stichproben aus dem Dashboard-Snapshot — kein eigener
   Request pro Budget.
 
@@ -46,7 +46,7 @@ const clipBelow = `${uid}-below`
     aria-hidden="true"
   >
     <defs>
-      <!-- Grenze eine halbe Strichbreite unter null, siehe BudgetBalanceChart.vue -->
+      <!-- Grenze eine halbe Strichbreite unter null, siehe EnvelopeBalanceChart.vue -->
       <clipPath :id="clipAbove">
         <rect x="0" y="0" :width="width" :height="Math.max(0, geometry.zeroY + LINE_HALF_WIDTH)" />
       </clipPath>

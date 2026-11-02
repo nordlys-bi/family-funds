@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Family Funds is a household finance app (Nuxt 4 / Vue 3 / TypeScript, PrimeVue, Prisma + PostgreSQL, Clerk for auth). Multiple households, multiple members per household, planned values (budgets, income plans, fixed costs, savings goals) vs. actual bookings (expense/income transactions). See [CONTEXT.md](CONTEXT.md) for the full domain glossary and concept model — read it before making domain-modeling decisions, and read relevant [docs/adr/](docs/adr/) entries before touching the area they cover. Comments in the codebase are written in German and are usually rationale ("why"), not description — read them before changing the code they annotate.
+Family Funds is a household finance app (Nuxt 4 / Vue 3 / TypeScript, PrimeVue, Prisma + PostgreSQL, Clerk for auth). Multiple households, multiple members per household, planned values (envelopes with allocations and savings targets, income plans, fixed costs) vs. actual bookings (expense/income transactions, transfers). See [CONTEXT.md](CONTEXT.md) for the full domain glossary and concept model — read it before making domain-modeling decisions, and read relevant [docs/adr/](docs/adr/) entries before touching the area they cover. Comments in the codebase are written in German and are usually rationale ("why"), not description — read them before changing the code they annotate.
 
 ## Commands
 
@@ -41,22 +41,24 @@ Tests never require a running database: server tests mock `server/utils/prisma` 
 - Clerk mode: `event.context.auth()` from Clerk, synced on demand into the local `User` table (`server/utils/clerk-sync.ts`); `/api/webhooks/clerk` keeps it in sync asynchronously.
 - Mock mode: an HMAC-signed `session_user_id` cookie (`server/utils/auth-session.ts`), issued by `POST /api/auth/login` against local test users.
 
-Server endpoints authorize via `server/utils/household-access.ts`: `requireAuthenticatedUser`, `requireHouseholdMembership` (any role), `requireHouseholdOwner` (OWNER only — renaming/deleting the household, managing members, budgets, savings goals). `app/middleware/auth.global.ts` handles client-side redirect to `/login` and ensures household context is loaded before any page renders.
+Server endpoints authorize via `server/utils/household-access.ts`: `requireAuthenticatedUser`, `requireHouseholdMembership` (any role), `requireHouseholdOwner` (OWNER only — renaming/deleting the household, managing members, envelopes, plans). `app/middleware/auth.global.ts` handles client-side redirect to `/login` and ensures household context is loaded before any page renders.
 
 ### Household context
 
 A user can belong to multiple households; every domain entity hangs off a `householdId`. The active household is client-side state in `app/composables/useHousehold.ts` (a Nuxt `useState`, persisted via an `active_household_id` cookie), not a URL param — server endpoints take `householdId` as a route param and re-check membership per request regardless of what the client claims is active.
 
-### Planned vs. actual, and the double-booking pattern
+### Envelopes: planned vs. actual
 
-Schema (`prisma/schema.prisma`) separates **planned** entities (`Budget`/`BudgetVersion`, `IncomePlan`, `FixedCostPlan`, `SavingsGoal`) from **actual bookings** (`ExpenseTransaction`, `IncomeTransaction`, `SavingsGoalExecution`). All money fields are integer cents.
+Money lives in **envelopes** (`Envelope`, UI: "Umschlag"), virtual accounts with a running balance. See [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md), the reference for everything below. "Konto" is reserved for real accounts (a later stage). All money fields are integer cents.
 
-- A `SavingsGoal`'s current balance is the sum of its `SavingsGoalExecution.amount` (signed: positive = saved, negative = withdrawn) — never stored directly.
-- When a real-world action should show up both as household spending and as a savings-pot withdrawal (e.g., a trip paid from the "vacation" pot), it is recorded as **two** rows: an `ExpenseTransaction` (reporting) and a negative `SavingsGoalExecution` (pot balance). See [ADR-0001](docs/adr/0001-expense-as-double-booking.md).
-- `FixedCostPlan`/`IncomePlan` link to their actual transactions via an explicit FK (`fixedCostPlanId`/`incomePlanId`, `onDelete: SetNull`) rather than heuristic matching, so "coverage" (how much of this period's plan has been paid) is a per-request aggregation over real rows, never persisted. Period bucketing by `Frequency` (WEEKLY/MONTHLY/QUARTERLY/YEARLY/ONCE) lives in `server/utils/recurring-periods.ts` / `recurring-coverage.ts`. See [ADR-0002](docs/adr/0002-recurring-plan-coverage.md).
-- Per-budget month-end forecasting (`forecastTotal`/`forecastRemaining`/`forecastSeverity`) is a pure, server-computed function of `spentAmount` + today's date, never persisted. See `server/utils/forecast.ts` and [ADR-0003](docs/adr/0003-forecast-mode.md).
-- A `Budget` is a virtual account: each `BudgetVersion` amount is an allocation credited at every period start, expenses and `SavingsGoalExecution`s with `sourceBudgetId` (budget → pot transfers, one row, no double-booking) are debited, and the running balance since `Budget.balanceSince` never expires. `frequency` is fixed per `Budget`; changing it means a new budget plus closing the old one (`closedAt` + mandatory `carryoverToBudgetId`, whose balance includes the predecessor's live final balance). Budgets with bookings can't be deleted, only closed. Computed per request, never persisted; allocations are not `IncomeTransaction`s. See [ADR-0004](docs/adr/0004-budget-as-virtual-account.md).
+- An envelope has one **group** (`RUNNING`, `FIXED`, `RESERVE`, `SAVINGS`, `PERSONAL`). It controls display and creation defaults but forbids nothing: allocation rule and savings target (`targetAmount`) are independent optional properties.
+- **"Zu verteilen"** is the implicit per-household pot for unassigned money: `envelopeId: null` on a booking, `null` on one side of a transfer. It counts from `Household.ledgerSince`; `openingBalance` is the free money at that point.
+- **Balances are never stored**: they are a per-request sum over bookings (`server/utils/envelope-balance.ts`). A closed envelope's balance flows into `carryoverToEnvelopeId` (or "Zu verteilen") as a live reference, not a booked amount.
+- **Allocations are booked, not computed**: an `EnvelopeTransfer` from "Zu verteilen" with `allocationPeriodStart`. `ensureAllocations` (`server/utils/envelope-store.ts`) creates due ones lazily before any balance read, and must also run before any change to a rule, plan or closing date, otherwise a started but unbooked period gets the new amount. Skipping a period means amount 0, never deleting the row. Upcoming allocations of the calendar month are "vorgemerkt": computed, and subtracted from what is free.
+- **Rating is by balance** (`classifyEnvelopeSeverity`): red only when the balance is negative. Yellow only for running expenses, when less than half as much money as time is left in the period. There is no forecast.
+- `FixedCostPlan`/`IncomePlan` link to their transactions via an explicit FK (`fixedCostPlanId`/`incomePlanId`, `onDelete: SetNull`) rather than heuristic matching, so "coverage" is a per-request aggregation over real rows. See [ADR-0002](docs/adr/0002-recurring-plan-coverage.md). A plan's `envelopeId` is inherited by bookings created from it, and an envelope with `allocationSource: PLANS` derives its allocation from its plans. Period bucketing lives in `server/utils/period.ts` and `recurring-periods.ts`.
 - Expense/income transactions are soft-deleted (`deletedAt`, restorable via `POST .../restore`); nearly every query must filter `deletedAt: null`.
+- `Budget`, `BudgetVersion`, `SavingsGoal`, `SavingsGoalExecution` and `budgetId` are legacy, kept only until the production cutover so `scripts/verify-envelope-migration.ts` can compare against them. Never write to them.
 
 ### API conventions
 

@@ -1,4 +1,7 @@
 /**
+ * Saldo eines Budgets nach ADR-0004 — nur noch fuer den Vergleich in
+ * `verify-envelope-migration.ts`. Faellt mit den alten Tabellen weg.
+ *
  * Saldo eines Budgets als virtuelles Konto (ADR-0004).
  *
  * Reine Funktionen ohne DB-Zugriff — der Saldo wird nie persistiert, sondern
@@ -18,7 +21,7 @@
  * am Starttag vor die 12:00-Grenze von `balanceSince`.
  */
 import type { Frequency } from '@prisma/client'
-import { addPeriod, startOfPeriod } from './budget-evaluation'
+import { addPeriod, dayKey, startOfPeriod } from '../../server/utils/period'
 
 export type BalanceBudget = {
   id: string
@@ -57,13 +60,6 @@ export type BudgetBalance = {
   transferred: number
   /** Summe der eingeflossenen Endsalden geschlossener Vorgaenger. */
   carriedOver: number
-}
-
-/** Tagesgenauer Vergleichsschluessel (12:00 Serverzeit), siehe Kopfkommentar. */
-export function dayKey(date: Date) {
-  const value = new Date(date)
-  value.setHours(12, 0, 0, 0)
-  return value.getTime()
 }
 
 /**

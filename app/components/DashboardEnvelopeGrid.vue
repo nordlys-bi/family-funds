@@ -1,26 +1,19 @@
 <!--
-  DashboardBudgetPeriodGrid — die neue "oberste Prio"-Budget-Uebersicht des
-  Dashboards. Ersetzt die alte, kalendermonats-skalierte
-  DashboardBudgetList: jede Karte bezieht sich auf die eigene, aktuell
-  laufende Periode des Budgets (Woche/Monat/Quartal/Jahr/einmalig), nicht
-  auf den Kalendermonat — siehe `getCurrentBudgetPeriodWindows` in
-  `server/utils/budget-evaluation.ts` fuer die Begruendung.
+  DashboardEnvelopeGrid — die oberste Uebersicht des Dashboards: die laufenden
+  Ausgaben. Jede Karte bezieht sich auf die eigene, aktuell laufende Periode
+  des Umschlags (Woche/Monat/Quartal/Jahr), nicht auf den Kalendermonat.
 
   2 Karten pro Reihe auf Mobile (Default), mehr auf breiteren Viewports.
 
-  Issue-Request: aus der Karte heraus direkt eine Ausgabe fuer GENAU
-  dieses Budget erfassen koennen. Nutzt den globalen Erfassen-Dialog
-  (useQuickCapture, issue #91) mit vorausgewaehltem Budget — kein
-  eigener Dialog noetig.
+  Aus der Karte heraus laesst sich direkt eine Ausgabe fuer GENAU diesen
+  Umschlag erfassen: globaler Erfassen-Dialog (useQuickCapture, issue #91) mit
+  vorausgewaehltem Umschlag.
 
   ADR-0005: Die Karte rechnet vom Verfuegbaren zum Saldo, ihre Farbe kommt aus
   der Bewertung nach Saldo — nicht aus dem Vergleich mit der Zuteilung.
 
   Klick auf die Karte (oberhalb des "Erfassen"-Buttons) oeffnet die
   Detailseite (Saldo + Verlauf sind dort die Hauptansicht).
-  Frueher fuehrte er direkt in die nach Budget und Perioden-Spanne
-  gefilterte Buchungsliste — dieser Link ("Buchungen dieser Periode")
-  sitzt jetzt auf der Detailseite.
 -->
 <script setup lang="ts">
 import type { EnvelopeItem } from '~/types/envelope'
@@ -46,11 +39,11 @@ function captureExpense(envelopeId: string) {
       <NuxtLink :to="`/budgeting/envelopes/${envelope.id}`" class="card__main">
         <div class="card__head">
           <span class="card__name">{{ envelope.name }}</span>
-          <span v-if="envelope.currentPeriod" class="card__period">{{ formatBudgetPeriodLabel(envelope.frequency, envelope.currentPeriod.start, envelope.currentPeriod.end) }}</span>
+          <span v-if="envelope.currentPeriod" class="card__period">{{ formatEnvelopePeriodLabel(envelope.frequency, envelope.currentPeriod.start, envelope.currentPeriod.end) }}</span>
         </div>
         <div v-if="envelope.currentPeriod" class="card__body">
           <!-- ADR-0005: Der Ring misst die Ausgaben am Verfuegbaren; nichts verfuegbar heisst voll. -->
-          <BudgetPeriodRing :percent="envelope.currentPeriod.percentUsed ?? 100" :severity="envelope.severity" :size="56" class="card__ring" />
+          <EnvelopePeriodRing :percent="envelope.currentPeriod.percentUsed ?? 100" :severity="envelope.severity" :size="56" class="card__ring" />
           <dl class="card__amounts">
             <div class="card__amount-row">
               <dt class="sr-only">Verfügbar</dt>
@@ -73,7 +66,7 @@ function captureExpense(envelopeId: string) {
           <span v-if="envelope.reserved > 0" class="card__balance-label">+{{ formatMoney(envelope.reserved) }} kommen bis Monatsende</span>
           <!-- Trend der letzten 3 Monate ueber die volle Kartenbreite (#148);
                Details mit Ereignissen auf der Detailseite. -->
-          <BudgetBalanceSparkline :values="envelope.balanceTrend" :width="160" :height="22" fluid />
+          <EnvelopeBalanceSparkline :values="envelope.balanceTrend" :width="160" :height="22" fluid />
         </div>
       </NuxtLink>
       <button

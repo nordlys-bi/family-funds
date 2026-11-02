@@ -1,14 +1,14 @@
 /**
  * Regeln und Eingabe-Parsing fuer Umschlaege (ADR-0005).
  *
- * Schliessen und Offenheit wie bei Budgets (ADR-0004, `budget-lifecycle.ts`),
+ * Schliessen und Offenheit wie bei Budgets (ADR-0004),
  * mit einer Erweiterung: Ziel des Uebertrags kann auch "Zu verteilen" sein
  * (`target = null`). Reine Funktionen, die h3-Fehler werfen, damit Endpoints
  * und Tests dieselbe Pruefung nutzen.
  */
 import { createError } from 'h3'
 import type { AllocationSource, EnvelopeGroup, Frequency } from '@prisma/client'
-import { dayKey } from './budget-balance'
+import { dayKey } from './period'
 import { isPeriodStart, parseMoneyToCents } from './planning'
 
 export const envelopeGroups = ['RUNNING', 'FIXED', 'RESERVE', 'SAVINGS', 'PERSONAL'] as const satisfies readonly EnvelopeGroup[]

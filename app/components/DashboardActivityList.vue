@@ -15,7 +15,7 @@ const props = defineProps<{
     amount: number
     description: string | null
     date: string
-    budgetName: string | null
+    envelopeName: string | null
     userDisplayName: string | null
   }>
   /**
@@ -60,7 +60,7 @@ const hiddenCount = computed(() => props.activity.length - visible.value.length)
           </span>
         </div>
         <div class="meta">
-          {{ entry.userDisplayName || '—' }}<template v-if="entry.budgetName"> · {{ entry.budgetName }}</template>
+          {{ entry.userDisplayName || '—' }}<template v-if="entry.envelopeName"> · {{ entry.envelopeName }}</template>
           · {{ new Date(entry.date).toLocaleDateString('de-DE') }}
         </div>
       </div>

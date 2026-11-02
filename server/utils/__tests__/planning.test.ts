@@ -5,10 +5,8 @@ import {
   assertPeriodStart,
   assertPlanningKind,
   frequencies,
-  generateBudgetKey,
   isPeriodStart,
   parseDateInput,
-  parseExecutionAmount,
   parseMoneyToCents,
   parseOptionalDateInput,
   planningKinds,
@@ -152,68 +150,6 @@ describe('parseMoneyToCents', () => {
   })
 })
 
-describe('parseExecutionAmount', () => {
-  describe('numeric inputs', () => {
-    it('converts positive numbers to cents', () => {
-      expect(parseExecutionAmount(10, 'amount')).toBe(1000)
-      expect(parseExecutionAmount(0.5, 'amount')).toBe(50)
-      expect(parseExecutionAmount(0.01, 'amount')).toBe(1)
-    })
-
-    it('converts negative numbers to negative cents (withdrawals)', () => {
-      expect(parseExecutionAmount(-10, 'amount')).toBe(-1000)
-      expect(parseExecutionAmount(-0.5, 'amount')).toBe(-50)
-      expect(parseExecutionAmount(-3.75, 'amount')).toBe(-375)
-    })
-
-    it('accepts zero', () => {
-      expect(parseExecutionAmount(0, 'amount')).toBe(0)
-    })
-
-    it('rejects non-finite numbers', () => {
-      expectBadRequest(() => parseExecutionAmount(Number.NaN, 'amount'), /finite/)
-      expectBadRequest(
-        () => parseExecutionAmount(Number.POSITIVE_INFINITY, 'amount'),
-        /finite/,
-      )
-    })
-  })
-
-  describe('string inputs', () => {
-    it('parses German decimal format with comma (positive)', () => {
-      expect(parseExecutionAmount('12,50', 'amount')).toBe(1250)
-      expect(parseExecutionAmount('1234,56', 'amount')).toBe(123456)
-    })
-
-    it('parses German decimal format with comma (negative)', () => {
-      expect(parseExecutionAmount('-12,50', 'amount')).toBe(-1250)
-      expect(parseExecutionAmount('-3,75', 'amount')).toBe(-375)
-    })
-
-    it('parses international format with dot (positive)', () => {
-      expect(parseExecutionAmount('12.50', 'amount')).toBe(1250)
-    })
-
-    it('parses mixed format with both separators', () => {
-      // "1.234,56" -> 123456 cents (German thousands)
-      expect(parseExecutionAmount('1.234,56', 'amount')).toBe(123456)
-      // "1,234.56" -> 123456 cents (US thousands)
-      expect(parseExecutionAmount('1,234.56', 'amount')).toBe(123456)
-    })
-
-    it('rejects empty or whitespace-only strings', () => {
-      expectBadRequest(() => parseExecutionAmount('', 'amount'), /required/)
-      expectBadRequest(() => parseExecutionAmount('   ', 'amount'), /required/)
-    })
-
-    it('rejects non-string non-number input', () => {
-      expectBadRequest(() => parseExecutionAmount({}, 'amount'), /required/)
-      expectBadRequest(() => parseExecutionAmount(null, 'amount'), /required/)
-      expectBadRequest(() => parseExecutionAmount(undefined, 'amount'), /required/)
-    })
-  })
-})
-
 describe('parseDateInput', () => {
   it('parses ISO-ish date strings', () => {
     const date = parseDateInput('2026-06-15', 'validFrom')
@@ -313,17 +249,5 @@ describe('isPeriodStart / assertPeriodStart', () => {
     } catch (error) {
       expect((error as any).statusMessage).toMatch(/startDate/)
     }
-  })
-})
-
-describe('generateBudgetKey', () => {
-  it('produces budget_<uuid-without-dashes>', () => {
-    const key = generateBudgetKey()
-    expect(key).toMatch(/^budget_[a-f0-9]{32}$/)
-  })
-
-  it('returns a unique value on each call', () => {
-    const keys = new Set(Array.from({ length: 25 }, generateBudgetKey))
-    expect(keys.size).toBe(25)
   })
 })

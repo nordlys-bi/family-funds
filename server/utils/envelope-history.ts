@@ -7,8 +7,31 @@
  * Saldo des Ziels. So laeuft die Kurve bei einem Frequenzwechsel ohne Sprung
  * durch (wie `computeChainBalances` fuer Budgets, ADR-0004).
  */
-import { dayKey } from './budget-balance'
+import { dayKey } from './period'
 import { carryoverInflowKey, computeEnvelopeBalances, type BalanceEnvelope, type EnvelopeBalanceInputs } from './envelope-balance'
+
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export function formatDayKey(key: number): string {
+  const date = new Date(key)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}`
+}
+
+/** Default-Zeitraum des Verlaufs: drei Monate bis heute. */
+export function getDefaultHistoryRange(now: Date = new Date()): { from: Date; to: Date } {
+  const to = new Date(dayKey(now))
+  const from = new Date(to)
+  from.setMonth(from.getMonth() - 3)
+  return { from: new Date(dayKey(from)), to }
+}
+
+export const MAX_HISTORY_RANGE_DAYS = 2 * 366
+
+export function getRangeDays(from: Date, to: Date): number {
+  return Math.round((dayKey(to) - dayKey(from)) / DAY_MS)
+}
 
 export type HistoryEntryType = 'allocation' | 'income' | 'expense' | 'transfer' | 'carryover'
 

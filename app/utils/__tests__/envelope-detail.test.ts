@@ -10,7 +10,7 @@ import {
   periodTicks,
   summarizeBalanceHistory,
   trendVersusPreviousPeriod,
-} from '../budget-detail'
+} from '../envelope-detail'
 
 const points = [
   { date: '2026-07-11', balance: 5000 },

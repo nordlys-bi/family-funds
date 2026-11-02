@@ -1,5 +1,5 @@
 <!--
-  BudgetPeriodRing — kompakter Ring-Chart fuer eine Budget-Karte
+  EnvelopePeriodRing — kompakter Ring-Chart fuer eine Budget-Karte
   (verbraucht/geplant als Prozent, Severity-eingefaerbt).
 
   Reines inline-SVG, keine Chart-Library noetig (App rollt Ratio-Visuals

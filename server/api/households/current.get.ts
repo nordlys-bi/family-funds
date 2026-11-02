@@ -1,7 +1,7 @@
 import { defineEventHandler, createError, getCookie } from 'h3'
 import { prisma } from '../../utils/prisma'
 import { requireAuthenticatedUser } from '../../utils/household-access'
-import { getMonthWindow } from '../../utils/budget-evaluation'
+import { getMonthWindow } from '../../utils/period'
 import { computePlanCoverage, indexPaidBuckets } from '../../utils/recurring-coverage'
 
 export default defineEventHandler(async (event) => {

@@ -13,10 +13,17 @@ import { prisma } from '../../../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../../../utils/household-access'
 import { parseUuidParam } from '../../../../../utils/validation'
 import { parseDateInput } from '../../../../../utils/planning'
-import { dayKey } from '../../../../../utils/budget-balance'
-import { formatDayKey, getDefaultHistoryRange, getRangeDays, MAX_HISTORY_RANGE_DAYS } from '../../../../../utils/budget-balance-history'
+import { dayKey } from '../../../../../utils/period'
 import { ensureAllocations, envelopeBalanceSelect } from '../../../../../utils/envelope-store'
-import { computeEnvelopeHistoryPoints, getEnvelopeChain, listEnvelopeHistoryEntries } from '../../../../../utils/envelope-history'
+import {
+  computeEnvelopeHistoryPoints,
+  formatDayKey,
+  getDefaultHistoryRange,
+  getEnvelopeChain,
+  getRangeDays,
+  listEnvelopeHistoryEntries,
+  MAX_HISTORY_RANGE_DAYS,
+} from '../../../../../utils/envelope-history'
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 

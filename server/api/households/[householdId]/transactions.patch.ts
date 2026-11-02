@@ -6,7 +6,7 @@ import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
-import { dayKey } from '../../../utils/budget-balance'
+import { dayKey } from '../../../utils/period'
 
 type TransactionUpdateBody = {
   kind: string

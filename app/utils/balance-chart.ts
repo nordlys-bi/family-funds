@@ -1,11 +1,11 @@
 /**
  * Geometrie fuer den Budget-Saldo-Verlauf (ADR-0004): Skalierung und
- * SVG-Pfade fuer `BudgetBalanceChart.vue` und `BudgetBalanceSparkline.vue`.
+ * SVG-Pfade fuer `EnvelopeBalanceChart.vue` und `EnvelopeBalanceSparkline.vue`.
  *
  * Reine Funktionen, damit die Rechnerei ohne DOM testbar ist — die
  * Komponenten zeichnen nur noch. Bewusst keine Chart-Library: zwei kleine
  * Stufenlinien rechtfertigen keine zusaetzliche Abhaengigkeit (gleiche
- * Linie wie BudgetPeriodRing.vue).
+ * Linie wie EnvelopePeriodRing.vue).
  */
 
 export type BalancePoint = { date: string; balance: number }

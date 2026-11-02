@@ -5,7 +5,7 @@
  * Ereignisliste.
  *
  * Alles auf `YYYY-MM-DD`-Strings und Cent-Betraegen, ohne DOM — die Seite
- * und `BudgetBalanceChart.vue` zeichnen nur noch.
+ * und `EnvelopeBalanceChart.vue` zeichnen nur noch.
  */
 import type { Frequency } from '~/types/planning'
 import { dayNumber, type BalancePoint } from './balance-chart'

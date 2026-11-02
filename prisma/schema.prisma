@@ -116,8 +116,8 @@ model HouseholdMember {
 }
 
 // ADR-0005: Umschlag = virtuelles Konto mit Saldo. Loest Budget und
-// SavingsGoal ab; beide bleiben bis #160 als Altbestand im Schema (die
-// Migration hat ihre IDs uebernommen), werden aber nicht mehr beschrieben.
+// SavingsGoal ab; beide bleiben bis nach dem Umstieg als Altbestand im Schema
+// (das Pruefscript vergleicht gegen sie), werden aber nicht mehr beschrieben.
 model Envelope {
   id               String            @id @default(uuid())
   householdId      String
@@ -273,7 +273,7 @@ model IncomePlan {
   // aus gleichem Grund wie der Rueckwaerts-Pointer oben.
   budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
-  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand).
+  // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg).
   envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
 }
@@ -298,7 +298,7 @@ model FixedCostPlan {
   // Aenderung im Transaction-Row-Editor bleibt moeglich.
   budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
-  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand).
+  // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg).
   envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
 }
@@ -328,7 +328,7 @@ model ExpenseTransaction {
   // ohne Buchung zu verlieren (analog zu Budget).
   fixedCostPlan FixedCostPlan?   @relation(fields: [fixedCostPlanId], references: [id], onDelete: SetNull)
   fixedCostPlanId String?
-  // ADR-0005: ersetzt budgetId (bleibt bis #160 als Altbestand). null = "Zu verteilen".
+  // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg). null = "Zu verteilen".
   envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)

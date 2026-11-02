@@ -29,7 +29,6 @@ const prismaMocks = vi.hoisted(() => ({
   expenseTransaction: { findFirst: vi.fn(), update: vi.fn(), count: vi.fn() },
   incomeTransaction: { findFirst: vi.fn(), update: vi.fn() },
   budget: { findFirst: vi.fn(), delete: vi.fn(), count: vi.fn() },
-  savingsGoalExecution: { count: vi.fn() },
   incomePlan: { findFirst: vi.fn(), delete: vi.fn() },
   fixedCostPlan: { findFirst: vi.fn(), delete: vi.fn() },
   savingsGoal: { findFirst: vi.fn(), delete: vi.fn() },
@@ -83,7 +82,6 @@ beforeEach(() => {
   vi.clearAllMocks()
   // ADR-0004: Default = Budget ohne Spuren (loeschbar).
   prismaMocks.expenseTransaction.count.mockResolvedValue(0)
-  prismaMocks.savingsGoalExecution.count.mockResolvedValue(0)
   prismaMocks.budget.count.mockResolvedValue(0)
 })
 

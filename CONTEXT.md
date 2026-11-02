@@ -2,7 +2,7 @@
 
 ## Projektziel
 
-Digitalisierung des manuellen Zettel-Trackings einer Familie. Mehrere Personen einer Family buchen Ausgaben gegen gemeinsame periodische Budgets (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder") und legen Spartöpfe für spezielle Zwecke an (z.B. 200€ Urlaub, 200€ Reparaturen).
+Digitalisierung des manuellen Zettel-Trackings einer Familie. Mehrere Personen einer Family buchen Ausgaben auf gemeinsame Umschläge: mit periodischer Zuteilung (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder") oder für spezielle Zwecke (z.B. 200€ Urlaub, 200€ Reparaturen).
 
 Motivation:
 * Bisher manuell auf einem Zettel zu Hause — Risiko, Übertragungen zu vergessen
@@ -13,12 +13,10 @@ Motivation:
 
 * Verwaltung von Fixkosten
 * Verwaltung von Einnahmen
-* Verwaltung von Budgets für unterschiedliche Zeiträume
-* Verwaltung von Sparplänen
-* Erfassung von Ausgaben
-* Anrechnung von Ausgaben auf Budgets
-* Anrechnung von Ausgaben auf Sparziele
-* Budgetübersichten
+* Aufteilung des Geldes auf Umschläge (laufende Ausgaben, Fixkosten, Rücklagen, Sparziele, Persönliches)
+* Erfassung von Ausgaben und Einnahmen, auf Wunsch aus einem Umschlag bzw. in einen Umschlag
+* Umbuchungen zwischen Umschlägen
+* Übersichten je Umschlag
 * Monatsübersichten
 * Unterstützung mehrerer Haushalte
 * Unterstützung mehrerer Benutzer pro Haushalt
@@ -151,7 +149,7 @@ Eigenschaften:
 
 ### Haushalt
 
-Eine Personengruppe mit gemeinsamem Budget-Set (typisch eine Familie).
+Eine Personengruppe mit gemeinsamen Umschlägen (typisch eine Familie).
 
 Household
 
@@ -174,8 +172,8 @@ Eigenschaften:
 
 Rollen:
 
-* **OWNER**: verwaltet den Haushalt — Umbenennen, Currency, Löschen, Mitglieder einladen/rauswerfen und befördern, Budgets und SavingGoals anlegen/löschen
-* **MEMBER**: bucht Ausgaben und Topf-Bewegungen, sieht Reports
+* **OWNER**: verwaltet den Haushalt — Umbenennen, Currency, Löschen, Mitglieder einladen/rauswerfen und befördern, Umschläge anlegen, ändern, schließen und löschen
+* **MEMBER**: bucht Ausgaben, Einnahmen und Umbuchungen, sieht Reports
 
 Rollen-Übergänge:
 
@@ -198,28 +196,29 @@ Geplante Einnahmen.
 
 Wiederkehrende Fixkosten.
 
-> **Zielbild:** [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md) (angenommen, noch nicht umgesetzt) führt `Budget` und `SavingsGoal` zu **Umschlägen** (`Envelope`) mit Gruppen, gebuchten Zuteilungen, "Zu verteilen" und Vormerkungen zusammen. Die folgenden Abschnitte beschreiben den Ist-Stand bis zur Umsetzung.
+### Umschlag (`Envelope`)
 
-### Budget
+Virtuelles Konto mit Saldo: ein Teil des Haushaltsgelds für einen Zweck, kein Ort, an dem Geld liegt. Siehe [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md).
 
-Virtuelles Konto für eine Ausgaben-Kategorie (z.B. 250€/Woche Lebensmittel, 200€/Monat "Kinder"). Der Betrag der `BudgetVersion` ist eine **Zuteilung**, die zu Beginn jeder Periode gutgeschrieben wird; Ausgaben werden dagegen gebucht. Der **Saldo** bleibt über Periodengrenzen stehen — Reste werden übernommen, Überziehungen ebenso. Er verfällt nie, ist nicht gedeckelt und darf negativ werden. Siehe [ADR-0004](docs/adr/0004-budget-as-virtual-account.md).
+* **Gruppe:** Laufende Ausgaben, Fixkosten, Rücklagen, Sparziele oder Persönlich. Sie steuert Darstellung und Vorgaben beim Anlegen, verbietet aber keine Eigenschaft.
+* **Zuteilung** (optional): ein fester Betrag je Periode oder die Summe der verknüpften Fixkosten-Pläne, auf die Frequenz des Umschlags umgelegt. Die Frequenz ist unveränderlich; ein Wechsel heißt: neuer Umschlag, alten hinein schließen.
+* **Sparziel** (optional): ein Zielbetrag.
+* **Saldo:** wird nie gespeichert, sondern aus Buchungen summiert. Er bleibt über Perioden stehen, verfällt nie und darf negativ werden. Überzogen ist ein Umschlag erst mit negativem Saldo.
+* **Gelb:** nur bei laufenden Ausgaben, wenn prozentual weniger als halb so viel Geld übrig ist wie Zeit in der Periode.
+* **Schließen:** zu einem Stichtag (Periodenbeginn) in einen anderen Umschlag oder nach „Zu verteilen“. Der Endsaldo fließt als Verweis weiter, auch spätere Korrekturen von Buchungen vor dem Stichtag. Ab dem Stichtag keine Zuteilungen und keine Buchungen mehr.
+* **Löschen** nur, solange der Umschlag keine Buchungen, Umbuchungen oder Vorgänger hat. Zuteilungen fließen dabei nach „Zu verteilen“ zurück.
 
-* Der Saldo wird nie gespeichert, sondern aus Zuteilungen (abgeleitet aus den `BudgetVersion`s), Ausgaben und Umbuchungen in Spartöpfe berechnet — ab `balanceSince` (für bestehende Budgets rückwirkend ab der Periode, die den 14.9.2026 enthält)
-* Zuteilungen sind keine Einnahmen (`IncomeTransaction`), sondern interne Verteilung
-* Die Frequenz gehört fest zum Budget und ist unveränderlich. Versionen ändern nur den Betrag, und nur zu einem Periodenbeginn
-* **Schließen:** Ein Budget wird zu einem Stichtag (`closedAt`, Periodenbeginn) geschlossen und verweist auf ein Ziel-Budget (`carryoverToBudgetId`, Pflicht). Dessen Saldo enthält immer den aktuellen Endsaldo des Vorgängers — auch spätere Korrekturen von Buchungen vor dem Stichtag. Ab dem Stichtag keine Zuteilungen und keine Buchungen mehr auf das geschlossene Budget. Ein Frequenzwechsel heißt: neues Budget anlegen, altes hinein schließen
-* **Löschen** nur, solange das Budget keine Buchungen, Umbuchungen oder Vorgänger hat — sonst schließen
-* Saldo kann ganz oder teilweise in einen Spartopf umgebucht werden (und umgekehrt), siehe "Umbuchung Budget ↔ Spartopf"
+### Zu verteilen
 
-**Wochenbudgets in der Monatsansicht:** Eine Woche (Mo–So) gehört komplett dem Monat, in dem ihr Montag liegt — inkl. der Ausgaben an Tagen, die schon im Folgemonat liegen. Eine monatsübergreifende Woche erscheint also nur in einem Monat. Ändert sich der Betrag (neue `BudgetVersion`), plant jede Woche mit der Version, die an ihrem Montag gilt; eine Version, die mitten in der Woche beginnt, greift erst ab der Folgewoche (außer es gab vorher noch keine Version).
+Das nicht verteilte Geld des Haushalts, genau einmal pro Haushalt, kein eigener Datensatz: `envelopeId = null` an einer Buchung, `null` auf einer Seite einer Umbuchung. Es zählt ab `Household.ledgerSince`; `openingBalance` ist das freie Geld zu diesem Zeitpunkt, zusätzlich zu dem, was dann schon in Umschlägen steckt.
 
-### SavingsGoal
+Es gilt: Summe der Umschläge + Zu verteilen = Umschläge zum Stichtag + Anfangsbestand + Einnahmen − Ausgaben. Geschlossene Umschläge zählen nicht doppelt, ihr Saldo steckt im Ziel.
 
-Ansparungs-Topf für einen bestimmten Zweck (z.B. "Urlaub 200€", "Reparaturen 200€"). Die App bildet **kein** Sparkonto ab — das Geld wird real beiseite gelegt (z.B. auf einem physischen Sparkonto), die App trackt nur die Reservierung. Mehrere `SavingsGoal`s können sich ein Sparkonto teilen.
+### Zuteilung und Vormerkung
 
-Der aktuelle Stand eines Topfes ergibt sich aus der Summe aller `SavingsGoalExecution`s für diesen Topf.
+Eine Zuteilung ist eine gebuchte Umbuchung aus „Zu verteilen“ in den Umschlag. Sie entsteht, sobald ihre Periode begonnen hat, beim nächsten Saldo-Abruf. Vergangene Zuteilungen liegen fest, eine geänderte Regel wirkt ab der nächsten noch nicht gebuchten Periode. Einzelne lassen sich ändern, 0 setzt eine Periode aus.
 
-**Abgrenzung zum Budget:** Beide haben einen aus Bewegungen berechneten Saldo. Ein Budget wird automatisch periodisch aufgefüllt und ist zum Verbrauchen da; ein Spartopf wird manuell bespart und dient einem Zweck.
+Geld hat drei Zustände: **verfügbar** (im Umschlag), **vorgemerkt** (wird im laufenden Kalendermonat noch zugeteilt, eine Woche gehört zum Monat ihres Montags) und **frei** (Zu verteilen abzüglich aller Vormerkungen).
 
 ### ExpenseTransaction
 
@@ -239,45 +238,34 @@ Geplante Werte und tatsächliche Buchungen werden getrennt gespeichert.
 
 * IncomePlan
 * FixedCostPlan
-* Budget
-* SavingsGoal
+* Zuteilungsregel und Sparziel eines Umschlags
 
 ### Tatsächliche Buchungen
 
 * ExpenseTransaction
 * IncomeTransaction
+* EnvelopeTransfer
 
-Dadurch bleiben Auswertungen, Forecasts und spätere Erweiterungen möglich.
+Dadurch bleiben Auswertungen und spätere Erweiterungen möglich.
 
 ---
 
 ## Buchungs-Logik
 
-> **Zielbild:** Mit [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md) entfallen Doppelbuchung und `SavingsGoalExecution`; Ausgaben und Einnahmen hängen optional an einem Umschlag, Geld zwischen Umschlägen bewegt eine `EnvelopeTransfer`. Bis zur Umsetzung gilt der folgende Ist-Stand.
+### Ausgaben und Einnahmen (`ExpenseTransaction`, `IncomeTransaction`)
 
-Die App unterscheidet zwei voneinander unabhängige Buchungs-Ströme:
+Kanonische Quelle für Reports ("Was haben wir diesen Monat ausgegeben?").
 
-### Tatsächliche Ausgaben (`ExpenseTransaction`)
-
-Kanonische Quelle für Ausgaben-Reports ("Was haben wir diesen Monat ausgegeben?").
-
-* `budgetId` ist optional — Ausgaben ohne Budget-Zuordnung sind erlaubt (Spontankäufe, Reisen außerhalb geplanter Budgets)
+* `envelopeId` ist optional — ohne Umschlag treffen sie „Zu verteilen“
+* Eine Ausgabe aus einem Sparziel ist eine normale Ausgabe mit dem Sparziel als Umschlag
+* Eine Einnahme mit Umschlag ist eine Gutschrift auf diesen Umschlag und bleibt in den Reports eine Einnahme
+* Buchungen aus einem Plan erben dessen Umschlag
+* Neue oder umdatierte Buchungen müssen in die Laufzeit des Umschlags fallen
 * Erfasst, wer gebucht hat (`userId`) und wann (`date`)
 
-### Topf-Bewegungen (`SavingsGoalExecution`)
+### Umbuchungen (`EnvelopeTransfer`)
 
-Kanonische Quelle für den Topf-Stand ("Wie voll ist der 'Urlaub'-Topf?").
-
-* `amount` kann positiv (Ansparung) oder negativ (Entnahme) sein
-* Der aktuelle Stand eines Topfes ist die Summe aller Executions
-
-### Doppelbuchung
-
-Eine Real-Aktion kann als zwei Buchungen erfasst werden: eine `ExpenseTransaction` (für das Reporting) und eine `SavingsGoalExecution` mit negativem Betrag (für den Topf-Stand). Beispiel: Eine 180€-Reise, die aus dem "Urlaub"-Topf bezahlt wird, erzeugt eine `ExpenseTransaction` und eine negative `SavingsGoalExecution`.
-
-### Umbuchung Budget ↔ Spartopf
-
-Eine `SavingsGoalExecution` mit `sourceBudgetId` verschiebt Geld zwischen einem Budget-Saldo und einem Topf: positiver Betrag = vom Budget in den Topf, negativer Betrag = aus dem Topf ins Budget. Das ist **eine** Zeile, keine Doppelbuchung — es fließt kein Geld aus dem Haushalt ab, deshalb entsteht keine `ExpenseTransaction`. Keine Beschränkung auf den verfügbaren Saldo.
+Geld von einem Umschlag in einen anderen, `null` auf einer Seite heißt „Zu verteilen“. Es fließt kein Geld aus dem Haushalt ab, Umbuchungen erscheinen deshalb in keinem Report. Keine Beschränkung auf den verfügbaren Saldo, das UI warnt höchstens. Alle Mitglieder dürfen umbuchen; gebuchte Zuteilungen (`allocationPeriodStart`) ändert nur der OWNER.
 
 ---
 
@@ -326,7 +314,7 @@ Die produktive Authentifizierung erfolgt jedoch über Clerk.
 * CSV-Import
 * Bankdatenimport
 * Mobile App auf Basis derselben API
-* Benachrichtigungen bei Budgetüberschreitungen
+* Benachrichtigungen bei überzogenen Umschlägen
 
 ---
 
@@ -348,6 +336,6 @@ Die produktive Authentifizierung erfolgt jedoch über Clerk.
 | Mehrere Haushalte pro Benutzer | Ja                     |
 | Mehrere Benutzer pro Haushalt  | Ja                     |
 | Eigene Server in Produktion    | Nein                   |
-| Buchungs-Logik                 | ExpenseTransaction + SavingsGoalExecution (Doppelbuchung möglich) |
+| Buchungs-Logik                 | Umschläge mit Ausgaben, Einnahmen und Umbuchungen (ADR-0005) |
 | Onboarding                     | Self-Service (Haushalt gründen oder per Einladung beitreten) |
 | Rollenmodell                   | OWNER (verwaltet) / MEMBER (bucht), letzter OWNER unverletzlich |
