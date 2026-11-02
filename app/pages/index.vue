@@ -160,7 +160,7 @@ watch(quickCapture.savedTick, loadDashboard)
            "Budget-Auslastung"-Liste (DashboardBudgetList). -->
       <ListPanel title="Laufende Ausgaben" :compact="true" :no-bleed="true">
         <template #actions>
-          <NuxtLink to="/budgeting/budgets">
+          <NuxtLink to="/budgeting/envelopes">
             <Button
               icon="pi pi-external-link"
               size="small"
@@ -258,10 +258,10 @@ watch(quickCapture.savedTick, loadDashboard)
                ?new=1 oeffnet den Sparziel-Dialog direkt auf der Zielseite
                (useQueryTrigger in savings.vue) — gleicher Button-Style wie
                "Ausgabe erfassen" oben. -->
-          <NuxtLink v-if="canManageHousehold" to="/budgeting/savings?new=1">
+          <NuxtLink v-if="canManageHousehold" to="/budgeting/envelopes?group=SAVINGS&new=1">
             <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="primary" />
           </NuxtLink>
-          <NuxtLink to="/budgeting/savings">
+          <NuxtLink to="/budgeting/envelopes?group=SAVINGS">
             <Button
               label="Alle anzeigen"
               icon="pi pi-list"

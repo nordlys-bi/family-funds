@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { envelopesBookableOn, isEnvelopeBookableOn, sortEnvelopes, type EnvelopeOption } from '../envelope-options'
+import { ENVELOPE_GROUPS, envelopesBookableOn, isEnvelopeBookableOn, isEnvelopeGroup, sortEnvelopes, type EnvelopeOption } from '../envelope-options'
 
 const envelope = (id: string, overrides: Partial<EnvelopeOption> = {}): EnvelopeOption => ({
   id, name: id, group: 'RUNNING', balanceSince: new Date(2026, 8, 1, 12), closedAt: null, ...overrides,
@@ -32,5 +32,23 @@ describe('sortEnvelopes', () => {
   it('sorts by group, then by name', () => {
     const list = [envelope('Urlaub', { group: 'SAVINGS' }), envelope('Tanken'), envelope('Wohnen', { group: 'FIXED' }), envelope('Kinder')]
     expect(sortEnvelopes(list).map((item) => item.id)).toEqual(['Kinder', 'Tanken', 'Wohnen', 'Urlaub'])
+  })
+})
+
+describe('ENVELOPE_GROUPS', () => {
+  it('lists the five groups with their allocation default', () => {
+    expect(ENVELOPE_GROUPS.map((group) => [group.value, group.defaultAllocation])).toEqual([
+      ['RUNNING', 'FIXED'],
+      ['FIXED', 'PLANS'],
+      ['RESERVE', 'FIXED'],
+      ['SAVINGS', 'NONE'],
+      ['PERSONAL', 'NONE'],
+    ])
+  })
+
+  it('recognises only known groups in the URL', () => {
+    expect(isEnvelopeGroup('SAVINGS')).toBe(true)
+    expect(isEnvelopeGroup('BUDGET')).toBe(false)
+    expect(isEnvelopeGroup(undefined)).toBe(false)
   })
 })

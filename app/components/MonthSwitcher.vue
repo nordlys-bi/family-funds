@@ -4,7 +4,7 @@
   `‹ August 2026 ›`-Stepper mit „Jetzt"-Badge für den aktuellen Monat.
   Ersetzt zwei vorher divergierende Muster:
    - `<Select>`-Dropdown auf /transactions/expenses + /income
-   - Inline-Stepper auf /budgeting/budgets
+   - Inline-Stepper auf /budgeting/envelopes
 
   Routing-agnostisch wie useTransactionList: die Komponente kennt nur
   `modelValue` (YYYY-MM) und emittiert `update:modelValue` bei Prev/Next.

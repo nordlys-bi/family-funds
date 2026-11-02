@@ -43,7 +43,7 @@ function captureExpense(envelopeId: string) {
   </div>
   <div v-else class="grid">
     <article v-for="envelope in envelopes" :key="envelope.id" class="card" :class="`card--${envelope.severity}`">
-      <NuxtLink :to="`/budgeting/budgets/${envelope.id}`" class="card__main">
+      <NuxtLink :to="`/budgeting/envelopes/${envelope.id}`" class="card__main">
         <div class="card__head">
           <span class="card__name">{{ envelope.name }}</span>
           <span v-if="envelope.currentPeriod" class="card__period">{{ formatBudgetPeriodLabel(envelope.frequency, envelope.currentPeriod.start, envelope.currentPeriod.end) }}</span>

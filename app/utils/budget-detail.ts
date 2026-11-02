@@ -151,6 +151,8 @@ export type BalanceEntryGroup<E extends GroupableEntry> = {
   endBalance: number
   /** Eintraege ohne Zuteilungen, neueste zuerst. */
   entries: E[]
+  /** Die Zuteilungen selbst, damit sich einzelne bearbeiten lassen. */
+  allocationEntries: E[]
 }
 
 /**
@@ -181,13 +183,16 @@ export function groupEntriesByPeriod<E extends GroupableEntry>(
         outflow: 0,
         endBalance: 0,
         entries: [],
+        allocationEntries: [],
       }
       groups.set(start, group)
     }
     if (entry.amount >= 0) group.inflow += entry.amount
     else group.outflow += entry.amount
-    if (entry.type === 'allocation') group.allocation += entry.amount
-    else group.entries.unshift(entry)
+    if (entry.type === 'allocation') {
+      group.allocation += entry.amount
+      group.allocationEntries.push(entry)
+    } else group.entries.unshift(entry)
   }
   const lastDay = points.at(-1)?.date ?? ''
   return [...groups.values()]

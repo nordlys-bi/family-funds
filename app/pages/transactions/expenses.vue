@@ -27,9 +27,8 @@ type PlanningHousehold = {
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
 const route = useRoute()
-// `?budgetId=` bleibt als alter Name fuer Links von den Budget-Seiten (bis #158).
 const envelopeIdFromQuery = () => {
-  const value = route.query.envelopeId ?? route.query.budgetId
+  const value = route.query.envelopeId
   return typeof value === 'string' && value.length > 0 ? value : null
 }
 const router = useRouter()
@@ -414,7 +413,7 @@ watch(
   },
 )
 watch(
-  () => route.query.envelopeId ?? route.query.budgetId,
+  () => route.query.envelopeId,
   async (newValue) => {
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
     if (next !== envelopeIdFilter.value) {

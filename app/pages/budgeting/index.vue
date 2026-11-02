@@ -1,11 +1,11 @@
 <!--
   /budgeting ist nur ein Einstiegspunkt — die Inhalte sind auf Sub-Routen
-  (/budgeting/budgets, /budgeting/recurring, /budgeting/savings) aufgeteilt.
-  Wir leiten direkt auf /budgeting/budgets weiter (Issue #4).
+  (/budgeting/envelopes, /budgeting/recurring) aufgeteilt.
+  Wir leiten direkt auf /budgeting/envelopes weiter (Issue #4).
 -->
 <script setup lang="ts">
 definePageMeta({ layout: false })
-await navigateTo('/budgeting/budgets', { replace: true })
+await navigateTo('/budgeting/envelopes', { replace: true })
 </script>
 
 <template>

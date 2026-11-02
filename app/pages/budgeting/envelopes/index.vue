@@ -1,21 +1,15 @@
 <!--
-  Umschlag-Liste (ADR-0005): kompakte Uebersicht aller Umschlaege als virtuelle
-  Konten. Vorerst eine Liste fuer alle Gruppen, die Ansichten je Gruppe kommen
-  mit #158. Pro Budget Saldo (gross), Trend und die laufende Periode; alles
-  Weitere — Verlauf, Ereignisse, Versionen, Schliessen, Loeschen — liegt auf
-  der Detailseite `/budgeting/budgets/:id`, auf die jede Zeile verlinkt.
-
-  Frueher war das hier eine Monats-Ansicht mit Monatswechsler (#34) und
-  Wochen-Breakdown (#82). Seit Budgets einen fortlaufenden Saldo haben, ist
-  "wie viel ist noch da?" die Hauptfrage; die Perioden-Auswertung zeigt jede
-  Zeile fuer die laufende Periode, Vergangenes der Saldo-Verlauf.
+  Umschlag-Liste (ADR-0005): eine Ansicht je Gruppe, die Gruppe steht in
+  `?group=`, damit Links aus dem Dashboard und der Zurueck-Button passen. Pro
+  Umschlag Saldo (gross), Trend und was zum Anwendungsfall gehoert (siehe
+  EnvelopeListRow); alles Weitere — Verlauf, Ereignisse, Schliessen, Loeschen —
+  liegt auf der Detailseite.
 
   Owner-only (#128): Anlegen, Bearbeiten und Loeschen nur fuer Owner.
-  Umbuchen ist eine Buchung (ADR-0004) und fuer alle Mitglieder direkt in
-  der Liste erreichbar, weil es die haeufigste Aktion auf einem Budget ist:
-  mobil per Swipe nach links, auf Desktop als kleiner Button in der Zeile.
-  Swipe nach rechts bleibt Bearbeiten (#140, nur Owner). Loeschen ist aus
-  dem Swipe raus — es scheitert bei jedem Budget mit Buchungen ohnehin und
+  Umbuchen ist eine Buchung und fuer alle Mitglieder direkt in der Liste
+  erreichbar: mobil per Swipe nach links, auf Desktop als kleiner Button in der
+  Zeile. Swipe nach rechts bleibt Bearbeiten (#140, nur Owner). Loeschen ist
+  aus dem Swipe raus — es scheitert bei jedem Umschlag mit Buchungen ohnehin und
   liegt (mit Begruendung, wenn gesperrt) im Menue der Detailseite.
 -->
 <script setup lang="ts">
@@ -24,6 +18,7 @@ import type { Notice } from '~/types/planning'
 import type { EnvelopeItem } from '~/types/envelope'
 import { isFirstRun } from '~/utils/household-age'
 import { MOBILE_LIST_QUERY } from '~/composables/useListSwipe'
+import { ENVELOPE_GROUPS, isEnvelopeGroup, type EnvelopeGroup } from '~/utils/envelope-options'
 
 definePageMeta({ layout: 'default' })
 
@@ -32,51 +27,61 @@ const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
 // MEMBER, deshalb ist Swipe mobil fuer alle an (Bearbeiten nur fuer Owner).
 const isMobileList = useMediaQuery(MOBILE_LIST_QUERY)
 
-const budgets = ref<EnvelopeItem[]>([])
+const envelopes = ref<EnvelopeItem[]>([])
 // SSR-Initial-Render: `loading` startet auf true, damit EmptyState sofort
 // den Spinner zeigt statt eines leeren Renders bis zur Hydration.
 const loading = ref(true)
 const notice = ref<Notice | null>(null)
 const showClosed = ref(false)
 const dialogs = ref<{
-  openCreate: () => void
-  openEdit: (budget: EnvelopeItem) => void
-  openTransfer: (budget: EnvelopeItem) => void
+  openCreate: (group?: EnvelopeGroup) => void
+  openEdit: (envelope: EnvelopeItem) => void
+  openTransfer: (envelope: EnvelopeItem) => void
 } | null>(null)
+
+const route = useRoute()
+const router = useRouter()
+const activeGroup = computed<EnvelopeGroup>(() => (isEnvelopeGroup(route.query.group) ? route.query.group : 'RUNNING'))
+const groupOptions = ENVELOPE_GROUPS.map((group) => ({ label: group.label, value: group.value }))
+const activeGroupInfo = computed(() => ENVELOPE_GROUPS.find((group) => group.value === activeGroup.value)!)
+function selectGroup(group: EnvelopeGroup | null) {
+  if (group) router.replace({ query: { group } })
+}
 
 const householdId = computed(() => activeHousehold.value?.id ?? null)
 const currencyCode = computed(() => activeHousehold.value?.currency ?? 'EUR')
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
 
-const budgetsById = computed(() => new Map(budgets.value.map((budget) => [budget.id, budget] as const)))
-const targetName = (budget: EnvelopeItem) =>
-  budget.carryoverToEnvelopeId ? budgetsById.value.get(budget.carryoverToEnvelopeId)?.name ?? null : null
+const envelopesById = computed(() => new Map(envelopes.value.map((envelope) => [envelope.id, envelope] as const)))
+const targetName = (envelope: EnvelopeItem) =>
+  envelope.carryoverToEnvelopeId ? envelopesById.value.get(envelope.carryoverToEnvelopeId)?.name ?? null : null
 
-// Geschlossen = Stichtag erreicht. Ein Budget mit Stichtag in der Zukunft
+// Geschlossen = Stichtag erreicht. Ein Umschlag mit Stichtag in der Zukunft
 // laeuft noch und gehoert zu den offenen.
-const isClosedNow = (budget: EnvelopeItem) => Boolean(budget.closedAt && new Date(budget.closedAt) <= new Date())
-const openBudgets = computed(() => budgets.value.filter((budget) => !isClosedNow(budget)))
+const isClosedNow = (envelope: EnvelopeItem) => Boolean(envelope.closedAt && new Date(envelope.closedAt) <= new Date())
+const groupEnvelopes = computed(() => envelopes.value.filter((envelope) => envelope.group === activeGroup.value))
+const openEnvelopes = computed(() => groupEnvelopes.value.filter((envelope) => !isClosedNow(envelope)))
 // Geschlossene ans Ende und standardmaessig eingeklappt: Ihr Saldo lebt im
-// Ziel-Budget weiter, sie sind nur noch Historie.
-const closedBudgets = computed(() => budgets.value.filter(isClosedNow))
+// Ziel weiter, sie sind nur noch Historie.
+const closedEnvelopes = computed(() => groupEnvelopes.value.filter(isClosedNow))
 
 const totalBalance = computed(() =>
-  openBudgets.value.reduce((sum, budget) => sum + budget.balance.balance, 0),
+  openEnvelopes.value.reduce((sum, envelope) => sum + envelope.balance.balance, 0),
 )
 
 // Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
-const showFirstTimeEmpty = computed(() => budgets.value.length === 0 && isFirstRun(activeHousehold.value))
+const showFirstTimeEmpty = computed(() => envelopes.value.length === 0 && isFirstRun(activeHousehold.value))
 
-async function loadBudgets() {
+async function loadEnvelopes() {
   if (!householdId.value) {
-    budgets.value = []
+    envelopes.value = []
     loading.value = false
     return
   }
   loading.value = true
   try {
     const data = await $fetch<{ envelopes: EnvelopeItem[] }>(`/api/households/${householdId.value}/envelopes`)
-    budgets.value = sortEnvelopes(data.envelopes)
+    envelopes.value = sortEnvelopes(data.envelopes)
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Umschläge konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
@@ -86,18 +91,23 @@ async function loadBudgets() {
 
 onMounted(async () => {
   await fetchHouseholds()
-  await loadBudgets()
+  await loadEnvelopes()
+  // Dashboard "Sparziel anlegen" verlinkt mit ?new=1 hierher.
+  if (route.query.new === '1' && canManageHousehold.value) {
+    dialogs.value?.openCreate(activeGroup.value)
+    router.replace({ query: { group: activeGroup.value } })
+  }
 })
-watch(householdId, loadBudgets)
+watch(householdId, loadEnvelopes)
 
-function openTransfer(budget: EnvelopeItem) {
-  dialogs.value?.openTransfer(budget)
+function openTransfer(envelope: EnvelopeItem) {
+  dialogs.value?.openTransfer(envelope)
 }
 </script>
 
 <template>
   <ListPageShell title="Umschläge">
-    <template v-if="openBudgets.length > 0" #summary>
+    <template v-if="openEnvelopes.length > 0" #summary>
       <Tag :severity="totalBalance < 0 ? 'danger' : 'success'" :value="`Saldo gesamt ${formatMoney(totalBalance)}`" />
     </template>
     <template #toolbar>
@@ -108,9 +118,22 @@ function openTransfer(budget: EnvelopeItem) {
         label="Umschlag anlegen"
         icon="pi pi-plus"
         severity="success"
-        @click="dialogs?.openCreate()"
+        @click="dialogs?.openCreate(activeGroup)"
       />
     </template>
+
+    <div class="group-switch">
+      <SelectButton
+        :model-value="activeGroup"
+        :options="groupOptions"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+        aria-label="Gruppe der Umschläge"
+        @update:model-value="selectGroup"
+      />
+    </div>
+    <p class="group-hint">{{ activeGroupInfo.hint }}</p>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">
       {{ notice.text }}
@@ -138,28 +161,28 @@ function openTransfer(budget: EnvelopeItem) {
         ? 'Lege deinen ersten Umschlag an, um dein Geld aufzuteilen — z. B. Lebensmittel, Miete, Freizeit.'
         : 'Ein Owner des Haushalts kann Umschläge anlegen, um das Geld aufzuteilen.'"
       :cta="canManageHousehold
-        ? { label: 'Umschlag anlegen', onClick: () => dialogs?.openCreate(), severity: 'primary' }
+        ? { label: 'Umschlag anlegen', onClick: () => dialogs?.openCreate(activeGroup), severity: 'primary' }
         : undefined"
     />
     <EmptyState
-      v-else-if="!loading && activeHousehold && budgets.length === 0"
+      v-else-if="!loading && activeHousehold && groupEnvelopes.length === 0"
       variant="no-data"
       icon="pi pi-chart-line"
       icon-tone="muted"
-      headline="Keine Umschläge"
+      :headline="`Keine Umschläge in „${activeGroupInfo.label}“`"
       :description="canManageHousehold
         ? 'Lege einen Umschlag an, um dein Geld aufzuteilen.'
         : 'Ein Owner des Haushalts kann einen Umschlag anlegen.'"
     />
 
     <ListPanel
-      v-if="!loading && activeHousehold && openBudgets.length > 0"
+      v-if="!loading && activeHousehold && openEnvelopes.length > 0"
       variant="primary"
       compact
-      :badge="`${openBudgets.length} aktiv`"
+      :badge="`${openEnvelopes.length} aktiv`"
     >
-      <ul class="budget-list">
-        <li v-for="budget in openBudgets" :key="budget.id">
+      <ul class="envelope-list">
+        <li v-for="envelope in openEnvelopes" :key="envelope.id">
           <SwipeableListItem
             :disabled="!isMobileList"
             swipe-right-icon="pi pi-pen-to-square"
@@ -167,10 +190,10 @@ function openTransfer(budget: EnvelopeItem) {
             swipe-left-icon="pi pi-arrow-right-arrow-left"
             swipe-left-label="Umbuchen"
             swipe-left-severity="warning"
-            @swipe-right="dialogs?.openEdit(budget)"
-            @swipe-left="openTransfer(budget)"
+            @swipe-right="dialogs?.openEdit(envelope)"
+            @swipe-left="openTransfer(envelope)"
           >
-            <BudgetListRow :budget="budget" :format-money="formatMoney" :target-name="targetName(budget)">
+            <EnvelopeListRow :envelope="envelope" :format-money="formatMoney" :target-name="targetName(envelope)">
               <template #actions>
                 <Button
                   v-if="!isMobileList"
@@ -180,18 +203,18 @@ function openTransfer(budget: EnvelopeItem) {
                   size="small"
                   severity="secondary"
                   class="row-transfer"
-                  :aria-label="`${budget.name} umbuchen`"
+                  :aria-label="`${envelope.name} umbuchen`"
                   title="Umbuchen"
-                  @click.stop.prevent="openTransfer(budget)"
+                  @click.stop.prevent="openTransfer(envelope)"
                 />
               </template>
-            </BudgetListRow>
+            </EnvelopeListRow>
           </SwipeableListItem>
         </li>
       </ul>
     </ListPanel>
 
-    <section v-if="!loading && closedBudgets.length > 0" class="closed-section">
+    <section v-if="!loading && closedEnvelopes.length > 0" class="closed-section">
       <button
         type="button"
         class="closed-section__toggle"
@@ -199,29 +222,46 @@ function openTransfer(budget: EnvelopeItem) {
         @click="showClosed = !showClosed"
       >
         <i class="pi" :class="showClosed ? 'pi-chevron-down' : 'pi-chevron-right'" aria-hidden="true" />
-        Geschlossene Umschläge ({{ closedBudgets.length }})
+        Geschlossene Umschläge ({{ closedEnvelopes.length }})
       </button>
-      <ul v-if="showClosed" class="budget-list">
-        <li v-for="budget in closedBudgets" :key="budget.id">
-          <BudgetListRow :budget="budget" :format-money="formatMoney" :target-name="targetName(budget)" />
+      <ul v-if="showClosed" class="envelope-list">
+        <li v-for="envelope in closedEnvelopes" :key="envelope.id">
+          <EnvelopeListRow :envelope="envelope" :format-money="formatMoney" :target-name="targetName(envelope)" />
         </li>
       </ul>
     </section>
 
-    <BudgetActionDialogs
+    <EnvelopeActionDialogs
       v-if="householdId"
       ref="dialogs"
       :household-id="householdId"
-      :budgets="budgets"
+      :envelopes="envelopes"
       :currency="currencyCode"
-      @changed="loadBudgets"
+      @changed="loadEnvelopes"
       @notice="notice = $event"
     />
   </ListPageShell>
 </template>
 
 <style scoped>
-.budget-list {
+/* Fuenf Gruppen passen mobil nicht nebeneinander: seitlich scrollen statt umbrechen. */
+.group-switch {
+  overflow-x: auto;
+  margin-bottom: 0.25rem;
+}
+
+.group-switch :deep(.p-selectbutton) {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.group-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.envelope-list {
   list-style: none;
   margin: 0;
   padding: 0;
