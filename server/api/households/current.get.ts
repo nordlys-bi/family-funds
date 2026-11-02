@@ -43,6 +43,8 @@ export default defineEventHandler(async (event) => {
       id: true,
       name: true,
       currency: true,
+      ledgerSince: true,
+      openingBalance: true,
       members: {
         orderBy: {
           createdAt: 'asc',
