@@ -65,7 +65,7 @@ frei(t)  = saldo(Zu verteilen, t) − vorgemerkt(t)
 
 Salden werden weiterhin nicht persistiert, sondern pro Request über reale Zeilen summiert. Anders als in ADR-0004 sind **Zuteilungen aber gebuchte Zeilen** (siehe "Zuteilung"); der Saldo ist damit eine reine Summe, ohne Perioden abzulaufen.
 
-**Invariante:** `Σ saldo(alle Umschläge) + saldo(Zu verteilen) = openingBalance + Σ Einnahmen − Σ Ausgaben`. Zuteilungen und Umbuchungen verschieben nur. In Stufe 2 wird die rechte Seite durch die Summe der reellen Kontostände überprüfbar.
+**Invariante:** `Σ saldo(Umschläge, t) + saldo(Zu verteilen, t) = Σ saldo(Umschläge, Stichtag) + openingBalance + Σ Einnahmen − Σ Ausgaben`, mit Einnahmen und Ausgaben seit dem Stichtag `ledgerSince`. Zuteilungen und Umbuchungen verschieben nur. Zählen darf dabei nur, wessen Endsaldo noch nicht weitergeflossen ist: Der Saldo eines geschlossenen Umschlags steckt nach dem Einfließen im Ziel und darf nicht doppelt in die Summe. In Stufe 2 wird die rechte Seite durch die Summe der reellen Kontostände überprüfbar.
 
 ## Zuteilung
 
@@ -120,7 +120,7 @@ Umschläge mit Sparziel zeigen zusätzlich den Fortschritt `saldo ÷ targetAmoun
 
 **Löschen** wie in ADR-0004: nur ohne Spuren (keine Buchungen, auch soft-gelöschte, keine Umbuchungen, kein Vorgänger), sonst schließen.
 
-**Startpunkt "Zu verteilen".** `Household.ledgerSince` legt fest, ab wann Einnahmen und Ausgaben in "Zu verteilen" zählen; `Household.openingBalance` ist der Bestand zu diesem Zeitpunkt (Default 0). Ohne Startpunkt würden alle historischen Einnahmen und Ausgaben vor Einführung der Umschläge eine Zahl ohne Bedeutung erzeugen. Aussagekräftig ist "Zu verteilen" nur, wenn Einnahmen und Ausgaben — inklusive Fixkosten — vollständig erfasst werden.
+**Startpunkt "Zu verteilen".** `Household.ledgerSince` legt fest, ab wann Einnahmen und Ausgaben in "Zu verteilen" zählen; `Household.openingBalance` ist das **freie Geld** zu diesem Zeitpunkt (Default 0), also zusätzlich zu dem, was dann schon in Umschlägen steckt — nicht der gesamte Bestand. Die Salden, die Umschläge zum Stichtag bereits haben, sind nie aus "Zu verteilen" gekommen; darum zählen Zuteilungen und Umbuchungen vor `ledgerSince` nicht in "Zu verteilen", und die Invariante führt diese Salden auf der rechten Seite. Ohne Startpunkt würden alle historischen Einnahmen und Ausgaben vor Einführung der Umschläge eine Zahl ohne Bedeutung erzeugen. Aussagekräftig ist "Zu verteilen" nur, wenn Einnahmen und Ausgaben — inklusive Fixkosten — vollständig erfasst werden.
 
 **Einnahmen-Pläne** verweisen optional auf einen Umschlag (`IncomePlan.envelopeId`, ersetzt `budgetId`). Eine als erhalten markierte Einnahme aus einem Plan mit Umschlag wird diesem gutgeschrieben (z.B. Kindergeld → Kinder), sonst "Zu verteilen".
 
@@ -142,7 +142,7 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 - `SavingsGoalExecution` ohne Quelle, positiv → `EnvelopeTransfer` aus "Zu verteilen".
 - `SavingsGoalExecution` ohne Quelle, negativ (Doppelbuchung nach ADR-0001): Gibt es **genau eine** umschlaglose Ausgabe mit gleichem Betrag am selben Tag, bekommt sie `envelopeId` = Sparziel und die Execution entfällt. Sonst → `EnvelopeTransfer` in "Zu verteilen". Beide Wege ergeben dieselben Salden; der erste ist nur sauberer.
 - `FixedCostPlan.budgetId` → `envelopeId` unverändert übernommen. Fixkosten-Umschläge legt der OWNER nach der Migration an und ordnet die Pläne zu.
-- `ledgerSince` = Migrationsdatum, `openingBalance` = 0. Der OWNER kann beides danach setzen.
+- `ledgerSince` = Tag nach der Migration, `openingBalance` = 0: Die am Migrationstag gebuchten Zuteilungen gehören zum Bestand und dürfen nicht von "Zu verteilen" abgehen. Der OWNER kann beides danach setzen.
 
 ## Verworfene Alternativen
 
