@@ -8,7 +8,7 @@
  * durch (wie `computeChainBalances` fuer Budgets, ADR-0004).
  */
 import { dayKey } from './budget-balance'
-import { computeEnvelopeBalances, type BalanceEnvelope, type EnvelopeBalanceInputs } from './envelope-balance'
+import { carryoverInflowKey, computeEnvelopeBalances, type BalanceEnvelope, type EnvelopeBalanceInputs } from './envelope-balance'
 
 export type HistoryEntryType = 'allocation' | 'income' | 'expense' | 'transfer' | 'carryover'
 
@@ -53,10 +53,6 @@ export function getEnvelopeChain<E extends BalanceEnvelope>(envelopes: E[], enve
   return chain
 }
 
-function inflowKey(predecessor: BalanceEnvelope, target: BalanceEnvelope) {
-  return Math.max(predecessor.closedAt ? dayKey(predecessor.closedAt) : Number.POSITIVE_INFINITY, dayKey(target.balanceSince))
-}
-
 function days(from: Date, to: Date): Date[] {
   const result: Date[] = []
   const cursor = new Date(dayKey(from))
@@ -87,7 +83,7 @@ export function computeEnvelopeHistoryPoints(
       for (const predecessor of chain) {
         if (predecessor.carryoverToEnvelopeId !== envelope.id || !predecessor.closedAt) continue
         // Noch nicht eingeflossen: zaehlt neben dem Ziel, sonst steckt er schon drin.
-        if (key < inflowKey(predecessor, envelope)) total += chainBalance(predecessor)
+        if (key < carryoverInflowKey(predecessor, envelope.balanceSince)) total += chainBalance(predecessor)
       }
       return total
     }
@@ -145,7 +141,7 @@ export function listEnvelopeHistoryEntries(
   for (const predecessor of chain) {
     const target = chain.find((envelope) => envelope.id === predecessor.carryoverToEnvelopeId)
     if (!target || !predecessor.closedAt) continue
-    const key = inflowKey(predecessor, target)
+    const key = carryoverInflowKey(predecessor, target.balanceSince)
     if (key < fromKey || key > toKey) continue
     const date = new Date(key)
     const balance = computeEnvelopeBalances(chain, inputs, date).get(predecessor.id)?.balance ?? 0

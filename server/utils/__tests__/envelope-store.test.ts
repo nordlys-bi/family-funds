@@ -14,11 +14,13 @@ function day(year: number, month: number, date: number, hour = 12) {
 function makeDb(options: {
   envelopes: Array<Record<string, unknown>>
   booked?: Array<{ toEnvelopeId: string; allocationPeriodStart: Date }>
+  ledgerSince?: Date
 }) {
   const createMany = vi.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length }))
   const db = {
     envelope: { findMany: vi.fn(async () => options.envelopes) },
     envelopeTransfer: { findMany: vi.fn(async () => options.booked ?? []), createMany },
+    household: { findUniqueOrThrow: vi.fn(async () => ({ ledgerSince: options.ledgerSince ?? day(2026, 1, 1) })) },
   }
   return { db: db as never, createMany }
 }
@@ -44,6 +46,15 @@ describe('ensureAllocations', () => {
       ],
       skipDuplicates: true,
     })
+  })
+
+  it('dates an allocation before ledgerSince on ledgerSince, keeping the period start', async () => {
+    // Haushalt seit dem 15.10., Wochenumschlag ab Montag, 12.10.
+    const { db, createMany } = makeDb({ envelopes: [{ ...groceries, balanceSince: day(2026, 10, 12) }], ledgerSince: day(2026, 10, 15, 18) })
+    await ensureAllocations('h1', day(2026, 10, 16), db)
+    expect(createMany.mock.calls[0]?.[0].data).toEqual([
+      expect.objectContaining({ date: day(2026, 10, 15), allocationPeriodStart: day(2026, 10, 12) }),
+    ])
   })
 
   it('writes nothing when everything is booked', async () => {

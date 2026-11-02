@@ -84,6 +84,8 @@ Damit das Ergebnis nicht vom Zeitpunkt des Abrufs abhängt, gelten vier Regeln:
 3. **Auslassen heißt Betrag 0, nicht löschen.** Eine gelöschte Zuteilung würde beim nächsten Abruf neu angelegt; die Zeile bleibt als Merker.
 4. **Keine vorgemerkten Regeländerungen.** "Ab Januar 350 €" wird am 1. Januar geändert. Ein Feld für eine geplante Änderung kommt erst, wenn es gebraucht wird.
 
+Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, solange dieser nicht in der Zukunft liegt: Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
+
 Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen.
 
 ## Vorgemerkt
@@ -100,7 +102,7 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 
 ## Regeln
 
-**Ausgaben und Einnahmen hängen optional an einem Umschlag** (`envelopeId`, ersetzt `ExpenseTransaction.budgetId`; neu an `IncomeTransaction`). Ohne Umschlag treffen sie "Zu verteilen". Eine Einnahme mit Umschlag ist eine Gutschrift auf diesen Umschlag (Verkauf → Kinder) und bleibt eine Einnahme in allen Reports.
+**Ausgaben und Einnahmen hängen optional an einem Umschlag** (`envelopeId`, ersetzt `ExpenseTransaction.budgetId`; neu an `IncomeTransaction`). Ohne Umschlag treffen sie "Zu verteilen". Neue und umdatierte Buchungen und Umbuchungen müssen in `[balanceSince, closedAt)` des Umschlags liegen; davor fielen sie aus dem Saldo, die Gegenseite einer Umbuchung aber nicht. Altbestand vor dem Startpunkt bleibt gültig und korrigierbar. Eine Einnahme mit Umschlag ist eine Gutschrift auf diesen Umschlag (Verkauf → Kinder) und bleibt eine Einnahme in allen Reports.
 
 **Ausgaben aus Sparzielen sind normale Ausgaben.** Der Urlaub wird mit `envelopeId = Urlaub` gebucht; eine zweite Zeile entfällt. [ADR-0001](0001-expense-as-double-booking.md) ist damit abgelöst.
 
@@ -109,7 +111,7 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 **Umbuchung** ist eine eigene Zeile `EnvelopeTransfer` (`fromEnvelopeId`, `toEnvelopeId`, `amount > 0`, `date`, `note`, `userId`). `null` auf einer Seite heißt "Zu verteilen". Umbuchungen tauchen in keinem Einnahmen-/Ausgaben-Report auf. Kein Limit auf den verfügbaren Saldo; das UI warnt höchstens. Umbuchen ist eine Buchung: MEMBER dürfen es.
 
 **Bewertung nach Saldo.** Ein Umschlag gilt als überzogen, wenn sein Saldo negativ ist — nicht, wenn die Ausgaben einer Periode die Zuteilung übersteigen. Für Umschläge mit Zuteilung:
-- *Verfügbar in der Periode* = Saldo zu Periodenbeginn + Zuteilung der Periode. Der Fortschrittsbalken zeigt Ausgaben ÷ Verfügbar; die Lücke bis zum Ende ist der aktuelle Saldo.
+- *Verfügbar in der Periode* = aktueller Saldo + Ausgaben der Periode, also Saldo zu Periodenbeginn plus alle Zuflüsse der Periode (Zuteilung, Gutschriften, Umbuchungen). Der Fortschrittsbalken zeigt Ausgaben ÷ Verfügbar; die Lücke bis zum Ende ist immer genau der aktuelle Saldo.
 - *rot*: Saldo < 0. *gelb*: Prognose für das Periodenende < 0. *sonst* grün.
 - "Ausgaben vs. Zuteilung dieser Periode" bleibt als Information sichtbar, aber nicht als Bewertung.
 - Der Forecast ([ADR-0003](0003-forecast-mode.md)) rechnet auf den Saldo am Periodenende hoch statt auf die Periodenausgaben.

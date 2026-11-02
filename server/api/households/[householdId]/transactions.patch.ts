@@ -6,6 +6,7 @@ import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
+import { dayKey } from '../../../utils/budget-balance'
 
 type TransactionUpdateBody = {
   kind: string
@@ -17,6 +18,20 @@ type TransactionUpdateBody = {
   envelopeId?: string | null
   // Alter Name bis zur neuen Erfassung (#156), nur fuer Ausgaben.
   budgetId?: string | null
+}
+
+/**
+ * Umschlag und Datum nur pruefen, wenn sich eines davon aendert: Altbestand
+ * vor dem Startpunkt eines Umschlags muss sich weiter korrigieren lassen
+ * (Betrag, Beschreibung), und das Formular schickt das Datum immer mit.
+ */
+function changesBooking(
+  existing: { envelopeId: string | null; date: Date },
+  envelopeId: string | null | undefined,
+  date: Date | undefined,
+) {
+  return (envelopeId !== undefined && envelopeId !== existing.envelopeId)
+    || (date !== undefined && dayKey(date) !== dayKey(existing.date))
 }
 
 /** `undefined` = nicht geaendert, `null` = "Zu verteilen". */
@@ -69,7 +84,9 @@ export default defineEventHandler(async (event) => {
     // ADR-0005: Gegen den resultierenden Umschlag und das Datum pruefen —
     // auch ein reines Datums-Update darf eine Ausgabe nicht hinter den
     // Stichtag eines geschlossenen Umschlags schieben.
-    await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+    if (changesBooking(existing, envelopeId, date)) {
+      await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+    }
 
     const item = await prisma.expenseTransaction.update({
       where: { id: body.id },
@@ -101,7 +118,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const envelopeId = parseEnvelopeChange(body.envelopeId)
-  await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+  if (changesBooking(existing, envelopeId, date)) {
+    await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+  }
 
   const item = await prisma.incomeTransaction.update({
     where: { id: body.id },

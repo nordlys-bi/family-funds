@@ -6,15 +6,8 @@
  */
 import type { AllocationSource, Frequency, PrismaClient } from '@prisma/client'
 import { prisma } from './prisma'
-import { listDueAllocations, type AllocationEnvelope, type AllocationRule } from './envelope-allocations'
-import {
-  computeEnvelopeBalances,
-  computeUnassignedBalance,
-  getEarliestRelevantDate,
-  type BalanceEnvelope,
-  type EnvelopeBalance,
-  type EnvelopeBalanceInputs,
-} from './envelope-balance'
+import { getAllocationBookingDate, listDueAllocations, type AllocationEnvelope, type AllocationRule } from './envelope-allocations'
+import { getEarliestRelevantDate, type BalanceEnvelope, type EnvelopeBalanceInputs } from './envelope-balance'
 
 type Db = Pick<PrismaClient, 'envelope' | 'envelopeTransfer' | 'expenseTransaction' | 'incomeTransaction' | 'household'>
 
@@ -76,6 +69,7 @@ export async function ensureAllocations(householdId: string, today: Date = new D
     where: { householdId, toEnvelopeId: { in: envelopes.map((envelope) => envelope.id) }, allocationPeriodStart: { not: null } },
     select: { toEnvelopeId: true, allocationPeriodStart: true },
   })
+  const { ledgerSince } = await db.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true } })
   const bookedByEnvelope = new Map<string, Date[]>()
   for (const row of booked) {
     if (!row.toEnvelopeId || !row.allocationPeriodStart) continue
@@ -90,7 +84,7 @@ export async function ensureAllocations(householdId: string, today: Date = new D
       fromEnvelopeId: null,
       toEnvelopeId: envelope.id,
       amount: due.amount,
-      date: due.periodStart,
+      date: getAllocationBookingDate(due.periodStart, ledgerSince, today),
       allocationPeriodStart: due.periodStart,
     })),
   )
@@ -141,28 +135,4 @@ export async function loadEnvelopeBalanceInputs(
     }),
   ])
   return { expenses, incomes, transfers }
-}
-
-export type HouseholdBalances = {
-  envelopes: BalanceEnvelope[]
-  balances: Map<string, EnvelopeBalance>
-  /** Saldo von "Zu verteilen". */
-  unassigned: number
-}
-
-/**
- * Bucht faellige Zuteilungen und berechnet die Salden aller Umschlaege
- * (auch geschlossener, damit Endsalden weiterfliessen) und von
- * "Zu verteilen".
- */
-export async function loadHouseholdBalances(householdId: string, at: Date = new Date(), db: Db = prisma): Promise<HouseholdBalances> {
-  await ensureAllocations(householdId, at, db)
-  const [household, envelopes] = await Promise.all([
-    db.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true, openingBalance: true } }),
-    db.envelope.findMany({ where: { householdId }, select: envelopeBalanceSelect }),
-  ])
-  const inputs = await loadEnvelopeBalanceInputs(householdId, envelopes, household.ledgerSince, db)
-  const balances = computeEnvelopeBalances(envelopes, inputs, at)
-  const unassigned = computeUnassignedBalance(household, envelopes, balances, inputs, at)
-  return { envelopes, balances, unassigned }
 }

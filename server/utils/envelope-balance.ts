@@ -80,7 +80,7 @@ function emptyBalance(): EnvelopeBalance {
  * Ziel einfliesst: der spaetere von Stichtag und Startpunkt des Ziels. Ein
  * (inkonsistent) offener Vorgaenger fliesst nie ein.
  */
-function carryoverInflowKey(predecessor: BalanceEnvelope, targetSince: Date): number {
+export function carryoverInflowKey(predecessor: BalanceEnvelope, targetSince: Date): number {
   return Math.max(
     predecessor.closedAt ? dayKey(predecessor.closedAt) : Number.POSITIVE_INFINITY,
     dayKey(targetSince),

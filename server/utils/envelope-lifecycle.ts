@@ -75,6 +75,20 @@ export function assertEnvelopeOpenOn(envelope: { closedAt: Date | null }, date: 
   }
 }
 
+/**
+ * Darf eine neue oder geaenderte Buchung am Tag `date` auf den Umschlag?
+ * Offen wie oben und nicht vor dem Startpunkt: Der Saldo zaehlt erst ab
+ * `balanceSince`. Eine fruehere Buchung fiele beim Umschlag still heraus,
+ * waehrend die Gegenseite einer Umbuchung weiter zaehlt — so entstuende
+ * Geld aus dem Nichts.
+ */
+export function assertEnvelopeAcceptsBooking(envelope: { closedAt: Date | null; balanceSince: Date }, date: Date) {
+  assertEnvelopeOpenOn(envelope, date)
+  if (dayKey(date) < dayKey(envelope.balanceSince)) {
+    throw createError({ statusCode: 400, statusMessage: 'Date is before the start of the envelope.' })
+  }
+}
+
 type CloseEnvelope = {
   id: string
   householdId: string

@@ -319,3 +319,33 @@ describe('POST /incomes/:id/restore — restore soft-deleted row (issue #58)', (
     expect(result).toEqual({ data: { kind: 'income', restored: true, alreadyActive: true } })
   })
 })
+
+// ADR-0005: Wiederherstellen wirkt wie eine neue Buchung — der Stichtag des
+// Umschlags gilt, nicht mehr das alte Budget.
+describe('POST /restore — geschlossene Umschlaege', () => {
+  const closed = { closedAt: new Date(2026, 11, 1, 12) }
+
+  it('rejects restoring an expense behind the closing date', async () => {
+    prismaMocks.expenseTransaction.findFirst.mockResolvedValue({
+      id: EXPENSE_ID, deletedAt: new Date(), date: new Date(2026, 11, 5, 12), envelope: closed,
+    })
+    await expect(restoreExpenseHandler(makeEvent('POST', { householdId: HH_ID, id: EXPENSE_ID }))).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.expenseTransaction.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects restoring an income behind the closing date', async () => {
+    prismaMocks.incomeTransaction.findFirst.mockResolvedValue({
+      id: INCOME_ID, deletedAt: new Date(), date: new Date(2026, 11, 5, 12), envelope: closed,
+    })
+    await expect(restoreIncomeHandler(makeEvent('POST', { householdId: HH_ID, id: INCOME_ID }))).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.incomeTransaction.update).not.toHaveBeenCalled()
+  })
+
+  it('still restores a booking before the closing date', async () => {
+    prismaMocks.expenseTransaction.findFirst.mockResolvedValue({
+      id: EXPENSE_ID, deletedAt: new Date(), date: new Date(2026, 10, 5, 12), envelope: closed,
+    })
+    prismaMocks.expenseTransaction.update.mockResolvedValue({ id: EXPENSE_ID })
+    await expect(restoreExpenseHandler(makeEvent('POST', { householdId: HH_ID, id: EXPENSE_ID }))).resolves.toEqual({ data: { kind: 'expense', restored: true } })
+  })
+})

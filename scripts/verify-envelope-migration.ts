@@ -7,9 +7,14 @@
  *
  * Gebraucht nach der Migration auf einer Kopie der Produktionsdaten und
  * beim Umstieg gegen Produktion (#164). Exit-Code 1 bei Abweichungen.
+ *
+ * Listet ausserdem vorgeplante Budget-Versionen: Umschlaege kennen nur den
+ * aktuellen Betrag (ADR-0005, Regel 4), solche Aenderungen muessen zum
+ * jeweiligen Datum von Hand nachgetragen werden. Sie aendern heutige Salden
+ * nicht und zaehlen deshalb nicht als Abweichung.
  */
 import { PrismaClient } from '@prisma/client'
-import { computeBudgetBalances } from '../server/utils/budget-balance'
+import { computeBudgetBalances, dayKey } from '../server/utils/budget-balance'
 import { computeEnvelopeBalances } from '../server/utils/envelope-balance'
 
 const prisma = new PrismaClient()
@@ -56,6 +61,14 @@ async function verifyHousehold(householdId: string, name: string, at: Date): Pro
     const ok = before === after
     if (!ok) mismatches++
     console.log(`  ${ok ? '✓' : '✗'} ${envelope.name}: vorher ${before}, nachher ${after}`)
+  }
+  for (const budget of budgets) {
+    for (const version of budget.versions) {
+      if (dayKey(version.validFrom) > dayKey(at)) {
+        const name = envelopes.find((envelope) => envelope.id === budget.id)?.name ?? budget.id
+        console.log(`  ! ${name}: vorgeplanter Betrag ${version.amount} ab ${version.validFrom.toISOString().slice(0, 10)} — von Hand nachtragen`)
+      }
+    }
   }
   for (const id of expected.keys()) {
     if (!envelopes.some((envelope) => envelope.id === id)) {

@@ -27,7 +27,7 @@ export type EnvelopeCurrentPeriod = {
   /** Gebuchte Zuteilung der Periode. */
   allocation: number
   spent: number
-  /** Saldo vor der Periode + Zuteilung. */
+  /** Aktueller Saldo + Ausgaben der Periode, also auch Zufluesse in der Periode. */
   available: number
   percentUsed: number | null
   /** Saldo am Periodenende bei gleichbleibendem Ausgabetempo (ADR-0003). */
@@ -80,12 +80,6 @@ export type EnvelopeOverview = {
 
 const TREND_WEEKS = 13
 
-function dayBefore(date: Date) {
-  const value = new Date(dayKey(date))
-  value.setDate(value.getDate() - 1)
-  return value
-}
-
 export async function loadEnvelopeOverview(householdId: string, now: Date = new Date()): Promise<EnvelopeOverview> {
   await ensureAllocations(householdId, now)
 
@@ -126,17 +120,6 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
   const balances = computeEnvelopeBalances(envelopes, inputs, now)
   const unassignedBalance = computeUnassignedBalance(household, envelopes, balances, inputs, now)
 
-  // Salden vor der laufenden Periode — je Frequenz ein Stichtag, nicht je Umschlag.
-  const balancesBefore = new Map<number, Map<string, EnvelopeBalance>>()
-  const balancesBeforePeriod = (start: Date) => {
-    let cached = balancesBefore.get(start.getTime())
-    if (!cached) {
-      cached = computeEnvelopeBalances(envelopes, inputs, dayBefore(start))
-      balancesBefore.set(start.getTime(), cached)
-    }
-    return cached
-  }
-
   const trendDates = Array.from({ length: TREND_WEEKS + 1 }, (_, index) => {
     const value = new Date(dayKey(now))
     value.setDate(value.getDate() - (TREND_WEEKS - index) * 7)
@@ -163,8 +146,7 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
       const spent = inputs.expenses
         .filter((expense) => expense.envelopeId === envelope.id && dayKey(expense.date) >= startKey && dayKey(expense.date) <= nowKey)
         .reduce((sum, expense) => sum + expense.amount, 0)
-      const before = balancesBeforePeriod(start).get(envelope.id)?.balance ?? 0
-      const availability = computePeriodAvailability({ balanceBeforePeriod: before, periodAllocation: allocation, spent })
+      const availability = computePeriodAvailability({ balance: balance.balance, spent })
       const forecast = buildBudgetForecast(allocation, spent, start, end, now)
       currentPeriod = {
         start,

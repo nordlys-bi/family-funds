@@ -18,6 +18,7 @@ import { parseUuidParam } from '../../../../utils/validation'
 import { parseDateInput, parseMoneyToCents } from '../../../../utils/planning'
 import { parseMoneyToCentsAllowZero } from '../../../../utils/envelope-lifecycle'
 import { assertTransferSides, parseEnvelopeSide } from '../../../../utils/envelope-transfer'
+import { dayKey } from '../../../../utils/budget-balance'
 
 type UpdateTransferBody = {
   fromEnvelopeId?: string | null
@@ -61,7 +62,12 @@ export default defineEventHandler(async (event) => {
   const date = body.date === undefined ? existing.date : parseDateInput(body.date, 'Date')
   // Gegen das resultierende Paar und Datum pruefen — auch ein reines
   // Datums-Update darf eine Umbuchung nicht hinter den Stichtag schieben.
-  await assertTransferSides(householdId, sides, date)
+  // Ohne Aenderung daran nicht: Migrierte Altbestaende vor dem Startpunkt
+  // eines Umschlags muessen sich weiter korrigieren lassen (Betrag, Notiz).
+  const changesBooking = sides.fromEnvelopeId !== existing.fromEnvelopeId
+    || sides.toEnvelopeId !== existing.toEnvelopeId
+    || dayKey(date) !== dayKey(existing.date)
+  if (changesBooking) await assertTransferSides(householdId, sides, date)
 
   const data: Prisma.EnvelopeTransferUncheckedUpdateInput = { ...sides, date }
   if (body.amount !== undefined) data.amount = parseMoneyToCents(body.amount, 'Amount')

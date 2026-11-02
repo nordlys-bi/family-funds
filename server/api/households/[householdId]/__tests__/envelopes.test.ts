@@ -230,6 +230,14 @@ describe('POST /transfers', () => {
     ).rejects.toMatchObject({ statusCode: 400 })
   })
 
+  it('rejects a transfer dated before the envelope start', async () => {
+    prismaMocks.envelope.findMany.mockResolvedValue([{ id: ENV_ID, closedAt: null, balanceSince: new Date(2026, 10, 1, 12) }])
+    await expect(
+      createTransfer(makeEvent({ fromEnvelopeId: ENV_ID, toEnvelopeId: null, amount: 50, date: '2026-10-15' })),
+    ).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.envelopeTransfer.create).not.toHaveBeenCalled()
+  })
+
   it('rejects a non-positive amount', async () => {
     await expect(
       createTransfer(makeEvent({ fromEnvelopeId: null, toEnvelopeId: ENV_ID, amount: 0, date: '2026-11-03' })),
@@ -261,6 +269,13 @@ describe('PATCH/DELETE /transfers/:id', () => {
   it('deletes an ordinary transfer', async () => {
     prismaMocks.envelopeTransfer.findFirst.mockResolvedValue({ allocationPeriodStart: null })
     await expect(deleteTransfer(makeEvent(undefined, { id: TRANSFER_ID }))).resolves.toEqual({ data: { kind: 'transfer', deleted: true } })
+  })
+
+  it('lets old transfers before the envelope start be corrected without moving them', async () => {
+    prismaMocks.envelopeTransfer.findFirst.mockResolvedValue({ ...allocation, allocationPeriodStart: null })
+    await updateTransfer(makeEvent({ note: 'Korrektur', date: '2026-11-01' }, { id: TRANSFER_ID }))
+    expect(prismaMocks.envelope.findMany).not.toHaveBeenCalled()
+    expect(prismaMocks.envelopeTransfer.update).toHaveBeenCalledTimes(1)
   })
 
   it('re-checks the resulting sides and date of an ordinary transfer', async () => {

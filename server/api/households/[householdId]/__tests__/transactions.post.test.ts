@@ -176,6 +176,19 @@ describe('POST /transactions — Gutschrift auf einen Umschlag (ADR-0005)', () =
   })
 })
 
+describe('POST /transactions — Startpunkt des Umschlags', () => {
+  it('rejects a booking dated before the envelope start', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null, balanceSince: new Date(2026, 10, 1, 12) })
+
+    await expect(
+      handler(makeEvent({ kind: 'expense', amount: 5000, date: '2026-10-31', envelopeId: 'env-1' })),
+    ).rejects.toMatchObject({ statusCode: 400 })
+    await expect(
+      handler(makeEvent({ kind: 'income', amount: 5000, date: '2026-10-31', envelopeId: 'env-1' })),
+    ).rejects.toMatchObject({ statusCode: 400 })
+  })
+})
+
 describe('POST /transactions — geschlossene Umschlaege', () => {
   it('rejects an expense dated on or after the closing date', async () => {
     prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: new Date(2026, 9, 5, 12) })

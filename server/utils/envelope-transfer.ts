@@ -4,7 +4,7 @@
  */
 import { createError } from 'h3'
 import { prisma } from './prisma'
-import { assertEnvelopeOpenOn } from './envelope-lifecycle'
+import { assertEnvelopeAcceptsBooking } from './envelope-lifecycle'
 
 export type TransferSides = {
   fromEnvelopeId: string | null
@@ -21,7 +21,7 @@ export function parseEnvelopeSide(value: unknown): string | null | undefined {
 
 /**
  * Prueft beide Seiten: mindestens eine ist ein Umschlag, beide verschieden,
- * jeder Umschlag gehoert zum Haushalt und ist am Buchungstag offen.
+ * jeder Umschlag gehoert zum Haushalt und nimmt am Buchungstag Buchungen an.
  */
 export async function assertTransferSides(householdId: string, sides: TransferSides, date: Date) {
   if (sides.fromEnvelopeId === null && sides.toEnvelopeId === null) {
@@ -33,24 +33,24 @@ export async function assertTransferSides(householdId: string, sides: TransferSi
   const ids = [sides.fromEnvelopeId, sides.toEnvelopeId].filter((id): id is string => id !== null)
   const envelopes = await prisma.envelope.findMany({
     where: { householdId, id: { in: ids } },
-    select: { id: true, closedAt: true },
+    select: { id: true, closedAt: true, balanceSince: true },
   })
   for (const id of ids) {
     const envelope = envelopes.find((item) => item.id === id)
     if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
-    assertEnvelopeOpenOn(envelope, date)
+    assertEnvelopeAcceptsBooking(envelope, date)
   }
 }
 
 /**
  * Prueft den Umschlag einer Ausgabe oder Einnahme: gehoert zum Haushalt und
- * ist am Buchungstag offen. `null` = "Zu verteilen", immer erlaubt.
+ * nimmt am Buchungstag Buchungen an. `null` = "Zu verteilen", immer erlaubt.
  */
 export async function assertBookingEnvelope(householdId: string, envelopeId: string | null, date: Date) {
   if (!envelopeId) return
-  const envelope = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { closedAt: true } })
+  const envelope = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { closedAt: true, balanceSince: true } })
   if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
-  assertEnvelopeOpenOn(envelope, date)
+  assertEnvelopeAcceptsBooking(envelope, date)
 }
 
 /**
