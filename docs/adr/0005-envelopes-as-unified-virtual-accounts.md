@@ -36,7 +36,7 @@ Jeder Umschlag gehört zu genau einer Gruppe. Die Gruppe ist **gespeichert und v
 
 | Gruppe | `group` | Beispiele | Vorgabe beim Anlegen | Darstellung |
 |---|---|---|---|---|
-| Laufende Ausgaben | `RUNNING` | Lebensmittel, Tanken, Kinder | feste Zuteilung je Woche/Monat | Saldo, Periodenfortschritt, Prognose |
+| Laufende Ausgaben | `RUNNING` | Lebensmittel, Tanken, Kinder | feste Zuteilung je Woche/Monat | Saldo, Periodenfortschritt |
 | Fixkosten | `FIXED` | Wohnen, Streaming, Kfz | Zuteilung aus verknüpften Plänen | Pläne, Fälligkeiten, offen/bezahlt, Saldo |
 | Rücklagen | `RESERVE` | Autoreparatur, Kleidung, Weihnachten | feste Zuteilung, kein Ziel | Saldo, Verlauf |
 | Sparziele | `SAVINGS` | Urlaub | Zielbetrag | Fortschritt zum Ziel |
@@ -112,9 +112,9 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 
 **Bewertung nach Saldo.** Ein Umschlag gilt als überzogen, wenn sein Saldo negativ ist — nicht, wenn die Ausgaben einer Periode die Zuteilung übersteigen. Für Umschläge mit Zuteilung:
 - *Verfügbar in der Periode* = aktueller Saldo + Ausgaben der Periode, also Saldo zu Periodenbeginn plus alle Zuflüsse der Periode (Zuteilung, Gutschriften, Umbuchungen). Der Fortschrittsbalken zeigt Ausgaben ÷ Verfügbar; die Lücke bis zum Ende ist immer genau der aktuelle Saldo.
-- *rot*: Saldo < 0. *gelb*: Prognose für das Periodenende < 0. *sonst* grün.
+- *rot*: Saldo < 0. *gelb*: Nur bei laufenden Ausgaben, wenn prozentual weniger als halb so viel Geld übrig ist wie Zeit (`Saldo ÷ Verfügbar < Rest der Periode × 0,5`). *sonst* grün. Gelb beschreibt den Stand und sagt nichts voraus; der Faktor gibt großen Einzelposten Spielraum, zum Periodenende sinkt die Schwelle von selbst auf null. In den anderen Gruppen sagt der Vergleich nichts aus: Die Miete geht am 1. ab, "Wohnen" wäre sonst den ganzen Monat gelb.
 - "Ausgaben vs. Zuteilung dieser Periode" bleibt als Information sichtbar, aber nicht als Bewertung.
-- Der Forecast ([ADR-0003](0003-forecast-mode.md)) rechnet auf den Saldo am Periodenende hoch statt auf die Periodenausgaben.
+- Eine Prognose gibt es nicht mehr. Aus dem bisherigen Teil einer Periode lässt sich nicht auf den Rest schließen: Haushaltsausgaben kommen in großen Einzelbeträgen, die lineare Hochrechnung meldete nach einem einzigen Einkauf am Monatsanfang tiefe Minusbeträge. [ADR-0003](0003-forecast-mode.md) ist damit abgelöst.
 
 Umschläge mit Sparziel zeigen zusätzlich den Fortschritt `saldo ÷ targetAmount`.
 
@@ -163,6 +163,6 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 
 ## Folgen
 
-- Löst [ADR-0001](0001-expense-as-double-booking.md) ab, erweitert [ADR-0004](0004-budget-as-virtual-account.md) (Saldo-Konzept, Schließen, Löschen bleiben gültig; "Zuteilungen sind keine Buchungen" und `BudgetVersion` werden durch gebuchte Zuteilungen ersetzt, "Periodenansicht bleibt" durch "Bewertung nach Saldo"), ändert die Hochrechnung aus [ADR-0003](0003-forecast-mode.md). [ADR-0002](0002-recurring-plan-coverage.md) bleibt gültig; Pläne bekommen zusätzlich eine Rolle als Zuteilungsquelle.
+- Löst [ADR-0001](0001-expense-as-double-booking.md) ab, erweitert [ADR-0004](0004-budget-as-virtual-account.md) (Saldo-Konzept, Schließen, Löschen bleiben gültig; "Zuteilungen sind keine Buchungen" und `BudgetVersion` werden durch gebuchte Zuteilungen ersetzt, "Periodenansicht bleibt" durch "Bewertung nach Saldo"), löst [ADR-0003](0003-forecast-mode.md) ab. [ADR-0002](0002-recurring-plan-coverage.md) bleibt gültig; Pläne bekommen zusätzlich eine Rolle als Zuteilungsquelle.
 - `CONTEXT.md` (Budget, SavingsGoal, Buchungs-Logik, Doppelbuchung, Umbuchung) beschreibt bis zur Umsetzung weiter den Ist-Stand und verweist auf diese ADR; umgeschrieben wird mit der Umsetzung.
 - API: `/budgets` und `/savings-goals` werden zu `/envelopes`; Gruppen-Ansichten filtern per `group`.

@@ -228,26 +228,34 @@ export function computePeriodAvailability(input: { balance: number; spent: numbe
   }
 }
 
-/**
- * Saldo am Periodenende, wenn bis dahin so weiter ausgegeben wird wie
- * hochgerechnet (`forecastTotal`, ADR-0003). Bereits Ausgegebenes steckt
- * schon im Saldo; nur der hochgerechnete Rest wird abgezogen.
- */
-export function projectPeriodEndBalance(balance: number, spent: number, forecastTotal: number): number {
-  return balance - Math.max(0, forecastTotal - spent)
+// Wie viel weniger Geld als Zeit uebrig sein darf, bevor ein Umschlag gelb wird.
+// Ohne Spielraum waere jeder Grosseinkauf am Periodenanfang ein Alarm, denn
+// Ausgaben kommen in grossen Einzelbetraegen und nicht gleichmaessig.
+const PACE_WARNING_FACTOR = 0.5
+
+/** Anteil der Periode, der noch vor uns liegt (0–1). */
+export function computeRemainingTimeShare(periodStart: Date, periodEnd: Date, now: Date): number {
+  const share = (periodEnd.getTime() - now.getTime()) / (periodEnd.getTime() - periodStart.getTime())
+  return Math.min(1, Math.max(0, share))
 }
 
 /**
  * Bewertung nach Saldo (ADR-0005): Ueberzogen ist ein Umschlag erst mit
- * negativem Saldo, nicht schon, wenn die Ausgaben einer Periode die
- * Zuteilung uebersteigen. Gelb warnt, wenn die Prognose fuers Periodenende
- * ins Minus laeuft.
+ * negativem Saldo, nicht schon, wenn die Ausgaben einer Periode die Zuteilung
+ * uebersteigen.
+ *
+ * Gelb heisst: prozentual weniger als halb so viel Geld uebrig wie Zeit. Das
+ * beschreibt den Stand und sagt nichts voraus, die Schwelle sinkt zum
+ * Periodenende von selbst auf null. `remainingTimeShare` ist null, wo der
+ * Vergleich nichts aussagt (ohne Periode oder ausserhalb der laufenden
+ * Ausgaben: Die Miete geht am 1. ab, "Wohnen" waere sonst den ganzen Monat gelb).
  */
 export function classifyEnvelopeSeverity(input: {
   balance: number
-  projectedPeriodEndBalance: number | null
+  available: number | null
+  remainingTimeShare: number | null
 }): PeriodSeverity {
   if (input.balance < 0) return 'over'
-  if (input.projectedPeriodEndBalance !== null && input.projectedPeriodEndBalance < 0) return 'warning'
-  return 'ok'
+  if (input.available === null || input.available <= 0 || input.remainingTimeShare === null) return 'ok'
+  return input.balance / input.available < input.remainingTimeShare * PACE_WARNING_FACTOR ? 'warning' : 'ok'
 }

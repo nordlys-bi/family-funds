@@ -8,8 +8,6 @@ import {
   nextPeriodStartDay,
   periodStartDay,
   periodTicks,
-  projectedPeriodEndBalance,
-  showsPeriodForecast,
   summarizeBalanceHistory,
   trendVersusPreviousPeriod,
 } from '../budget-detail'
@@ -43,21 +41,6 @@ describe('balanceTrendOf', () => {
   it('needs at least two points', () => {
     expect(balanceTrendOf([])).toBeNull()
     expect(balanceTrendOf([{ date: '2026-10-11', balance: 100 }])).toBeNull()
-  })
-})
-
-describe('projectedPeriodEndBalance', () => {
-  it('subtracts the still expected spending of this period', () => {
-    expect(projectedPeriodEndBalance(10000, { spentAmount: 31200, forecast: { forecastTotal: 41200 } })).toBe(0)
-  })
-
-  it('never adds money when the forecast is below what was already spent', () => {
-    expect(projectedPeriodEndBalance(10000, { spentAmount: 5000, forecast: { forecastTotal: 4000 } })).toBe(10000)
-  })
-
-  it('is null without a forecast', () => {
-    expect(projectedPeriodEndBalance(10000, null)).toBeNull()
-    expect(projectedPeriodEndBalance(10000, { spentAmount: 0, forecast: null })).toBeNull()
   })
 })
 
@@ -163,10 +146,10 @@ describe('groupEntriesByPeriod', () => {
 
 describe('allHistoryFrom', () => {
   const budgets = [
-    { id: 'c', balanceSince: '2026-09-28', carryoverToBudgetId: null },
-    { id: 'b', balanceSince: '2026-05-01', carryoverToBudgetId: 'c' },
-    { id: 'a', balanceSince: '2025-01-01', carryoverToBudgetId: 'b' },
-    { id: 'x', balanceSince: '2020-01-01', carryoverToBudgetId: null },
+    { id: 'c', balanceSince: '2026-09-28', carryoverToEnvelopeId: null },
+    { id: 'b', balanceSince: '2026-05-01', carryoverToEnvelopeId: 'c' },
+    { id: 'a', balanceSince: '2025-01-01', carryoverToEnvelopeId: 'b' },
+    { id: 'x', balanceSince: '2020-01-01', carryoverToEnvelopeId: null },
   ]
 
   it('goes back to the earliest predecessor in the chain', () => {
@@ -177,23 +160,6 @@ describe('allHistoryFrom', () => {
   it('ignores unrelated budgets and respects the server limit', () => {
     expect(allHistoryFrom('c', budgets, '2026-10-11', 365)).toBe('2025-10-11')
     expect(allHistoryFrom('x', budgets.slice(0, 3), '2026-10-11', 10000)).toBe('2026-10-11')
-  })
-})
-
-describe('showsPeriodForecast', () => {
-  it('hides the forecast on the last day of a week (Sunday)', () => {
-    // KW 41: 5.–11.10., Ende exklusiv 12.10.
-    expect(showsPeriodForecast('2026-10-12', '2026-10-11')).toBe(false)
-    expect(showsPeriodForecast('2026-10-12', '2026-10-10')).toBe(true)
-  })
-
-  it('hides it on the last day of a month, also with ISO timestamps from the server', () => {
-    expect(showsPeriodForecast('2026-11-01T11:00:00.000Z', '2026-10-31')).toBe(false)
-    expect(showsPeriodForecast('2026-11-01T11:00:00.000Z', '2026-10-30')).toBe(true)
-  })
-
-  it('has no forecast without a period end (ONCE)', () => {
-    expect(showsPeriodForecast(null, '2026-10-11')).toBe(false)
   })
 })
 

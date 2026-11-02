@@ -4,11 +4,11 @@ import {
   classifyEnvelopeSeverity,
   computeAllocationAmount,
   computePeriodAvailability,
+  computeRemainingTimeShare,
   getAllocationBookingDate,
   getReservationHorizon,
   listDueAllocations,
   listReservedAllocations,
-  projectPeriodEndBalance,
   type AllocationEnvelope,
   type AllocationPlan,
   type AllocationRule,
@@ -303,30 +303,55 @@ describe('computePeriodAvailability', () => {
   })
 })
 
-describe('projectPeriodEndBalance', () => {
-  it('subtracts only the projected rest of the period', () => {
-    expect(projectPeriodEndBalance(5000, 20000, 26000)).toBe(-1000)
+describe('computeRemainingTimeShare', () => {
+  const start = day(2026, 11, 2)
+  const end = day(2026, 11, 9)
+
+  it('is the share of the period still ahead', () => {
+    expect(computeRemainingTimeShare(start, end, day(2026, 11, 5, 18))).toBeCloseTo(0.536, 2)
   })
 
-  it('never adds money when the forecast is below the spending so far', () => {
-    expect(projectPeriodEndBalance(5000, 20000, 18000)).toBe(5000)
+  it('stays within 0 and 1 outside the period', () => {
+    expect(computeRemainingTimeShare(start, end, day(2026, 11, 2, 6))).toBe(1)
+    expect(computeRemainingTimeShare(start, end, day(2026, 11, 9, 18))).toBe(0)
   })
 })
 
 describe('classifyEnvelopeSeverity', () => {
-  it('is ok with a positive balance even if the period allocation is exceeded', () => {
-    expect(classifyEnvelopeSeverity({ balance: 2586, projectedPeriodEndBalance: 2586 })).toBe('ok')
+  const pace = (available: number, spent: number, remainingTimeShare: number) =>
+    classifyEnvelopeSeverity({ balance: available - spent, available, remainingTimeShare })
+
+  it('keeps a normal big purchase at the start of a period ok', () => {
+    // Lebensmittel, Montag: 59 % Geld bei 93 % Zeit
+    expect(pace(31700, 13000, 0.93)).toBe('ok')
   })
 
-  it('warns when the forecast for the period end is negative', () => {
-    expect(classifyEnvelopeSeverity({ balance: 4000, projectedPeriodEndBalance: -500 })).toBe('warning')
+  it('warns when less than half as much money as time is left', () => {
+    // Lebensmittel, Donnerstag: 21 % Geld bei 50 % Zeit
+    expect(pace(31700, 25000, 0.5)).toBe('warning')
+    // Tanken am 15.: 18 % Geld bei 50 % Zeit
+    expect(pace(38000, 31000, 0.5)).toBe('warning')
+  })
+
+  it('calms down towards the end of the period', () => {
+    // Lebensmittel, Samstag: 15 % Geld bei 21 % Zeit
+    expect(pace(31700, 27000, 0.21)).toBe('ok')
+    // Letzter Tag, nichts mehr uebrig
+    expect(pace(31700, 31700, 0)).toBe('ok')
   })
 
   it('is over as soon as the balance is negative', () => {
-    expect(classifyEnvelopeSeverity({ balance: -1, projectedPeriodEndBalance: null })).toBe('over')
+    expect(classifyEnvelopeSeverity({ balance: -1, available: 31700, remainingTimeShare: 0.5 })).toBe('over')
+    expect(classifyEnvelopeSeverity({ balance: -1, available: null, remainingTimeShare: null })).toBe('over')
   })
 
-  it('is ok without a forecast', () => {
-    expect(classifyEnvelopeSeverity({ balance: 0, projectedPeriodEndBalance: null })).toBe('ok')
+  it('is ok with a positive balance even if the period allocation is exceeded', () => {
+    // Tanken aus dem Feedback: 353,29 € bei 300 € Zuteilung, Saldo +25,86 €, Periodenende
+    expect(pace(37915, 35329, 0.02)).toBe('ok')
+  })
+
+  it('does not compare where it says nothing: no period, or outside running expenses', () => {
+    expect(classifyEnvelopeSeverity({ balance: 14335, available: 139335, remainingTimeShare: null })).toBe('ok')
+    expect(classifyEnvelopeSeverity({ balance: 500, available: null, remainingTimeShare: null })).toBe('ok')
   })
 })

@@ -1,6 +1,7 @@
 <!--
-  Budget-Liste (ADR-0004): kompakte Uebersicht aller Budgets als virtuelle
-  Konten. Pro Budget Saldo (gross), Trend und die laufende Periode; alles
+  Umschlag-Liste (ADR-0005): kompakte Uebersicht aller Umschlaege als virtuelle
+  Konten. Vorerst eine Liste fuer alle Gruppen, die Ansichten je Gruppe kommen
+  mit #158. Pro Budget Saldo (gross), Trend und die laufende Periode; alles
   Weitere — Verlauf, Ereignisse, Versionen, Schliessen, Loeschen — liegt auf
   der Detailseite `/budgeting/budgets/:id`, auf die jede Zeile verlinkt.
 
@@ -20,7 +21,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Notice } from '~/types/planning'
-import type { BudgetListItem } from '~/types/budget'
+import type { EnvelopeItem } from '~/types/envelope'
 import { isFirstRun } from '~/utils/household-age'
 import { MOBILE_LIST_QUERY } from '~/composables/useListSwipe'
 
@@ -31,8 +32,7 @@ const { activeHousehold, canManageHousehold, fetchHouseholds } = useHousehold()
 // MEMBER, deshalb ist Swipe mobil fuer alle an (Bearbeiten nur fuer Owner).
 const isMobileList = useMediaQuery(MOBILE_LIST_QUERY)
 
-const budgets = ref<BudgetListItem[]>([])
-const savingsGoals = ref<Array<{ id: string; name: string }>>([])
+const budgets = ref<EnvelopeItem[]>([])
 // SSR-Initial-Render: `loading` startet auf true, damit EmptyState sofort
 // den Spinner zeigt statt eines leeren Renders bis zur Hydration.
 const loading = ref(true)
@@ -40,8 +40,8 @@ const notice = ref<Notice | null>(null)
 const showClosed = ref(false)
 const dialogs = ref<{
   openCreate: () => void
-  openEdit: (budget: BudgetListItem) => void
-  openTransfer: (budget: BudgetListItem) => void
+  openEdit: (budget: EnvelopeItem) => void
+  openTransfer: (budget: EnvelopeItem) => void
 } | null>(null)
 
 const householdId = computed(() => activeHousehold.value?.id ?? null)
@@ -49,19 +49,19 @@ const currencyCode = computed(() => activeHousehold.value?.currency ?? 'EUR')
 const formatMoney = (value: number) => formatMoneyFromCents(value, currencyCode.value)
 
 const budgetsById = computed(() => new Map(budgets.value.map((budget) => [budget.id, budget] as const)))
-const targetName = (budget: BudgetListItem) =>
-  budget.carryoverToBudgetId ? budgetsById.value.get(budget.carryoverToBudgetId)?.name ?? null : null
+const targetName = (budget: EnvelopeItem) =>
+  budget.carryoverToEnvelopeId ? budgetsById.value.get(budget.carryoverToEnvelopeId)?.name ?? null : null
 
 // Geschlossen = Stichtag erreicht. Ein Budget mit Stichtag in der Zukunft
 // laeuft noch und gehoert zu den offenen.
-const isClosedNow = (budget: BudgetListItem) => Boolean(budget.closedAt && new Date(budget.closedAt) <= new Date())
+const isClosedNow = (budget: EnvelopeItem) => Boolean(budget.closedAt && new Date(budget.closedAt) <= new Date())
 const openBudgets = computed(() => budgets.value.filter((budget) => !isClosedNow(budget)))
 // Geschlossene ans Ende und standardmaessig eingeklappt: Ihr Saldo lebt im
 // Ziel-Budget weiter, sie sind nur noch Historie.
 const closedBudgets = computed(() => budgets.value.filter(isClosedNow))
 
 const totalBalance = computed(() =>
-  openBudgets.value.reduce((sum, budget) => sum + (budget.balance?.balance ?? 0), 0),
+  openBudgets.value.reduce((sum, budget) => sum + budget.balance.balance, 0),
 )
 
 // Empty-State (issue #13): First-Time fuer neue Haushalte, No-Data sonst.
@@ -75,15 +75,10 @@ async function loadBudgets() {
   }
   loading.value = true
   try {
-    // Spartoepfe nur fuer den Umbuchen-Dialog (wie auf der Detailseite).
-    const [data, householdData] = await Promise.all([
-      $fetch<{ budgets: BudgetListItem[] }>(`/api/households/${householdId.value}/budgets`),
-      $fetch<{ household: { savingsGoals: Array<{ id: string; name: string }> } | null }>('/api/households/current'),
-    ])
-    budgets.value = data.budgets
-    savingsGoals.value = (householdData.household?.savingsGoals ?? []).map((goal) => ({ id: goal.id, name: goal.name }))
+    const data = await $fetch<{ envelopes: EnvelopeItem[] }>(`/api/households/${householdId.value}/envelopes`)
+    budgets.value = sortEnvelopes(data.envelopes)
   } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Budgets konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
+    notice.value = { severity: 'error', text: 'Umschläge konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
     loading.value = false
   }
@@ -95,22 +90,13 @@ onMounted(async () => {
 })
 watch(householdId, loadBudgets)
 
-const hasSavingsGoals = computed(() => savingsGoals.value.length > 0)
-const NO_GOAL_HINT = 'Lege zuerst einen Spartopf an, um umzubuchen.'
-
-// Ohne Spartopf kein Dialog (er haette nichts zur Auswahl), sondern ein
-// Hinweis mit dem Weg dorthin — still nichts tun wuerde wie ein Fehler wirken.
-function openTransfer(budget: BudgetListItem) {
-  if (!hasSavingsGoals.value) {
-    notice.value = { severity: 'info', text: NO_GOAL_HINT }
-    return
-  }
+function openTransfer(budget: EnvelopeItem) {
   dialogs.value?.openTransfer(budget)
 }
 </script>
 
 <template>
-  <ListPageShell title="Budgets">
+  <ListPageShell title="Umschläge">
     <template v-if="openBudgets.length > 0" #summary>
       <Tag :severity="totalBalance < 0 ? 'danger' : 'success'" :value="`Saldo gesamt ${formatMoney(totalBalance)}`" />
     </template>
@@ -119,7 +105,7 @@ function openTransfer(budget: BudgetListItem) {
            EmptyState hat die CTA dort Vorrang. -->
       <Button
         v-if="canManageHousehold && !showFirstTimeEmpty && !loading"
-        label="Budget anlegen"
+        label="Umschlag anlegen"
         icon="pi pi-plus"
         severity="success"
         @click="dialogs?.openCreate()"
@@ -128,19 +114,18 @@ function openTransfer(budget: BudgetListItem) {
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">
       {{ notice.text }}
-      <NuxtLink v-if="notice.text === NO_GOAL_HINT" to="/budgeting/savings" class="notice-link">Zu den Spartöpfen</NuxtLink>
     </Message>
 
     <!-- OWNER-only Erklaerung (issue #128). -->
     <Message v-if="activeHousehold && !canManageHousehold" severity="warn" variant="simple">
-      Nur Owner können Budgets anlegen, bearbeiten, schließen und löschen. Umbuchen zwischen Budget und Spartopf geht für alle Mitglieder – direkt in der Liste (auf dem Handy nach links wischen) oder auf der Detailseite.
+      Nur Owner können Umschläge anlegen, bearbeiten, schließen und löschen. Umbuchen geht für alle Mitglieder – direkt in der Liste (auf dem Handy nach links wischen) oder auf der Detailseite.
     </Message>
 
     <EmptyState
       :loading="loading"
       :no-household="!loading && !activeHousehold"
-      loading-title="Budgets werden geladen"
-      loading-text="Wir holen die Budgets und ihre Salden."
+      loading-title="Umschläge werden geladen"
+      loading-text="Wir holen die Umschläge und ihre Salden."
     />
 
     <EmptyState
@@ -148,12 +133,12 @@ function openTransfer(budget: BudgetListItem) {
       variant="first-time"
       icon="pi pi-chart-line"
       icon-tone="accent"
-      headline="Noch keine Budgets"
+      headline="Noch keine Umschläge"
       :description="canManageHousehold
-        ? 'Lege dein erstes Budget an, um Ausgaben pro Kategorie zu planen — z. B. Lebensmittel, Miete, Freizeit.'
-        : 'Ein Owner des Haushalts kann Budgets anlegen, um Ausgaben pro Kategorie zu planen.'"
+        ? 'Lege deinen ersten Umschlag an, um dein Geld aufzuteilen — z. B. Lebensmittel, Miete, Freizeit.'
+        : 'Ein Owner des Haushalts kann Umschläge anlegen, um das Geld aufzuteilen.'"
       :cta="canManageHousehold
-        ? { label: 'Budget anlegen', onClick: () => dialogs?.openCreate(), severity: 'primary' }
+        ? { label: 'Umschlag anlegen', onClick: () => dialogs?.openCreate(), severity: 'primary' }
         : undefined"
     />
     <EmptyState
@@ -161,10 +146,10 @@ function openTransfer(budget: BudgetListItem) {
       variant="no-data"
       icon="pi pi-chart-line"
       icon-tone="muted"
-      headline="Keine Budgets"
+      headline="Keine Umschläge"
       :description="canManageHousehold
-        ? 'Lege ein Budget an, um Ausgaben pro Kategorie zu planen.'
-        : 'Ein Owner des Haushalts kann ein Budget anlegen.'"
+        ? 'Lege einen Umschlag an, um dein Geld aufzuteilen.'
+        : 'Ein Owner des Haushalts kann einen Umschlag anlegen.'"
     />
 
     <ListPanel
@@ -196,8 +181,7 @@ function openTransfer(budget: BudgetListItem) {
                   severity="secondary"
                   class="row-transfer"
                   :aria-label="`${budget.name} umbuchen`"
-                  :title="hasSavingsGoals ? 'Umbuchen' : NO_GOAL_HINT"
-                  :disabled="!hasSavingsGoals"
+                  title="Umbuchen"
                   @click.stop.prevent="openTransfer(budget)"
                 />
               </template>
@@ -215,7 +199,7 @@ function openTransfer(budget: BudgetListItem) {
         @click="showClosed = !showClosed"
       >
         <i class="pi" :class="showClosed ? 'pi-chevron-down' : 'pi-chevron-right'" aria-hidden="true" />
-        Geschlossene Budgets ({{ closedBudgets.length }})
+        Geschlossene Umschläge ({{ closedBudgets.length }})
       </button>
       <ul v-if="showClosed" class="budget-list">
         <li v-for="budget in closedBudgets" :key="budget.id">
@@ -229,7 +213,6 @@ function openTransfer(budget: BudgetListItem) {
       ref="dialogs"
       :household-id="householdId"
       :budgets="budgets"
-      :savings-goals="savingsGoals"
       :currency="currencyCode"
       @changed="loadBudgets"
       @notice="notice = $event"
@@ -253,11 +236,6 @@ function openTransfer(budget: BudgetListItem) {
   min-height: var(--touch-target-min);
 }
 
-.notice-link {
-  margin-left: 0.35rem;
-  color: inherit;
-  font-weight: 700;
-}
 
 .closed-section {
   display: flex;
