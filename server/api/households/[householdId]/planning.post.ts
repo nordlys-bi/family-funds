@@ -25,8 +25,6 @@ type PlanningCreateBody = {
   // Transaktion diesen Umschlag; ein Fixkosten-Umschlag mit Zuteilung
   // aus Plaenen (ADR-0005) teilt aus ihm zu. null = kein Umschlag.
   envelopeId?: string | null
-  // Alter Name bis #159.
-  budgetId?: string | null
 }
 
 // Budgets und Sparziele werden seit ADR-0005 als Umschlaege ueber

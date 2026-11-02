@@ -29,6 +29,7 @@ export default defineNuxtConfig({
     '/budgeting/budgets': { redirect: '/budgeting/envelopes' },
     '/budgeting/budgets/**': { redirect: '/budgeting/envelopes/**' },
     '/budgeting/savings': { redirect: '/budgeting/envelopes?group=SAVINGS' },
+    '/budgeting/recurring': { redirect: '/budgeting/envelopes?group=FIXED' },
   },
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },

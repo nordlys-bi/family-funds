@@ -807,6 +807,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       </FormFieldRow>
     </FormDialog>
 
+    <!-- ADR-0005: Einnahmen-Plaene, aus denen die Buchung entsteht. Frueher auf
+         der Seite "Wiederkehrend". -->
+    <RecurringPlansPanel v-if="activeHousehold" kind="income" class="income-plans" @changed="loadTransactions(activeHouseholdId)" />
+
     <!-- Undo-Snackbar (issue #58): siehe expenses.vue fuer Details. -->
     <UndoSnackbar
       v-if="undoItem"
@@ -821,6 +825,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </template>
 
 <style scoped>
+.income-plans {
+  margin-top: 1rem;
+}
+
 .income-envelope {
   display: block;
   font-size: 0.75rem;

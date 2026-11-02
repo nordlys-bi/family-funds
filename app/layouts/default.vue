@@ -205,10 +205,6 @@ onBeforeUnmount(() => {
           <i class="pi pi-wallet nav-icon"></i>
           <span>Umschläge</span>
         </NuxtLink>
-        <NuxtLink to="/budgeting/recurring" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-sync nav-icon"></i>
-          <span>Wiederkehrend</span>
-        </NuxtLink>
 
         <div class="nav-divider" role="separator"></div>
         <div class="nav-section-title">Verwaltung</div>

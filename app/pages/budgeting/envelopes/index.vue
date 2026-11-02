@@ -214,6 +214,12 @@ function openTransfer(envelope: EnvelopeItem) {
       </ul>
     </ListPanel>
 
+    <!-- ADR-0005: Fixkosten-Plaene liegen bei den Umschlaegen, deren Zuteilung
+         sie bestimmen. Aus ihnen entsteht auch die Buchung. Bewusst nicht an
+         `loading` gekoppelt: Das Neuladen nach einer Buchung wuerde das Panel
+         samt Erfolgsmeldung abbauen. -->
+    <RecurringPlansPanel v-if="activeHousehold && activeGroup === 'FIXED'" kind="fixedCost" @changed="loadEnvelopes" />
+
     <section v-if="!loading && closedEnvelopes.length > 0" class="closed-section">
       <button
         type="button"

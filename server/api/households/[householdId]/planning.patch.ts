@@ -26,8 +26,6 @@ type PlanningUpdateBody = {
   // bleibt). Beim "Als bezahlt/erhalten markieren"-Flow erbt die
   // neue Transaktion diesen Umschlag.
   envelopeId?: string | null
-  // Alter Name bis #159.
-  budgetId?: string | null
 }
 
 // Budgets und Sparziele werden seit ADR-0005 ueber PATCH .../envelopes/:id

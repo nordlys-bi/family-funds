@@ -174,13 +174,11 @@ export default defineEventHandler(async (event) => {
     monthEnd,
   )
 
-  // `budgetId` als alter Name von `envelopeId` bis #159 (Plan-Dropdowns im
-  // bestehenden UI) — migrierte Budgets haben die ID ihres Umschlags.
   const fixedCosts = household.fixedCosts.map((plan) =>
-    ({ ...attachPlanCoverage(plan, paidBucketsByFixedPlan, monthStart, monthEnd), budgetId: plan.envelopeId }),
+    attachPlanCoverage(plan, paidBucketsByFixedPlan, monthStart, monthEnd),
   )
   const incomePlans = household.incomePlans.map((plan) =>
-    ({ ...attachPlanCoverage(plan, paidBucketsByIncomePlan, monthStart, monthEnd), budgetId: plan.envelopeId }),
+    attachPlanCoverage(plan, paidBucketsByIncomePlan, monthStart, monthEnd),
   )
 
   // ADR-0005: Budgets, Sparziele und die Budget-Auswertung kommen nicht mehr
