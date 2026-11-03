@@ -69,10 +69,10 @@ export default defineEventHandler(async (event) => {
       }
 
       // Issue #59 polish (Option c, hart gekoppelt): wenn der Plan
-      // einen Umschlag hat, erbt die Transaktion diesen Umschlag.
-      // Per-Transaction-Override ist nicht vorgesehen — wer das
-      // nachtraeglich aendern will, nutzt den Transaction-Row-Editor.
-      if (plan.envelopeId && !envelopeId) {
+      // einen Umschlag hat, erbt die Transaktion diesen Umschlag, auch
+      // wenn der Body einen anderen nennt. Wer das nachtraeglich aendern
+      // will, nutzt den Transaction-Row-Editor.
+      if (plan.envelopeId) {
         envelopeId = plan.envelopeId
       }
     }
@@ -120,7 +120,7 @@ export default defineEventHandler(async (event) => {
 
     // Wie bei Fixkosten: Eine Einnahme aus einem Plan mit Umschlag wird
     // diesem gutgeschrieben (Kindergeld → Kinder).
-    if (plan.envelopeId && !envelopeId) {
+    if (plan.envelopeId) {
       envelopeId = plan.envelopeId
     }
   }
