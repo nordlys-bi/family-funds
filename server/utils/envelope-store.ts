@@ -46,10 +46,8 @@ export function toAllocationEnvelope(row: AllocationRow): AllocationEnvelope {
 /**
  * Bucht alle faelligen, noch nicht gebuchten Zuteilungen des Haushalts bis
  * einschliesslich `today` (ADR-0005, Regel 2: ein Einstieg). Muss vor jedem
- * Saldo-Abruf laufen und vor jeder Aenderung an Zuteilungsregel, Plaenen,
- * Frequenz oder Schliessung (Regel 1: erst nachbuchen, dann aendern) —
- * sonst bekaeme eine begonnene, aber noch nicht gebuchte Periode den neuen
- * Betrag.
+ * Saldo-Abruf laufen. Vor Aenderungen an der Planung (Regel 1) ruft es
+ * `envelope-planning.ts` auf.
  *
  * Parallele Requests sind unkritisch: Der Unique-Index auf
  * `(toEnvelopeId, allocationPeriodStart)` und `skipDuplicates` verhindern

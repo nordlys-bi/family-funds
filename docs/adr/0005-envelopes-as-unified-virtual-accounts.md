@@ -81,7 +81,7 @@ Bekommt ein Umschlag ohne Zuteilung nachträglich eine Regel, gibt es für seine
 
 Damit das Ergebnis nicht vom Zeitpunkt des Abrufs abhängt, gelten vier Regeln:
 
-1. **Erst nachbuchen, dann ändern.** Jede Änderung an Zuteilungsregel, Plan, Frequenz oder Schließung bucht zuerst alle fälligen Zuteilungen bis heute nach. Sonst bekäme eine schon begonnene, aber noch nicht gebuchte Periode den neuen Betrag.
+1. **Erst nachbuchen, dann ändern.** Jede Änderung an Zuteilungsregel, Plan, Frequenz, Schließung oder Startpunkt (`ledgerSince`) bucht zuerst alle fälligen Zuteilungen bis heute nach. Sonst bekäme eine schon begonnene, aber noch nicht gebuchte Periode den neuen Betrag.
 2. **Ein Einstieg.** Jeder Saldo-Abruf ruft zuerst `ensureAllocations(householdId, today)`. Der Unique-Index `(toEnvelopeId, allocationPeriodStart)` verhindert Dubletten bei parallelen Requests (`createMany` mit `skipDuplicates`); gewöhnliche Umbuchungen haben `allocationPeriodStart = null` und sind nicht betroffen.
 3. **Auslassen heißt Betrag 0, nicht löschen.** Eine gelöschte Zuteilung würde beim nächsten Abruf neu angelegt; die Zeile bleibt als Merker.
 4. **Keine vorgemerkten Regeländerungen.** "Ab Januar 350 €" wird am 1. Januar geändert. Ein Feld für eine geplante Änderung kommt erst, wenn es gebraucht wird.
@@ -120,7 +120,7 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 
 Umschläge mit Sparziel zeigen zusätzlich den Fortschritt `saldo ÷ targetAmount`.
 
-**Schließen** wie in ADR-0004, mit einer Erweiterung: Ziel des Übertrags kann ein anderer Umschlag **oder "Zu verteilen"** sein. Damit lässt sich auch ein erreichtes oder aufgegebenes Sparziel sauber auflösen.
+**Schließen** wie in ADR-0004, mit einer Erweiterung: Ziel des Übertrags kann ein anderer Umschlag **oder "Zu verteilen"** sein. Damit lässt sich auch ein erreichtes oder aufgegebenes Sparziel sauber auflösen. Ein Plan darf nicht über den Stichtag seines Umschlags hinauslaufen: Das Schließen lehnt solche Pläne ab, das Anlegen und Ändern von Plänen ebenso, sonst scheiterte "Als bezahlt markieren" dauerhaft.
 
 **Löschen** wie in ADR-0004: nur ohne Spuren (keine Buchungen, auch soft-gelöschte, keine Umbuchungen, kein Vorgänger), sonst schließen.
 
