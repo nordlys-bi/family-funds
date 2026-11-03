@@ -12,7 +12,10 @@
  * Erst nachbuchen, dann aendern (ADR-0005, Regel 1). Zuteilungen ab dem
  * Stichtag werden entfernt — die Periode gehoert nicht mehr dem Umschlag.
  * Andere Buchungen ab dem Stichtag blockieren (409): Sie gehoeren fachlich
- * schon woanders hin und muessen erst umgehaengt werden.
+ * schon woanders hin und muessen erst umgehaengt werden. Dasselbe gilt fuer
+ * Plaene, die ueber den Stichtag hinaus laufen: "Als bezahlt markieren" erbt
+ * ihren Umschlag und wuerde dauerhaft scheitern, und ein Ziel mit Zuteilung
+ * aus Plaenen bekaeme nichts fuer sie.
  *
  * Auth: `requireHouseholdOwner` — Schliessen ist Planung.
  */
@@ -23,7 +26,7 @@ import { defineApiResponse } from '../../../../../utils/api-response'
 import { parseUuidParam } from '../../../../../utils/validation'
 import { parseDateInput } from '../../../../../utils/planning'
 import { ensureAllocations } from '../../../../../utils/envelope-store'
-import { assertCanCloseEnvelope } from '../../../../../utils/envelope-lifecycle'
+import { assertCanCloseEnvelope, wouldCreateCarryoverCycle } from '../../../../../utils/envelope-lifecycle'
 
 type CloseEnvelopeBody = {
   closedAt?: string
@@ -56,9 +59,35 @@ export default defineEventHandler(async (event) => {
   ])
   if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
   assertCanCloseEnvelope(envelope, target, closedAt, targetId !== null)
+  if (targetId) {
+    const envelopes = await prisma.envelope.findMany({ where: { householdId }, select: { id: true, carryoverToEnvelopeId: true } })
+    if (wouldCreateCarryoverCycle(envelopeId, targetId, envelopes)) {
+      throw createError({ statusCode: 400, statusMessage: 'Target envelope already flows into this envelope.', data: { reason: 'carryover-cycle' } })
+    }
+  }
 
   const closedFrom = new Date(closedAt)
   closedFrom.setHours(0, 0, 0, 0)
+  // Ein einmaliger Plan vor dem Stichtag ist erledigt, er blockiert nichts.
+  const activePlan = {
+    envelopeId,
+    OR: [
+      { frequency: { not: 'ONCE' as const }, OR: [{ endDate: null }, { endDate: { gte: closedFrom } }] },
+      { frequency: 'ONCE' as const, startDate: { gte: closedFrom } },
+    ],
+  }
+  const [activeFixedCostPlans, activeIncomePlans] = await Promise.all([
+    prisma.fixedCostPlan.count({ where: activePlan }),
+    prisma.incomePlan.count({ where: activePlan }),
+  ])
+  if (activeFixedCostPlans + activeIncomePlans > 0) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Envelope still has plans running past the closing date. Move or end them first.',
+      data: { reason: 'active-plans' },
+    })
+  }
+
   const [laterExpenses, laterIncomes, laterTransfers] = await Promise.all([
     prisma.expenseTransaction.count({ where: { envelopeId, deletedAt: null, date: { gte: closedFrom } } }),
     prisma.incomeTransaction.count({ where: { envelopeId, deletedAt: null, date: { gte: closedFrom } } }),

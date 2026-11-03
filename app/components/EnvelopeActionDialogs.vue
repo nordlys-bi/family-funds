@@ -13,7 +13,7 @@
 import { computed, ref, watch } from 'vue'
 import type { Frequency, Notice } from '~/types/planning'
 import type { EnvelopeItem } from '~/types/envelope'
-import { ENVELOPE_GROUPS, type EnvelopeGroup } from '~/utils/envelope-options'
+import { ENVELOPE_GROUPS, isEnvelopeOpenOn, type EnvelopeGroup } from '~/utils/envelope-options'
 
 const props = defineProps<{
   householdId: string
@@ -176,7 +176,7 @@ const closeForm = ref({
 const closingEnvelope = computed(() => envelopesById.value.get(closeForm.value.envelopeId) ?? null)
 const closeDialogHeader = computed(() => `„${closingEnvelope.value?.name ?? ''}“ schließen`)
 // Ziel: "Zu verteilen" oder ein anderer Umschlag, der am Stichtag noch offen
-// ist (sonst Zyklus). Eigener Wert statt '', weil das Ziel bewusst gewaehlt
+// ist; Zyklen lehnt der Server ab. Eigener Wert statt '', weil das Ziel bewusst gewaehlt
 // sein muss und '' im Select wie "nichts gewaehlt" aussaehe.
 const UNASSIGNED_TARGET = 'unassigned'
 const closeTargetOptions = computed(() => [
@@ -220,9 +220,14 @@ async function saveClose() {
     emit('changed')
     emit('notice', { severity: 'success', text: `„${closingEnvelope.value?.name ?? 'Umschlag'}" wurde geschlossen.` })
   } catch (error: any) {
-    closeError.value = error.statusCode === 409
-      ? 'Es gibt Buchungen ab dem Stichtag. Bitte zuerst auf einen anderen Umschlag umhängen oder einen späteren Stichtag wählen.'
-      : 'Umschlag konnte nicht geschlossen werden: ' + (error.statusMessage || error.message)
+    const reason = error.data?.data?.reason
+    closeError.value = reason === 'active-plans'
+      ? 'An diesem Umschlag hängen noch Pläne, die über den Stichtag hinaus laufen. Bitte zuerst umhängen oder beenden.'
+      : reason === 'carryover-cycle'
+        ? 'Das Ziel fließt selbst schon in diesen Umschlag. Bitte ein anderes Ziel wählen.'
+        : error.statusCode === 409
+          ? 'Es gibt Buchungen ab dem Stichtag. Bitte zuerst auf einen anderen Umschlag umhängen oder einen späteren Stichtag wählen.'
+          : 'Umschlag konnte nicht geschlossen werden: ' + (error.statusMessage || error.message)
   } finally {
     closeSaving.value = false
   }

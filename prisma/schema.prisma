@@ -135,6 +135,9 @@ model Envelope {
   targetAmount     Int?              // Cent value, Sparziel
   targetDate       DateTime?
   balanceSince     DateTime
+  // Gesetzt, wenn ein Umschlag ohne Zuteilung eine Regel bekommt: Perioden
+  // davor bekommen nichts, sonst wuerde die Regel rueckwirkend nachgebucht.
+  allocationsSince DateTime?
   closedAt         DateTime?
   // Nur bei closedAt: Ziel des Endsaldos. null = "Zu verteilen".
   // NoAction statt Restrict, siehe Budget.carryoverToBudgetId.

@@ -58,7 +58,7 @@ const targetName = (envelope: EnvelopeItem) =>
 
 // Geschlossen = Stichtag erreicht. Ein Umschlag mit Stichtag in der Zukunft
 // laeuft noch und gehoert zu den offenen.
-const isClosedNow = (envelope: EnvelopeItem) => Boolean(envelope.closedAt && new Date(envelope.closedAt) <= new Date())
+const isClosedNow = (envelope: EnvelopeItem) => !isEnvelopeOpenOn(envelope)
 const groupEnvelopes = computed(() => envelopes.value.filter((envelope) => envelope.group === activeGroup.value))
 const openEnvelopes = computed(() => groupEnvelopes.value.filter((envelope) => !isClosedNow(envelope)))
 // Geschlossene ans Ende und standardmaessig eingeklappt: Ihr Saldo lebt im

@@ -22,6 +22,7 @@ import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
 import { parseOptionalDateInput } from '../../../../utils/planning'
+import { addPeriod, startOfPeriod } from '../../../../utils/period'
 import { ensureAllocations } from '../../../../utils/envelope-store'
 import {
   assertAllocationRule,
@@ -73,6 +74,13 @@ export default defineEventHandler(async (event) => {
     assertAllocationRule(existing.frequency, allocationSource, allocationAmount)
     data.allocationSource = allocationSource
     data.allocationAmount = allocationAmount
+    // Ohne Regel gibt es keine Zeilen, die vergangene Perioden als erledigt
+    // markieren. Die neue Regel startet deshalb wie jede Aenderung mit der
+    // naechsten Periode, statt rueckwirkend nachzubuchen. ONCE hat kein Raster
+    // und bekommt seine eine Zuteilung.
+    if (existing.allocationSource === 'NONE' && allocationSource !== 'NONE' && existing.frequency !== 'ONCE') {
+      data.allocationsSince = addPeriod(startOfPeriod(new Date(), existing.frequency), existing.frequency)
+    }
     await ensureAllocations(householdId)
   }
 

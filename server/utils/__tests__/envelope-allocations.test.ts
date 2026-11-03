@@ -210,6 +210,38 @@ describe('listDueAllocations', () => {
   })
 })
 
+describe('allocationsSince', () => {
+  const lateRule = makeEnvelope({
+    frequency: 'MONTHLY',
+    balanceSince: day(2025, 1, 1),
+    allocationsSince: day(2026, 12, 1),
+    rule: { kind: 'fixed', amount: 10000 },
+  })
+
+  it('books nothing for periods before a rule that came later', () => {
+    expect(listDueAllocations(lateRule, day(2026, 11, 3), [])).toEqual([])
+  })
+
+  it('starts with the first period from the bound on', () => {
+    expect(listDueAllocations(lateRule, day(2027, 1, 2), []).map((due) => due.periodStart)).toEqual([day(2026, 12, 1), day(2027, 1, 1)])
+  })
+
+  it('also limits what is reserved', () => {
+    const weekly = { ...lateRule, frequency: 'WEEKLY' as const, balanceSince: day(2025, 1, 6), allocationsSince: day(2026, 11, 16) }
+    expect(listReservedAllocations(weekly, day(2026, 11, 3)).map((item) => item.periodStart)).toEqual([day(2026, 11, 16), day(2026, 11, 23), day(2026, 11, 30)])
+  })
+
+  it('counts a plan from the bound, so the first period has its full share', () => {
+    const plans = makeEnvelope({
+      frequency: 'MONTHLY',
+      balanceSince: day(2025, 1, 1),
+      allocationsSince: day(2026, 12, 1),
+      rule: { kind: 'plans', plans: [plan(120000, 'YEARLY', day(2025, 1, 1))] },
+    })
+    expect(listDueAllocations(plans, day(2026, 12, 2), []).map((due) => due.amount)).toEqual([10000])
+  })
+})
+
 describe('listReservedAllocations', () => {
   const groceries = makeEnvelope({ frequency: 'WEEKLY', balanceSince: day(2026, 9, 14), rule: { kind: 'fixed', amount: 30000 } })
 

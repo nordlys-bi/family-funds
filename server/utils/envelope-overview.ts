@@ -17,6 +17,7 @@ import {
   listReservedAllocations,
 } from './envelope-allocations'
 import { computeEnvelopeBalances, computeUnassignedBalance, type EnvelopeBalance } from './envelope-balance'
+import { isEnvelopeOpenOn } from './envelope-lifecycle'
 import { ensureAllocations, loadEnvelopeBalanceInputs, toAllocationEnvelope } from './envelope-store'
 
 export type EnvelopeCurrentPeriod = {
@@ -94,6 +95,7 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
         targetAmount: true,
         targetDate: true,
         balanceSince: true,
+        allocationsSince: true,
         closedAt: true,
         carryoverToEnvelopeId: true,
         createdAt: true,
@@ -128,7 +130,7 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
 
   const items = envelopes.map((envelope): EnvelopeOverviewItem => {
     const balance = balances.get(envelope.id)!
-    const isOpen = !envelope.closedAt || nowKey < dayKey(envelope.closedAt)
+    const isOpen = isEnvelopeOpenOn(envelope, now)
     const allocationEnvelope = toAllocationEnvelope(envelope)
 
     let currentPeriod: EnvelopeCurrentPeriod | null = null

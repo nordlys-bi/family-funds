@@ -11,12 +11,14 @@
  * Listet ausserdem vorgeplante Budget-Versionen: Umschlaege kennen nur den
  * aktuellen Betrag (ADR-0005, Regel 4), solche Aenderungen muessen zum
  * jeweiligen Datum von Hand nachgetragen werden. Sie aendern heutige Salden
- * nicht und zaehlen deshalb nicht als Abweichung.
+ * nicht und zaehlen deshalb nicht als Abweichung. Ebenso Plaene an bereits
+ * geschlossenen Umschlaegen: Sie muessen von Hand umgehaengt werden.
  */
 import { PrismaClient } from '@prisma/client'
 import { dayKey } from '../server/utils/period'
 import { computeBudgetBalances } from './lib/legacy-budget-balance'
 import { computeEnvelopeBalances } from '../server/utils/envelope-balance'
+import { wouldCreateCarryoverCycle } from '../server/utils/envelope-lifecycle'
 
 const prisma = new PrismaClient()
 
@@ -76,6 +78,21 @@ async function verifyHousehold(householdId: string, name: string, at: Date): Pro
       mismatches++
       console.log(`  ✗ ${id}: fehlt als Umschlag`)
     }
+  }
+  for (const envelope of envelopes) {
+    if (envelope.closedAt && envelope.carryoverToEnvelopeId && wouldCreateCarryoverCycle(envelope.id, envelope.carryoverToEnvelopeId, envelopes)) {
+      mismatches++
+      console.log(`  ✗ ${envelope.name}: Uebertrag bildet einen Zyklus`)
+    }
+  }
+  const closedIds = envelopes.filter((envelope) => envelope.closedAt && dayKey(envelope.closedAt) <= dayKey(at)).map((envelope) => envelope.id)
+  const plansOnClosed = { householdId, envelopeId: { in: closedIds }, OR: [{ endDate: null }, { endDate: { gte: at } }] }
+  const [fixedCostPlans, incomePlans] = await Promise.all([
+    prisma.fixedCostPlan.findMany({ where: plansOnClosed, select: { name: true } }),
+    prisma.incomePlan.findMany({ where: plansOnClosed, select: { name: true } }),
+  ])
+  for (const plan of [...fixedCostPlans, ...incomePlans]) {
+    console.log(`  ! Plan ${plan.name}: haengt an einem geschlossenen Umschlag — von Hand umhaengen`)
   }
   console.log(`${mismatches === 0 ? 'OK' : 'ABWEICHUNG'} — ${name} (${envelopes.length} Umschlaege)`)
   return mismatches

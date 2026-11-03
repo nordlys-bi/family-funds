@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ENVELOPE_GROUPS, envelopesBookableOn, isEnvelopeBookableOn, isEnvelopeGroup, sortEnvelopes, type EnvelopeOption } from '../envelope-options'
+import { ENVELOPE_GROUPS, envelopesBookableOn, isBeforeLedger, isEnvelopeBookableOn, isEnvelopeGroup, isEnvelopeOpenOn, sortEnvelopes, type EnvelopeOption } from '../envelope-options'
 
 const envelope = (id: string, overrides: Partial<EnvelopeOption> = {}): EnvelopeOption => ({
   id, name: id, group: 'RUNNING', balanceSince: new Date(2026, 8, 1, 12), closedAt: null, ...overrides,
@@ -50,5 +50,27 @@ describe('ENVELOPE_GROUPS', () => {
     expect(isEnvelopeGroup('SAVINGS')).toBe(true)
     expect(isEnvelopeGroup('BUDGET')).toBe(false)
     expect(isEnvelopeGroup(undefined)).toBe(false)
+  })
+})
+
+describe('isEnvelopeOpenOn', () => {
+  const closedAt = new Date(2026, 11, 1, 12).toISOString()
+
+  it('is open without a closing date', () => {
+    expect(isEnvelopeOpenOn({ closedAt: null })).toBe(true)
+  })
+
+  it('compares days, so the closing day counts as closed even before noon', () => {
+    expect(isEnvelopeOpenOn({ closedAt }, new Date(2026, 10, 30, 23, 59))).toBe(true)
+    expect(isEnvelopeOpenOn({ closedAt }, new Date(2026, 11, 1, 8))).toBe(false)
+  })
+})
+
+describe('isBeforeLedger', () => {
+  const ledgerSince = new Date(2026, 10, 4, 12).toISOString()
+
+  it('compares days', () => {
+    expect(isBeforeLedger(new Date(2026, 10, 3, 23), ledgerSince)).toBe(true)
+    expect(isBeforeLedger(new Date(2026, 10, 4, 8), ledgerSince)).toBe(false)
   })
 })

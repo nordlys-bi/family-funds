@@ -37,6 +37,12 @@ export type AllocationEnvelope = {
   frequency: Frequency
   /** Immer ein Periodenbeginn der Frequenz; ab hier wird zugeteilt. */
   balanceSince: Date
+  /**
+   * Erste Periode einer Regel, die erst nachtraeglich dazukam. Fuer Perioden
+   * ohne Regel gibt es keine Zeile, die sie als erledigt markiert; ohne diese
+   * Grenze wuerden sie mit der neuen Regel rueckwirkend gebucht.
+   */
+  allocationsSince?: Date | null
   /** Stichtag (exklusiv), ab dem nicht mehr zugeteilt wird. */
   closedAt: Date | null
   rule: AllocationRule
@@ -60,13 +66,14 @@ const PERIODS_PER_YEAR: Record<Exclude<Frequency, 'ONCE'>, number> = {
 }
 
 /**
- * Perioden mit Start in `[from, to)`, begrenzt auf `[balanceSince, closedAt)`.
+ * Perioden mit Start in `[from, to)`, begrenzt auf `[balanceSince, closedAt)`
+ * und `allocationsSince`.
  * ONCE hat genau eine Periode zu `balanceSince`.
  */
 function listPeriodStarts(envelope: AllocationEnvelope, fromKey: number, toKey: number): Date[] {
   const sinceKey = dayKey(envelope.balanceSince)
   const closedKey = envelope.closedAt ? dayKey(envelope.closedAt) : Number.POSITIVE_INFINITY
-  const lower = Math.max(fromKey, sinceKey)
+  const lower = Math.max(fromKey, sinceKey, envelope.allocationsSince ? dayKey(envelope.allocationsSince) : sinceKey)
   const upper = Math.min(toKey, closedKey)
 
   if (envelope.frequency === 'ONCE') {

@@ -42,6 +42,13 @@ describe('computeEnvelopeHistoryPoints', () => {
       19000 - 180,
     ])
   })
+
+  it('survives a carryover cycle in legacy data', () => {
+    const left: BalanceEnvelope = { id: 'left', balanceSince: day(2026, 1, 1), closedAt: day(2026, 12, 1), carryoverToEnvelopeId: 'right' }
+    const right: BalanceEnvelope = { id: 'right', balanceSince: day(2026, 1, 1), closedAt: day(2026, 11, 1), carryoverToEnvelopeId: 'left' }
+    const empty = { expenses: [], incomes: [], transfers: [] }
+    expect(computeEnvelopeHistoryPoints([left, right], empty, day(2026, 10, 1), day(2026, 10, 2)).map((point) => point.balance)).toEqual([0, 0])
+  })
 })
 
 describe('listEnvelopeHistoryEntries', () => {

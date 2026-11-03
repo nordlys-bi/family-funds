@@ -16,6 +16,9 @@ const prismaMocks = vi.hoisted(() => ({
   envelopeTransfer: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
   expenseTransaction: { count: vi.fn() },
   incomeTransaction: { count: vi.fn() },
+  fixedCostPlan: { count: vi.fn() },
+  incomePlan: { count: vi.fn() },
+  household: { findUniqueOrThrow: vi.fn() },
   $transaction: vi.fn(),
 }))
 
@@ -64,9 +67,11 @@ beforeEach(() => {
   prismaMocks.envelopeTransfer.create.mockImplementation(async ({ data }) => ({ id: TRANSFER_ID, ...data }))
   prismaMocks.envelopeTransfer.update.mockImplementation(async ({ data }) => ({ id: TRANSFER_ID, ...data }))
   prismaMocks.$transaction.mockImplementation(async (callback: (tx: typeof prismaMocks) => unknown) => callback(prismaMocks))
-  for (const count of [prismaMocks.expenseTransaction.count, prismaMocks.incomeTransaction.count, prismaMocks.envelopeTransfer.count, prismaMocks.envelope.count]) {
+  for (const count of [prismaMocks.expenseTransaction.count, prismaMocks.incomeTransaction.count, prismaMocks.envelopeTransfer.count, prismaMocks.envelope.count, prismaMocks.fixedCostPlan.count, prismaMocks.incomePlan.count]) {
     count.mockResolvedValue(0)
   }
+  prismaMocks.envelope.findMany.mockResolvedValue([])
+  prismaMocks.household.findUniqueOrThrow.mockResolvedValue({ ledgerSince: new Date(2020, 0, 1, 12) })
 })
 
 describe('POST /envelopes', () => {
@@ -124,6 +129,23 @@ describe('PATCH /envelopes/:id', () => {
     expect(storeMocks.ensureAllocations).not.toHaveBeenCalled()
   })
 
+  it('starts a first rule with the next period instead of booking the past', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue({ ...existing, allocationSource: 'NONE', allocationAmount: null })
+    await updateEnvelope(makeEvent({ allocationSource: 'FIXED', allocationAmount: '100' }, { id: ENV_ID }))
+
+    const { allocationsSince } = prismaMocks.envelope.update.mock.calls[0][0].data
+    const firstOfNextMonth = new Date()
+    firstOfNextMonth.setMonth(firstOfNextMonth.getMonth() + 1, 1)
+    expect(allocationsSince.getDate()).toBe(1)
+    expect(allocationsSince.getMonth()).toBe(firstOfNextMonth.getMonth())
+  })
+
+  it('leaves the lower bound alone when an existing rule changes', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue(existing)
+    await updateEnvelope(makeEvent({ allocationSource: 'PLANS' }, { id: ENV_ID }))
+    expect(prismaMocks.envelope.update.mock.calls[0][0].data).not.toHaveProperty('allocationsSince')
+  })
+
   it('clears the amount when switching away from a fixed allocation', async () => {
     prismaMocks.envelope.findFirst.mockResolvedValue(existing)
     await updateEnvelope(makeEvent({ allocationSource: 'NONE' }, { id: ENV_ID }))
@@ -133,6 +155,32 @@ describe('PATCH /envelopes/:id', () => {
   it('404s for an envelope of another household', async () => {
     prismaMocks.envelope.findFirst.mockResolvedValue(null)
     await expect(updateEnvelope(makeEvent({ name: 'x' }, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 404 })
+  })
+})
+
+describe('POST /envelopes/:id/close: active plans and cycles', () => {
+  const open = { id: ENV_ID, householdId: HH_ID, frequency: 'MONTHLY', balanceSince: new Date(2026, 0, 1, 12), closedAt: null }
+
+  it('blocks while a plan runs past the closing date', async () => {
+    prismaMocks.envelope.findFirst.mockResolvedValue(open)
+    prismaMocks.fixedCostPlan.count.mockResolvedValue(1)
+    await expect(
+      closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: null }, { id: ENV_ID })),
+    ).rejects.toMatchObject({ statusCode: 409, data: { reason: 'active-plans' } })
+    expect(prismaMocks.envelope.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects a target that already flows into this envelope', async () => {
+    prismaMocks.envelope.findFirst.mockImplementation(async ({ where }: { where: { id: string } }) => ({
+      ...open,
+      id: where.id,
+      closedAt: where.id === OTHER_ID ? new Date(2026, 11, 1, 12) : null,
+    }))
+    prismaMocks.envelope.findMany.mockResolvedValue([{ id: OTHER_ID, carryoverToEnvelopeId: ENV_ID }])
+    await expect(
+      closeEnvelope(makeEvent({ closedAt: '2026-11-01', carryoverToEnvelopeId: OTHER_ID }, { id: ENV_ID })),
+    ).rejects.toMatchObject({ statusCode: 400, data: { reason: 'carryover-cycle' } })
+    expect(prismaMocks.envelope.update).not.toHaveBeenCalled()
   })
 })
 
@@ -198,6 +246,30 @@ describe('DELETE /envelopes/:id', () => {
     prismaMocks.expenseTransaction.count.mockResolvedValue(1)
     await expect(deleteEnvelope(makeEvent(undefined, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 409 })
     expect(prismaMocks.envelope.delete).not.toHaveBeenCalled()
+  })
+})
+
+describe('POST /transfers before the start of "Zu verteilen"', () => {
+  beforeEach(() => {
+    prismaMocks.household.findUniqueOrThrow.mockResolvedValue({ ledgerSince: new Date(2026, 10, 4, 12) })
+    prismaMocks.envelope.findMany.mockResolvedValue([{ id: ENV_ID, closedAt: null, balanceSince: new Date(2026, 0, 1, 12) }, { id: OTHER_ID, closedAt: null, balanceSince: new Date(2026, 0, 1, 12) }])
+  })
+
+  it('rejects a transfer with "Zu verteilen" as one side', async () => {
+    await expect(
+      createTransfer(makeEvent({ fromEnvelopeId: null, toEnvelopeId: ENV_ID, amount: '50', date: '2026-11-03' })),
+    ).rejects.toMatchObject({ statusCode: 400 })
+    expect(prismaMocks.envelopeTransfer.create).not.toHaveBeenCalled()
+  })
+
+  it('accepts it from the start day on', async () => {
+    await createTransfer(makeEvent({ fromEnvelopeId: null, toEnvelopeId: ENV_ID, amount: '50', date: '2026-11-04' }))
+    expect(prismaMocks.envelopeTransfer.create).toHaveBeenCalled()
+  })
+
+  it('still allows a transfer between two envelopes', async () => {
+    await createTransfer(makeEvent({ fromEnvelopeId: ENV_ID, toEnvelopeId: OTHER_ID, amount: '50', date: '2026-11-03' }))
+    expect(prismaMocks.envelopeTransfer.create).toHaveBeenCalled()
   })
 })
 
