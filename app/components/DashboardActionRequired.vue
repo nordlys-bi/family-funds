@@ -22,6 +22,7 @@ const props = defineProps<{
   envelopes: Array<{
     id: string
     name: string
+    group: string
     severity: 'ok' | 'warning' | 'over'
     closedAt: string | null
     balance: { balance: number }
@@ -48,6 +49,15 @@ const props = defineProps<{
 // Kritisch = warning oder over. "ok" ist der Normalzustand. Geschlossene
 // bewertet der Server immer als ok.
 const criticalBudgets = computed(() => props.envelopes.filter((envelope) => envelope.severity !== 'ok'))
+
+// Direkt zum Umschlag; bei mehreren zur Gruppe des ersten roten. Rot kann jede
+// Gruppe werden, die Liste zeigt ohne Parameter nur die laufenden Ausgaben.
+const criticalLink = computed(() => {
+  const list = criticalBudgets.value
+  if (list.length === 1) return `/budgeting/envelopes/${list[0]!.id}`
+  const first = list.find((envelope) => envelope.severity === 'over') ?? list[0]
+  return `/budgeting/envelopes?group=${first?.group ?? 'RUNNING'}`
+})
 
 // Welche Items zeigen wir im Block? Ein Item gilt als "aktiv", wenn es
 // entweder ueberhaupt Daten hat oder eine sinnvolle Aussage machen kann.
@@ -117,7 +127,7 @@ const overBudgetCount = computed(
           <i class="pi pi-exclamation-triangle" />
         </span>
         <div class="action-required__body">
-          <NuxtLink to="/budgeting/envelopes" class="action-required__link">
+          <NuxtLink :to="criticalLink" class="action-required__link">
             <strong>
               {{ criticalBudgets.length === 1
                 ? `„${criticalBudgets[0].name}" ${criticalBudgets[0].severity === 'over' ? `ist im Minus (${formatMoney(criticalBudgets[0].balance.balance)})` : 'ist fast aufgebraucht'}`
@@ -142,7 +152,7 @@ const overBudgetCount = computed(
         <div class="action-required__body">
           <!-- Issue #52: Deep-Link auf die Expenses-Page mit aktivem
                unassigned-Filter. Die Page wertet ?unassigned=1 aus und
-               zeigt nur Buchungen ohne BudgetId, ohne dass der User
+               zeigt nur Buchungen ohne Umschlag, ohne dass der User
                selbst nach "Sonstiges" filtern muss. -->
           <NuxtLink to="/transactions/expenses?unassigned=1" class="action-required__link">
             <strong>{{ formatMoney(props.unassignedExpenses) }} ohne Umschlag diesen Monat</strong>

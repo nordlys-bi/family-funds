@@ -99,6 +99,8 @@ onMounted(async () => {
   }
 })
 watch(householdId, loadEnvelopes)
+// Der globale Erfassen-Dialog bucht auch von hier aus: Salden neu holen.
+watch(useQuickCapture().savedTick, loadEnvelopes)
 
 function openTransfer(envelope: EnvelopeItem) {
   dialogs.value?.openTransfer(envelope)

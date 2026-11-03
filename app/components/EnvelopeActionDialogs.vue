@@ -317,7 +317,9 @@ async function saveTransfer() {
     emit('changed')
     emit('notice', { severity: 'success', text: 'Umbuchung wurde gespeichert.' })
   } catch (error: any) {
-    transferError.value = 'Umbuchung fehlgeschlagen: ' + (error.statusMessage || error.message)
+    transferError.value = error.data?.data?.reason === 'before-ledger'
+      ? 'Das Datum liegt vor dem Start von „Zu verteilen“. Bitte ein späteres Datum wählen.'
+      : 'Umbuchung fehlgeschlagen: ' + (error.statusMessage || error.message)
   } finally {
     transferSaving.value = false
   }

@@ -19,9 +19,9 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                       liefern 400. Aggregate beziehen sich auf den
  *                       gefilterten Monat.
  *   - `?from=DATE[&to=DATE]`  Expliziter Zeitraum (ISO-8601), hat Vorrang
- *                       vor `?month`. Fuer Budget-Perioden, die nicht auf
+ *                       vor `?month`. Fuer Umschlag-Perioden, die nicht auf
  *                       Kalendermonate passen (WEEKLY/QUARTERLY/YEARLY/
- *                       ONCE — siehe Dashboard-Budget-Karten). `to` ist
+ *                       ONCE — siehe Dashboard-Karten). `to` ist
  *                       exklusiv (wie `monthEnd`) und optional — ohne `to`
  *                       ist der Zeitraum nach oben offen (ONCE ohne
  *                       Nachfolge-Version).
@@ -55,13 +55,13 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *
  * Summary (issue #134): Die Aggregate (`expenseTotal`, `incomeTotal`,
  * `unassignedExpenseTotal`) spiegeln dieselben Filter wie die Listen
- * (Zeitraum + userId + budgetId + unassigned) — die Badge oben auf den
+ * (Zeitraum + userId + envelopeId + unassigned) — die Badge oben auf den
  * Seiten muss zur sichtbaren Liste passen. Der Server ist dafuer die Single
  * Source of Truth, weil die Liste paginiert ist (`limit`) und eine
  * clientseitige Summe ueber die geladenen Zeilen bei `hasMore` falsch waere.
  * `unassignedExpenseTotal` ignoriert bewusst `unassigned` (der "Ohne
- * Budget"-Chip soll auch ohne aktiven Filter seinen Wert zeigen), beachtet
- * aber `userId`, damit er zur Person-Filterung passt; mit `?budgetId=` ist er
+ * Umschlag"-Chip soll auch ohne aktiven Filter seinen Wert zeigen), beachtet
+ * aber `userId`, damit er zur Person-Filterung passt; mit `?envelopeId=` ist er
  * 0. `netTotal` ist immer `incomeTotal - expenseTotal` der jeweils
  * gelieferten (gefilterten) Werte.
  *
@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
       }
       monthEnd = parsedTo
     } else {
-      // Kein oberes Ende (ONCE-Budget ohne Nachfolge-Version) — Query
+      // Kein oberes Ende (ONCE-Umschlag) — Query
       // laesst `lt` unten einfach weg.
       monthEnd = null
     }
@@ -185,13 +185,13 @@ export default defineEventHandler(async (event) => {
   const envelopeIdParam = parseOptionalUuidQuery(query, 'envelopeId')
   const userFilter = userIdParam ? { userId: userIdParam } : {}
 
-  // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
-  // verlinkt auf ?unassigned=1. Setzt budgetId + fixedCostPlanId: null auf dem Expense-Read UND
+  // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Umschlag"
+  // verlinkt auf ?unassigned=1. Setzt envelopeId + fixedCostPlanId: null auf dem Expense-Read UND
   // im expenseTotal-Aggregate (dort dann expenseTotal === unassignedExpenseTotal),
   // filtert Income auf `envelopeId: null` (ADR-0005).
   const unassignedOnly = query.unassigned === '1'
 
-  // `unassigned` (budgetId IS NULL) und `budgetId=X` sind AND-verknuepfte
+  // `unassigned` (envelopeId IS NULL) und `envelopeId=X` sind AND-verknuepfte
   // Filter. Beide zusammen sind ein Widerspruch — die leere Menge, nicht
   // stillschweigend einer der beiden (die Liste war in dem Fall schon vor
   // #134 leer, als der Budget-Filter noch im Client lief).

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeEnvelopeHistoryPoints, getEnvelopeChain, listEnvelopeHistoryEntries } from '../envelope-history'
+import { clampHistoryFrom, computeEnvelopeHistoryPoints, getEnvelopeChain, listEnvelopeHistoryEntries } from '../envelope-history'
 import type { BalanceEnvelope } from '../envelope-balance'
 
 /** Lokales Datum, 12:00 — wie `parseDateInput`. */
@@ -36,6 +36,7 @@ describe('computeEnvelopeHistoryPoints', () => {
     const chain = getEnvelopeChain([weekly, monthly], 'monthly')
     const points = computeEnvelopeHistoryPoints(chain, inputs, day(2026, 8, 30), day(2026, 9, 2))
     expect(points.map((point) => point.balance)).toEqual([
+      1000, // Stand vor dem 30.8.
       1000 - 1180, // 30.8.: noch der Vorgaenger
       1000 - 1180, // 31.8.
       19000 - 180, // 1.9.: Uebertrag + neue Zuteilung
@@ -43,11 +44,38 @@ describe('computeEnvelopeHistoryPoints', () => {
     ])
   })
 
+  it('starts with the balance before the range, so its first day counts as movement', () => {
+    const points = computeEnvelopeHistoryPoints([weekly], inputs, day(2026, 8, 3), day(2026, 8, 3))
+    expect(points.map((point) => point.balance)).toEqual([0, 1000])
+    expect(points[0]!.date).toEqual(day(2026, 8, 3))
+  })
+
+  it('stays level when a predecessor flows into a target that already moved on', () => {
+    const a: BalanceEnvelope = { id: 'a', balanceSince: day(2026, 1, 1), closedAt: day(2026, 3, 1), carryoverToEnvelopeId: 'b' }
+    const b: BalanceEnvelope = { id: 'b', balanceSince: day(2026, 1, 1), closedAt: day(2026, 2, 1), carryoverToEnvelopeId: 'c' }
+    const c: BalanceEnvelope = { id: 'c', balanceSince: day(2026, 1, 1), closedAt: null, carryoverToEnvelopeId: null }
+    const income = { expenses: [], incomes: [{ id: 'i', envelopeId: 'a', amount: 10000, date: day(2026, 1, 10), description: null }], transfers: [] }
+    const balances = computeEnvelopeHistoryPoints(getEnvelopeChain([a, b, c], 'c'), income, day(2026, 1, 31), day(2026, 3, 2)).slice(1).map((point) => point.balance)
+    expect(new Set(balances)).toEqual(new Set([10000]))
+  })
+
   it('survives a carryover cycle in legacy data', () => {
     const left: BalanceEnvelope = { id: 'left', balanceSince: day(2026, 1, 1), closedAt: day(2026, 12, 1), carryoverToEnvelopeId: 'right' }
     const right: BalanceEnvelope = { id: 'right', balanceSince: day(2026, 1, 1), closedAt: day(2026, 11, 1), carryoverToEnvelopeId: 'left' }
     const empty = { expenses: [], incomes: [], transfers: [] }
-    expect(computeEnvelopeHistoryPoints([left, right], empty, day(2026, 10, 1), day(2026, 10, 2)).map((point) => point.balance)).toEqual([0, 0])
+    expect(computeEnvelopeHistoryPoints([left, right], empty, day(2026, 10, 1), day(2026, 10, 2)).map((point) => point.balance)).toEqual([0, 0, 0])
+  })
+})
+
+describe('clampHistoryFrom', () => {
+  it('does not start before the balance start of the chain', () => {
+    expect(clampHistoryFrom([monthly], day(2026, 6, 1), day(2026, 10, 1))).toEqual(day(2026, 9, 1))
+    expect(clampHistoryFrom([monthly, weekly], day(2026, 6, 1), day(2026, 10, 1))).toEqual(day(2026, 8, 3))
+  })
+
+  it('keeps a later start and never passes the end', () => {
+    expect(clampHistoryFrom([monthly], day(2026, 9, 15), day(2026, 10, 1))).toEqual(day(2026, 9, 15))
+    expect(clampHistoryFrom([monthly], day(2026, 6, 1), day(2026, 8, 1))).toEqual(day(2026, 8, 1))
   })
 })
 
@@ -66,6 +94,11 @@ describe('listEnvelopeHistoryEntries', () => {
     ])
     expect(entries[0]).toMatchObject({ counterpartId: 'other', text: 'Puffer' })
     expect(entries.find((entry) => entry.type === 'carryover')).toMatchObject({ counterpartId: 'weekly' })
+  })
+
+  it('carries the period of an allocation', () => {
+    const entries = listEnvelopeHistoryEntries([monthly], inputs, day(2026, 9, 1), day(2026, 9, 1))
+    expect(entries.find((entry) => entry.type === 'allocation')?.periodStart).toEqual(day(2026, 9, 1))
   })
 
   it('only lists entries within the range', () => {

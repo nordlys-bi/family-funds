@@ -39,6 +39,11 @@ export type HistoryEntry = {
   type: HistoryEntryType
   id: string | null
   date: Date
+  /**
+   * Periode einer Zuteilung. Weicht vom Datum ab, wenn sie nachgebucht und auf
+   * den Start von "Zu verteilen" datiert wurde.
+   */
+  periodStart: Date | null
   /** Vorzeichen aus Sicht des Umschlags: + = Zufluss. */
   amount: number
   /** Umschlag der Kette, an dem die Buchung haengt. */
@@ -88,7 +93,18 @@ function days(from: Date, to: Date): Date[] {
 }
 
 /**
- * Tagesend-Salden der Kette von `from` bis `to` (beide inklusive).
+ * Beginn des Verlaufs: nicht vor dem Saldo-Start der Kette, denn eine Nulllinie
+ * davor waere nur Leerraum und taeuschte eine Vorperiode vor. Nicht nach `to`.
+ */
+export function clampHistoryFrom(chain: BalanceEnvelope[], from: Date, to: Date): Date {
+  const earliest = Math.min(...chain.map((envelope) => dayKey(envelope.balanceSince)))
+  return new Date(Math.min(dayKey(to), Math.max(dayKey(from), earliest)))
+}
+
+/**
+ * Salden der Kette: zuerst der Stand vor `from` (Tagesende des Vortags), dann
+ * die Tagesend-Salden von `from` bis `to`. Mit dem Startpunkt ist die Differenz
+ * von erstem und letztem Punkt genau die Bewegung im Zeitraum, auch am `from`-Tag.
  * `chain[0]` ist der betrachtete Umschlag.
  */
 export function computeEnvelopeHistoryPoints(
@@ -98,22 +114,24 @@ export function computeEnvelopeHistoryPoints(
   to: Date,
 ): HistoryPoint[] {
   const byId = new Map(chain.map((envelope) => [envelope.id, envelope]))
-  return days(from, to).map((date) => {
+  // Jeder Umschlag der Kette zaehlt, bis er eingeflossen ist; danach steckt er
+  // im Saldo seines Ziels. Als Summe statt als Abstieg, damit auch ein Vorgaenger
+  // zaehlt, dessen Ziel schon weitergeflossen ist, er selbst aber noch nicht.
+  const balanceAtEndOf = (date: Date) => {
     const balances = computeEnvelopeBalances(chain, inputs, date)
     const key = dayKey(date)
-    // `seen` wie in getEnvelopeChain: Altdaten koennen einen Zyklus enthalten.
-    const chainBalance = (envelope: BalanceEnvelope, seen = new Set<string>()): number => {
-      seen.add(envelope.id)
-      let total = balances.get(envelope.id)?.balance ?? 0
-      for (const predecessor of chain) {
-        if (predecessor.carryoverToEnvelopeId !== envelope.id || !predecessor.closedAt || seen.has(predecessor.id)) continue
-        // Noch nicht eingeflossen: zaehlt neben dem Ziel, sonst steckt er schon drin.
-        if (key < carryoverInflowKey(predecessor, envelope.balanceSince)) total += chainBalance(predecessor, seen)
-      }
-      return total
-    }
-    return { date, balance: chainBalance(byId.get(chain[0]!.id)!) }
-  })
+    return chain.reduce((total, envelope, index) => {
+      const target = index > 0 && envelope.carryoverToEnvelopeId ? byId.get(envelope.carryoverToEnvelopeId) : undefined
+      const flowedIn = target && key >= carryoverInflowKey(envelope, target.balanceSince)
+      return flowedIn ? total : total + (balances.get(envelope.id)?.balance ?? 0)
+    }, 0)
+  }
+  const dayBefore = new Date(dayKey(from))
+  dayBefore.setDate(dayBefore.getDate() - 1)
+  return [
+    { date: new Date(dayKey(from)), balance: balanceAtEndOf(dayBefore) },
+    ...days(from, to).map((date) => ({ date, balance: balanceAtEndOf(date) })),
+  ]
 }
 
 /** Ereignisse der Kette im Zeitraum `[from, to]`, neueste zuerst. */
@@ -136,12 +154,12 @@ export function listEnvelopeHistoryEntries(
   const entries: HistoryEntry[] = []
   for (const expense of inputs.expenses) {
     if (inRange(expense.envelopeId, expense.date)) {
-      entries.push({ type: 'expense', id: expense.id, date: expense.date, amount: -expense.amount, envelopeId: expense.envelopeId, text: expense.description, counterpartId: null })
+      entries.push({ type: 'expense', id: expense.id, date: expense.date, periodStart: null, amount: -expense.amount, envelopeId: expense.envelopeId, text: expense.description, counterpartId: null })
     }
   }
   for (const income of inputs.incomes) {
     if (inRange(income.envelopeId, income.date)) {
-      entries.push({ type: 'income', id: income.id, date: income.date, amount: income.amount, envelopeId: income.envelopeId, text: income.description, counterpartId: null })
+      entries.push({ type: 'income', id: income.id, date: income.date, periodStart: null, amount: income.amount, envelopeId: income.envelopeId, text: income.description, counterpartId: null })
     }
   }
   for (const transfer of inputs.transfers) {
@@ -150,6 +168,7 @@ export function listEnvelopeHistoryEntries(
         type: transfer.allocationPeriodStart ? 'allocation' : 'transfer',
         id: transfer.id,
         date: transfer.date,
+        periodStart: transfer.allocationPeriodStart ?? null,
         amount: transfer.amount,
         envelopeId: transfer.toEnvelopeId,
         text: transfer.note,
@@ -157,7 +176,7 @@ export function listEnvelopeHistoryEntries(
       })
     }
     if (inRange(transfer.fromEnvelopeId, transfer.date)) {
-      entries.push({ type: 'transfer', id: transfer.id, date: transfer.date, amount: -transfer.amount, envelopeId: transfer.fromEnvelopeId, text: transfer.note, counterpartId: transfer.toEnvelopeId })
+      entries.push({ type: 'transfer', id: transfer.id, date: transfer.date, periodStart: null, amount: -transfer.amount, envelopeId: transfer.fromEnvelopeId, text: transfer.note, counterpartId: transfer.toEnvelopeId })
     }
   }
 
@@ -170,7 +189,7 @@ export function listEnvelopeHistoryEntries(
     if (key < fromKey || key > toKey) continue
     const date = new Date(key)
     const balance = computeEnvelopeBalances(chain, inputs, date).get(predecessor.id)?.balance ?? 0
-    entries.push({ type: 'carryover', id: null, date, amount: balance, envelopeId: target.id, text: null, counterpartId: predecessor.id })
+    entries.push({ type: 'carryover', id: null, date, periodStart: null, amount: balance, envelopeId: target.id, text: null, counterpartId: predecessor.id })
   }
 
   return entries.sort((left, right) => right.date.getTime() - left.date.getTime())

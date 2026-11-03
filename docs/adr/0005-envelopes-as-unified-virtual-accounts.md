@@ -86,9 +86,9 @@ Damit das Ergebnis nicht vom Zeitpunkt des Abrufs abhängt, gelten vier Regeln:
 3. **Auslassen heißt Betrag 0, nicht löschen.** Eine gelöschte Zuteilung würde beim nächsten Abruf neu angelegt; die Zeile bleibt als Merker.
 4. **Keine vorgemerkten Regeländerungen.** "Ab Januar 350 €" wird am 1. Januar geändert. Ein Feld für eine geplante Änderung kommt erst, wenn es gebraucht wird.
 
-Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, solange dieser nicht in der Zukunft liegt: Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
+Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, auch wenn dieser in der Zukunft liegt (Migrationstag): Sonst hinge das Ergebnis davon ab, wann zuerst abgerufen wird. Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
 
-Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen.
+Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen. Das gilt auch für einen Plan, der in einer schon gebuchten Periode dazukommt: Wiederkehrende Pläne wirken ab der nächsten Periode, ein einmaliger bekommt nur in einer noch nicht gebuchten Periode automatisch Geld. Die App weist beim Speichern darauf hin.
 
 ## Vorgemerkt
 
@@ -141,7 +141,7 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 ## Migration
 
 - `Budget` → Umschlag, Gruppe `RUNNING`; `allocationAmount` = Betrag der aktuell gültigen `BudgetVersion`. Die bisher berechneten Zuteilungen werden einmalig als `EnvelopeTransfer`-Zeilen gebucht, danach entfällt `BudgetVersion`. **IDs bleiben erhalten**, damit Links und Verweise (`carryoverToBudgetId`, Pläne, Ausgaben) gültig bleiben.
-- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
+- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; `endDate` wird `targetDate` (derzeit ohne Oberfläche und Wirkung); die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
 - `SavingsGoalExecution` mit `sourceBudgetId` → `EnvelopeTransfer` zwischen den beiden Umschlägen (Vorzeichen bestimmt die Richtung).
 - `SavingsGoalExecution` ohne Quelle, positiv → `EnvelopeTransfer` aus "Zu verteilen".
 - `SavingsGoalExecution` ohne Quelle, negativ (Doppelbuchung nach ADR-0001): Gibt es **genau eine** umschlaglose Ausgabe mit gleichem Betrag am selben Tag, bekommt sie `envelopeId` = Sparziel und die Execution entfällt. Sonst → `EnvelopeTransfer` in "Zu verteilen". Beide Wege ergeben dieselben Salden; der erste ist nur sauberer.

@@ -13,7 +13,7 @@
  *  - Ableitungen: monthOptions, monthLabel, monthStart, monthEnd
  *
  * Beide Pages binden den Monats-Spinner an `month` und rufen `load()` nach
- * `month`-Wechsel. URL-Sync (?month, ?unassigned, ?userId, ?budgetId) macht
+ * `month`-Wechsel. URL-Sync (?month, ?unassigned, ?userId, ?envelopeId) macht
  * jede Page selbst via useRoute/useRouter — Composable bleibt routing-agnostisch.
  */
 import { computed, ref } from 'vue'
@@ -66,16 +66,14 @@ export type UseTransactionListOptions = {
    */
   initialUserIdFilter?: string | null
   /**
-   * Initialer Budget-Filter (issue #55). Budget-ID des Haushalts.
+   * Initialer Umschlag-Filter (issue #55). Umschlag-ID des Haushalts.
    * Wird als `?envelopeId=` an den Server geschickt (issue #134).
-   * Default null = kein Filter. Fuer Income-Listen nicht relevant
-   * (Income-Transaktionen haben kein Budget, der Server ignoriert den
-   * Filter dort).
+   * Default null = kein Filter. Der Server wendet ihn auch auf Einnahmen an.
    */
   initialEnvelopeIdFilter?: string | null
   /**
    * Expliziter Zeitraum (ISO-8601-Strings), z. B. von einem Klick auf
-   * eine Dashboard-Budget-Karte (periodStart/periodEnd). Hat Vorrang vor
+   * eine Dashboard-Karte (periodStart/periodEnd). Hat Vorrang vor
    * `month`, solange gesetzt — fuer Perioden, die nicht auf Kalendermonate
    * passen (WEEKLY/QUARTERLY/YEARLY/ONCE). `to` fehlt bei einer offenen
    * ONCE-Periode. Ueber `setRange`/`clearRange` wieder verlassbar.
@@ -254,17 +252,16 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   }
 
   /**
-   * Setzt den Budget-Filter (issue #55). String = aktive Budget-ID,
+   * Setzt den Umschlag-Filter (issue #55). String = aktive Umschlag-ID,
    * null = kein Filter. Gleiches Pattern wie `setUserIdFilter`: Caller
-   * laedt neu. Fuer Income-Pages typischerweise nie gesetzt (Income-Items
-   * haben kein Budget).
+   * laedt neu.
    */
   function setEnvelopeIdFilter(value: string | null) {
     envelopeIdFilter.value = value && value.length > 0 ? value : null
   }
 
   /**
-   * Leert ALLE issue-#55-Filter (Person + Budget) auf einmal.
+   * Leert ALLE issue-#55-Filter (Person + Umschlag) auf einmal.
    * Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
    * unassignedOnly wird bewusst NICHT mitgenommen — das ist
    * semantisch ein separater Filter (issue #52), nicht ein #55-Filter.
@@ -279,7 +276,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   }
 
   /**
-   * True wenn mindestens einer der #55-Filter (Person/Budget) aktiv ist.
+   * True wenn mindestens einer der #55-Filter (Person/Umschlag) aktiv ist.
    * Praktisch fuer Empty-State-Text-Varianten.
    */
   const hasLocalFilters = computed(

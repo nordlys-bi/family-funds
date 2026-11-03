@@ -299,20 +299,18 @@ describe('listReservedAllocations', () => {
 })
 
 describe('getAllocationBookingDate', () => {
-  const today = day(2026, 11, 20)
-
   it('keeps the period start from ledgerSince onwards', () => {
-    expect(getAllocationBookingDate(day(2026, 11, 16), day(2026, 11, 2), today)).toEqual(day(2026, 11, 16))
-    expect(getAllocationBookingDate(day(2026, 11, 2), day(2026, 11, 2, 18), today)).toEqual(day(2026, 11, 2))
+    expect(getAllocationBookingDate(day(2026, 11, 16), day(2026, 11, 2))).toEqual(day(2026, 11, 16))
+    expect(getAllocationBookingDate(day(2026, 11, 2), day(2026, 11, 2, 18))).toEqual(day(2026, 11, 2))
   })
 
   it('moves an earlier period start to ledgerSince so "Zu verteilen" is debited', () => {
     // Neuer Haushalt am 15., Monatsumschlag startet am 1.
-    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 11, 15, 18), today)).toEqual(day(2026, 11, 15))
+    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 11, 15, 18))).toEqual(day(2026, 11, 15))
   })
 
-  it('keeps the period start while ledgerSince is still in the future', () => {
-    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 12, 1), today)).toEqual(day(2026, 11, 1))
+  it('does not depend on the day of the first read, even with a future ledgerSince', () => {
+    expect(getAllocationBookingDate(day(2026, 11, 1), day(2026, 12, 1))).toEqual(day(2026, 12, 1))
   })
 })
 
@@ -332,6 +330,16 @@ describe('computePeriodAvailability', () => {
 
   it('returns no percentage when nothing was available', () => {
     expect(computePeriodAvailability({ balance: -15000, spent: 1000 }).percentUsed).toBeNull()
+  })
+})
+
+describe('computePeriodAvailability without money', () => {
+  it('shows an empty envelope without spending as unused, not overdrawn', () => {
+    expect(computePeriodAvailability({ balance: 0, spent: 0 }).percentUsed).toBe(0)
+  })
+
+  it('keeps null for a negative balance', () => {
+    expect(computePeriodAvailability({ balance: -15000, spent: 0 }).percentUsed).toBeNull()
   })
 })
 

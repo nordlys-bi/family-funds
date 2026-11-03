@@ -172,6 +172,8 @@ onMounted(async () => {
   await reload()
 })
 watch(householdId, reload)
+// Der globale Erfassen-Dialog bucht auch von hier aus: Saldo und Verlauf neu holen.
+watch(useQuickCapture().savedTick, reload)
 // Vorgaenger/Nachfolger-Links bleiben in derselben Komponente — bei neuer
 // ID alles neu laden statt veraltete Daten zu zeigen.
 watch(envelopeId, () => {
@@ -429,6 +431,91 @@ async function saveAllocation() {
     allocationError.value = 'Zuteilung konnte nicht geändert werden: ' + (error.statusMessage || error.message)
   } finally {
     allocationSaving.value = false
+  }
+}
+
+// === Umbuchung aendern oder loeschen ======================================
+// Eine Buchung wie Ausgaben auch, also fuer alle Mitglieder (ADR-0005). Die
+// Seiten bleiben fest: Fuer ein anderes Ziel loeschen und neu buchen.
+const confirm = useAskConfirm()
+const transferEdit = ref<{ id: string; originalDate: string; amount: number | null; date: Date | null; note: string; title: string } | null>(null)
+const transferSaving = ref(false)
+const transferEditError = ref<string | null>(null)
+const transferDialogOpen = computed({
+  get: () => transferEdit.value !== null,
+  set: (open) => { if (!open) transferEdit.value = null },
+})
+
+function openTransferEdit(entry: EnvelopeHistoryEntry) {
+  transferEditError.value = null
+  transferEdit.value = {
+    id: entry.id!,
+    originalDate: entry.date,
+    amount: Math.abs(entry.amount) / 100,
+    date: parseDateInputString(entry.date),
+    note: entry.text ?? '',
+    title: entryTitle(entry),
+  }
+}
+
+async function saveTransferEdit() {
+  const edit = transferEdit.value
+  if (!edit || !householdId.value) return
+  if (!edit.amount || edit.amount <= 0) {
+    transferEditError.value = 'Betrag muss größer als 0 sein.'
+    return
+  }
+  if (!edit.date) {
+    transferEditError.value = 'Bitte ein Datum wählen.'
+    return
+  }
+  transferSaving.value = true
+  transferEditError.value = null
+  try {
+    // Datum nur bei einer Aenderung senden: Altbestand vor dem Startpunkt muss
+    // sich weiter korrigieren lassen, das prueft der Server am Datum.
+    const date = formatDateToInputString(edit.date)
+    await $fetch(`/api/households/${householdId.value}/transfers/${edit.id}`, {
+      method: 'PATCH',
+      body: { amount: edit.amount, note: edit.note, ...(date !== edit.originalDate ? { date } : {}) },
+    })
+    transferEdit.value = null
+    await reload()
+  } catch (error: any) {
+    transferEditError.value = error.data?.data?.reason === 'before-ledger'
+      ? 'Das Datum liegt vor dem Start von „Zu verteilen“. Bitte ein späteres Datum wählen.'
+      : 'Umbuchung konnte nicht geändert werden: ' + (error.statusMessage || error.message)
+  } finally {
+    transferSaving.value = false
+  }
+}
+
+async function removeTransfer() {
+  const edit = transferEdit.value
+  if (!edit || !householdId.value) return
+  // ConfirmSheet (issue #51): Umbuchungen werden hart geloescht, ohne Undo.
+  // Der Dialog schliesst vorher, sonst laege das Sheet unter seiner Maske.
+  transferEdit.value = null
+  const ok = await confirm.ask({
+    title: 'Umbuchung löschen?',
+    message: `${edit.title} über ${formatMoney(Math.round((edit.amount ?? 0) * 100))} wird endgültig entfernt. Beide Salden ändern sich.`,
+    tone: 'danger',
+    confirmLabel: 'Endgültig löschen',
+  })
+  if (!ok) {
+    transferEdit.value = edit
+    return
+  }
+  transferSaving.value = true
+  transferEditError.value = null
+  try {
+    await $fetch(`/api/households/${householdId.value}/transfers/${edit.id}`, { method: 'DELETE' })
+    await reload()
+  } catch (error: any) {
+    transferEdit.value = edit
+    transferEditError.value = 'Umbuchung konnte nicht gelöscht werden: ' + (error.statusMessage || error.message)
+  } finally {
+    transferSaving.value = false
   }
 }
 
@@ -690,7 +777,7 @@ function onDeleted(id: string) {
                 <div v-show="openGroups.has(group.start)" :id="`period-${group.start}-list`">
                   <!-- Gebuchte Zuteilungen: einzeln aenderbar, 0 heisst ausgesetzt (ADR-0005). -->
                   <p v-for="entry in group.allocationEntries" :key="entry.id ?? entry.date" class="period-group__allocation">
-                    {{ entry.amount === 0 ? 'Zuteilung ausgesetzt' : `Zuteilung ${compactMoney(entry.amount)}` }}{{ chainSuffix(entry) }}
+                    {{ entry.amount === 0 ? '0 € zugeteilt' : `Zuteilung ${compactMoney(entry.amount)}` }}{{ chainSuffix(entry) }}
                     <button
                       v-if="canManageHousehold && entry.id"
                       type="button"
@@ -720,6 +807,15 @@ function onDeleted(id: string) {
                           <template v-else>{{ entryTitle(entry) }}</template>
                         </span>
                         <span v-if="entry.type === 'transfer' && entry.text" class="entry__note">{{ entry.text }}</span>
+                        <button
+                          v-if="entry.type === 'transfer' && entry.id"
+                          type="button"
+                          class="link-button entry__edit"
+                          :aria-label="`Umbuchung vom ${shortDate(entry.date)} ändern`"
+                          @click="openTransferEdit(entry)"
+                        >
+                          ändern
+                        </button>
                         <span v-if="chainSuffix(entry)" class="entry__note">{{ chainSuffix(entry).trim() }}</span>
                       </span>
                       <span class="entry__amount" :class="{ 'is-negative': entry.amount < 0 }">
@@ -784,6 +880,30 @@ function onDeleted(id: string) {
           <MoneyInput id="allocation-amount" v-model="allocationEdit.amount" :currency="currencyCode" :min="0" />
         </FormFieldRow>
         <Message v-if="allocationError" severity="error" variant="simple">{{ allocationError }}</Message>
+      </FormDialog>
+
+      <FormDialog
+        v-model:visible="transferDialogOpen"
+        :header="transferEdit?.title ?? 'Umbuchung ändern'"
+        submit-label="Speichern"
+        :saving="transferSaving"
+        @save="saveTransferEdit"
+        @cancel="transferEdit = null"
+      >
+        <template v-if="transferEdit">
+          <FormFieldRow label="Betrag" html-for="transfer-edit-amount">
+            <MoneyInput id="transfer-edit-amount" v-model="transferEdit.amount" :currency="currencyCode" />
+          </FormFieldRow>
+          <FormFieldRow label="Datum" html-for="transfer-edit-date">
+            <DatePicker id="transfer-edit-date" v-model="transferEdit.date" date-format="dd.mm.yy" show-icon />
+          </FormFieldRow>
+          <FormFieldRow label="Notiz" html-for="transfer-edit-note" wide>
+            <InputText id="transfer-edit-note" v-model="transferEdit.note" />
+          </FormFieldRow>
+          <p class="allocation-hint">Für ein anderes Ziel die Umbuchung löschen und neu buchen.</p>
+          <button type="button" class="link-button" :disabled="transferSaving" @click="removeTransfer">Umbuchung löschen</button>
+        </template>
+        <Message v-if="transferEditError" severity="error" variant="simple">{{ transferEditError }}</Message>
       </FormDialog>
 
       <EnvelopeActionDialogs

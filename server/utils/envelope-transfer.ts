@@ -37,7 +37,7 @@ export async function assertTransferSides(householdId: string, sides: TransferSi
   if (sides.fromEnvelopeId === null || sides.toEnvelopeId === null) {
     const { ledgerSince } = await prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true } })
     if (dayKey(date) < dayKey(ledgerSince)) {
-      throw createError({ statusCode: 400, statusMessage: 'Date is before the start of "Zu verteilen".' })
+      throw createError({ statusCode: 400, statusMessage: 'Date is before the start of "Zu verteilen".', data: { reason: 'before-ledger' } })
     }
   }
   const ids = [sides.fromEnvelopeId, sides.toEnvelopeId].filter((id): id is string => id !== null)

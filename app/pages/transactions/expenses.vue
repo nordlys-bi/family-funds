@@ -60,10 +60,6 @@ const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
 // --- Month-Filter via Composable (issue #9) ---
 // Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
 // WICHTIG: die Refs MÜSSEN top-level destructuriert werden, damit
@@ -569,7 +565,7 @@ const saveTransaction = async () => {
       ...(editingTransactionId.value ? { id: editingTransactionId.value } : {}),
       amount: transactionForm.value.amount ?? undefined,
       description: transactionForm.value.description,
-      date: transactionForm.value.date ? formatDateInput(transactionForm.value.date) : undefined,
+      date: transactionForm.value.date ? formatDateToInputString(transactionForm.value.date) : undefined,
       envelopeId: transactionForm.value.envelopeId || null,
     }
     await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
@@ -1098,7 +1094,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
         <Select
           id="transaction-envelope"
-          v-model="transactionForm.budgetId"
+          v-model="transactionForm.envelopeId"
           :options="envelopeSelectOptions"
           optionLabel="label"
           optionValue="value"

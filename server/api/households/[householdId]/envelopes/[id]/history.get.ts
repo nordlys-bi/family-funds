@@ -16,7 +16,7 @@ import { parseDateInput } from '../../../../../utils/planning'
 import { dayKey } from '../../../../../utils/period'
 import { ensureAllocations, envelopeBalanceSelect } from '../../../../../utils/envelope-store'
 import {
-  computeEnvelopeHistoryPoints,
+  clampHistoryFrom, computeEnvelopeHistoryPoints,
   formatDayKey,
   getDefaultHistoryRange,
   getEnvelopeChain,
@@ -65,6 +65,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
   }
   const chain = getEnvelopeChain(envelopes, envelopeId)
+  const start = clampHistoryFrom(chain, from, to)
   const chainIds = chain.map((envelope) => envelope.id)
 
   const [expenses, incomes, transfers] = await Promise.all([
@@ -88,13 +89,14 @@ export default defineEventHandler(async (event) => {
 
   return {
     envelopeId,
-    from: day(from),
+    from: day(start),
     to: day(to),
     chain: chain.map((envelope) => ({ id: envelope.id, name: envelope.name, closedAt: envelope.closedAt })),
-    points: computeEnvelopeHistoryPoints(chain, inputs, from, to).map((point) => ({ ...point, date: day(point.date) })),
-    entries: listEnvelopeHistoryEntries(chain, inputs, from, to).map((entry) => ({
+    points: computeEnvelopeHistoryPoints(chain, inputs, start, to).map((point) => ({ ...point, date: day(point.date) })),
+    entries: listEnvelopeHistoryEntries(chain, inputs, start, to).map((entry) => ({
       ...entry,
       date: day(entry.date),
+      periodStart: entry.periodStart ? day(entry.periodStart) : null,
       envelopeName: names.get(entry.envelopeId) ?? null,
       counterpartName: entry.counterpartId ? names.get(entry.counterpartId) ?? null : null,
     })),

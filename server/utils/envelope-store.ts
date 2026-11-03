@@ -92,7 +92,7 @@ export async function ensureAllocations(householdId: string, today: Date = new D
       fromEnvelopeId: null,
       toEnvelopeId: envelope.id,
       amount: due.amount,
-      date: getAllocationBookingDate(due.periodStart, ledgerSince, today),
+      date: getAllocationBookingDate(due.periodStart, ledgerSince),
       allocationPeriodStart: due.periodStart,
     })),
   )

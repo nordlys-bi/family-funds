@@ -2,9 +2,8 @@
   DashboardSavingsList — die Sparziel-Progress-Liste des Dashboards.
 
   Pattern: pro Sparziel eine Zeile mit Name, Progressbar und
-  "currentAmount / targetAmount · +monthlyRate / Monat". Wird vom
-  Dashboard-Endpoint aggregiert geliefert (currentAmount = Summe
-  aller SavingsGoalExecution-Amounts, siehe issue #12).
+  "currentAmount / targetAmount · +monthlyRate / Monat". Die Daten kommen
+  aus den offenen Umschlaegen mit Zielbetrag (currentAmount = Saldo).
 
   Issue #97: Das Dashboard zeigt nur `limit` Zeilen (Default 3) + einen
   "+N weitere"-Hinweis; "Alle anzeigen" im Panel-Header fuehrt zur

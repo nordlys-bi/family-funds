@@ -20,6 +20,7 @@ export type EnvelopeCurrentPeriod = {
   /** Aktueller Saldo + Ausgaben der Periode. */
   available: number
   /** Ausgaben ÷ verfuegbar in %; null, wenn nichts verfuegbar war. */
+  /** null = im Minus, ohne dass etwas verfuegbar war. */
   percentUsed: number | null
 }
 
@@ -56,6 +57,8 @@ export type EnvelopeHistoryEntry = {
   type: 'allocation' | 'income' | 'expense' | 'transfer' | 'carryover'
   id: string | null
   date: string
+  /** Periode einer Zuteilung; kann bei Nachbuchungen vom Datum abweichen. */
+  periodStart: string | null
   /** Wirkung auf den Saldo: + erhoeht, − senkt. */
   amount: number
   envelopeId: string

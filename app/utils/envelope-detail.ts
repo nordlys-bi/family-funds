@@ -1,14 +1,14 @@
 /**
- * Reine Helfer fuer die Budget-Detailseite (ADR-0004): Trend im Kopf,
- * Prognose zum Periodenende, Textzusammenfassung des Diagramms,
- * Einrasten beim Scrubbing und die nach Budgetperiode gruppierte
- * Ereignisliste.
+ * Reine Helfer fuer die Umschlag-Detailseite (ADR-0005): Trend im Kopf,
+ * Textzusammenfassung des Diagramms, Einrasten beim Scrubbing und die nach
+ * Periode gruppierte Ereignisliste.
  *
  * Alles auf `YYYY-MM-DD`-Strings und Cent-Betraegen, ohne DOM — die Seite
  * und `EnvelopeBalanceChart.vue` zeichnen nur noch.
  */
 import type { Frequency } from '~/types/planning'
 import { dayNumber, type BalancePoint } from './balance-chart'
+import { formatDateToInputString } from './planning-format'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -90,7 +90,7 @@ export function nearestIndex(values: number[], target: number): number {
 }
 
 /**
- * Beginn der Budgetperiode, die `date` enthaelt — gleiches Raster wie der
+ * Beginn der Periode, die `date` enthaelt — gleiches Raster wie der
  * Server (`startOfPeriod`): WEEKLY montags, MONTHLY zum 1., QUARTERLY zum
  * Quartalsbeginn, YEARLY zum 1.1. ONCE hat keine Unterteilung (null).
  */
@@ -134,7 +134,7 @@ export function nextPeriodStartDay(start: string, frequency: Frequency): string 
   }
 }
 
-type GroupableEntry = { type: string; date: string; amount: number }
+type GroupableEntry = { type: string; date: string; periodStart?: string | null; amount: number }
 
 export type BalanceEntryGroup<E extends GroupableEntry> = {
   /** Periodenbeginn (bei ONCE: fruehester Eintrag) — auch der Schluessel. */
@@ -156,11 +156,11 @@ export type BalanceEntryGroup<E extends GroupableEntry> = {
 }
 
 /**
- * Ereignisliste nach Budgetperiode gruppiert, neueste Periode zuerst.
+ * Ereignisliste nach Periode gruppiert, neueste Periode zuerst.
  * Zuteilungen wandern in den Kopf ("+400 · −312 · Ende 88 €"), weil sie
  * in jeder Periode gleich aussehen und sonst die Haelfte der Zeilen fuellen.
  *
- * Eintraege von Vorgaengern der Kette landen im Raster DIESES Budgets — die
+ * Eintraege von Vorgaengern der Kette landen im Raster DIESES Umschlags — die
  * Liste beantwortet "was ist in meinem Periodenraster passiert?".
  */
 export function groupEntriesByPeriod<E extends GroupableEntry>(
@@ -172,7 +172,9 @@ export function groupEntriesByPeriod<E extends GroupableEntry>(
   const groups = new Map<string, BalanceEntryGroup<E>>()
   const onceStart = sorted[0]?.date ?? ''
   for (const entry of sorted) {
-    const start = periodStartDay(entry.date, frequency) ?? onceStart
+    // Nachgebuchte Zuteilungen sind auf den Start von "Zu verteilen" datiert,
+    // gehoeren aber in ihre eigene Periode.
+    const start = periodStartDay(entry.periodStart ?? entry.date, frequency) ?? onceStart
     let group = groups.get(start)
     if (!group) {
       group = {
@@ -204,7 +206,7 @@ export function groupEntriesByPeriod<E extends GroupableEntry>(
 }
 
 /**
- * Startdatum fuer den Zeitraum "Alles": fruehestes `balanceSince` des Budgets
+ * Startdatum fuer den Zeitraum "Alles": fruehestes `balanceSince` des Umschlags
  * und aller Vorgaenger, die (auch ueber Ketten) in es geschlossen wurden —
  * der Verlauf zeigt deren Saldo vor dem Uebertrag mit. Begrenzt auf
  * `maxDays` vor `today`, weil der Server laengere Zeitraeume ablehnt.
@@ -237,9 +239,7 @@ export function allHistoryFrom(
 }
 
 function toLocalDay(value: string): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
-  const date = new Date(value)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : formatDateToInputString(new Date(value))
 }
 
 const PREVIOUS_PERIOD_LABELS: Record<Frequency, string | null> = {
@@ -256,7 +256,7 @@ const PREVIOUS_PERIOD_LABELS: Record<Frequency, string | null> = {
  * Zeitraums waere oft nur der Saldo noch einmal — der Zeitraum beginnt
  * meist am Saldo-Start, also bei 0.
  *
- * null, wenn es keine Vorperiode im geladenen Verlauf gibt (Budget startet
+ * null, wenn es keine Vorperiode im geladenen Verlauf gibt (Umschlag startet
  * in dieser Periode, oder der Zeitraum reicht nicht zurueck) und bei ONCE.
  */
 export function trendVersusPreviousPeriod(

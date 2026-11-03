@@ -100,12 +100,6 @@ const transferBeforeLedger = computed(() =>
 )
 const bookingBeforeLedger = computed(() => !isTransfer.value && beforeLedger.value && !form.value.envelopeId)
 
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
-    value.getDate(),
-  ).padStart(2, '0')}`
-}
-
 function resetForm() {
   form.value = { amount: null, description: '', date: new Date(), envelopeId: '', fromEnvelopeId: '', toEnvelopeId: '' }
   errorMessage.value = null
@@ -140,7 +134,7 @@ function bookingRequest() {
         toEnvelopeId: form.value.toEnvelopeId || null,
         amount: form.value.amount,
         note: form.value.description,
-        date: formatDateInput(form.value.date),
+        date: formatDateToInputString(form.value.date),
       },
     }
   }
@@ -150,7 +144,7 @@ function bookingRequest() {
       kind: kind.value,
       amount: form.value.amount,
       description: form.value.description,
-      date: formatDateInput(form.value.date),
+      date: formatDateToInputString(form.value.date),
       envelopeId: form.value.envelopeId || null,
     },
   }
