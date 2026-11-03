@@ -58,7 +58,7 @@ const form = ref({
 const saving = ref(false)
 const errorMessage = ref<string | null>(null)
 
-const { envelopes, unassignedFree, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
+const { envelopes, unassignedFree, ledgerSince, loaded: envelopesLoaded, failed: envelopesFailed, load: loadEnvelopes } = useEnvelopeOptions()
 // ADR-0005: Nur Umschlaege anbieten, die am Buchungsdatum Buchungen annehmen.
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
@@ -90,6 +90,15 @@ const transferOverdraws = computed(() =>
   && transferSourceBalance.value != null
   && Math.round(form.value.amount * 100) > transferSourceBalance.value,
 )
+
+// ADR-0005: Vor dem Start von "Zu verteilen" zaehlt eine Buchung ohne Umschlag
+// nur in den Auswertungen; eine Umbuchung lehnt der Server dort ab.
+const beforeLedger = computed(() => Boolean(ledgerSince.value && form.value.date && isBeforeLedger(form.value.date, ledgerSince.value)))
+const ledgerStartLabel = computed(() => formatPlanningDate(ledgerSince.value))
+const transferBeforeLedger = computed(() =>
+  isTransfer.value && beforeLedger.value && (!form.value.fromEnvelopeId || !form.value.toEnvelopeId),
+)
+const bookingBeforeLedger = computed(() => !isTransfer.value && beforeLedger.value && !form.value.envelopeId)
 
 function formatDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(
@@ -164,6 +173,10 @@ async function save() {
   }
   if (isTransfer.value && form.value.fromEnvelopeId === form.value.toEnvelopeId) {
     errorMessage.value = 'Quelle und Ziel müssen sich unterscheiden.'
+    return
+  }
+  if (transferBeforeLedger.value) {
+    errorMessage.value = `„Zu verteilen“ startet am ${ledgerStartLabel.value}. Bitte ein späteres Datum wählen.`
     return
   }
   saving.value = true
@@ -246,6 +259,9 @@ async function save() {
       <Message v-if="transferOverdraws" severity="warn" variant="simple" class="quick-capture__error">
         Die Quelle rutscht dadurch ins Minus.
       </Message>
+      <Message v-if="transferBeforeLedger" severity="warn" variant="simple" class="quick-capture__error">
+        „Zu verteilen“ startet am {{ ledgerStartLabel }}. Umbuchungen damit sind erst ab diesem Tag möglich.
+      </Message>
     </template>
     <FormFieldRow v-else label="Umschlag" html-for="quick-capture-envelope" wide>
       <Select
@@ -257,6 +273,13 @@ async function save() {
         placeholder="Zu verteilen"
       />
     </FormFieldRow>
+
+    <Message v-if="envelopesFailed" severity="warn" variant="simple" class="quick-capture__error">
+      Umschläge konnten nicht geladen werden.
+    </Message>
+    <Message v-if="bookingBeforeLedger" severity="info" variant="simple" class="quick-capture__error">
+      „Zu verteilen“ startet am {{ ledgerStartLabel }}. Diese Buchung zählt nur in den Auswertungen.
+    </Message>
 
     <FormFieldRow :label="isTransfer ? 'Notiz' : 'Beschreibung'" html-for="quick-capture-description" wide>
       <InputText

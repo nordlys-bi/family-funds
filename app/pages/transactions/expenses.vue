@@ -155,7 +155,7 @@ const showFirstTimeEmpty = computed(
   () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
 )
 
-const { envelopes: envelopeOptions, load: loadEnvelopes } = useEnvelopeOptions()
+const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
 
 // Issue #55: Option-Listen fuer die Filter-Selects in der Toolbar.
 // Bewusst getrennt von `envelopeSelectOptions` (Dialog), weil:
@@ -198,6 +198,7 @@ const envelopeSelectOptions = computed(() => [
     .map((envelope) => ({ label: envelope.name, value: envelope.id })),
 ])
 watch(envelopeSelectOptions, (options) => {
+  if (!envelopesLoaded.value) return
   if (transactionForm.value.envelopeId && !options.some((option) => option.value === transactionForm.value.envelopeId)) {
     transactionForm.value.envelopeId = ''
   }

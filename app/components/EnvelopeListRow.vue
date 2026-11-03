@@ -29,7 +29,7 @@ const props = defineProps<{
 const balance = computed(() => props.envelope.balance.balance)
 // Stichtag erreicht: Der Endsaldo steckt bereits im Ziel (ADR-0005),
 // also neutral statt gruen/rot. Ein Stichtag in der Zukunft ist noch offen.
-const isClosed = computed(() => Boolean(props.envelope.closedAt && new Date(props.envelope.closedAt) <= new Date()))
+const isClosed = computed(() => !isEnvelopeOpenOn(props.envelope))
 const period = computed(() => props.envelope.currentPeriod)
 const isRunning = computed(() => props.envelope.group === 'RUNNING')
 const targetPercent = computed(() => {

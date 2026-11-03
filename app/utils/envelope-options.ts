@@ -53,6 +53,19 @@ export function isEnvelopeBookableOn(
   return key >= dayKey(envelope.balanceSince) && (!envelope.closedAt || key < dayKey(envelope.closedAt))
 }
 
+/**
+ * Ist der Umschlag am Tag `date` noch offen? Tagesgenau wie der Server: Am
+ * Stichtag selbst ist er schon geschlossen, auch vor 12:00.
+ */
+export function isEnvelopeOpenOn(envelope: Pick<EnvelopeOption, 'closedAt'>, date: string | Date = new Date()): boolean {
+  return !envelope.closedAt || dayKey(date) < dayKey(envelope.closedAt)
+}
+
+/** Liegt `date` vor dem Start von "Zu verteilen" (`ledgerSince`)? */
+export function isBeforeLedger(date: string | Date, ledgerSince: string | Date): boolean {
+  return dayKey(date) < dayKey(ledgerSince)
+}
+
 /** Die am Buchungsdatum buchbaren Umschlaege; ohne Datum alle offenen. */
 export function envelopesBookableOn<T extends EnvelopeOption>(envelopes: T[], date: string | Date | null | undefined): T[] {
   if (!date) return envelopes.filter((envelope) => !envelope.closedAt)

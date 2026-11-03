@@ -15,6 +15,7 @@ type AllocationRow = {
   id: string
   frequency: Frequency
   balanceSince: Date
+  allocationsSince: Date | null
   closedAt: Date | null
   allocationSource: AllocationSource
   allocationAmount: number | null
@@ -33,7 +34,13 @@ export function toAllocationRule(row: Pick<AllocationRow, 'allocationSource' | '
 }
 
 export function toAllocationEnvelope(row: AllocationRow): AllocationEnvelope {
-  return { frequency: row.frequency, balanceSince: row.balanceSince, closedAt: row.closedAt, rule: toAllocationRule(row) }
+  return {
+    frequency: row.frequency,
+    balanceSince: row.balanceSince,
+    allocationsSince: row.allocationsSince,
+    closedAt: row.closedAt,
+    rule: toAllocationRule(row),
+  }
 }
 
 /**
@@ -57,6 +64,7 @@ export async function ensureAllocations(householdId: string, today: Date = new D
       id: true,
       frequency: true,
       balanceSince: true,
+      allocationsSince: true,
       closedAt: true,
       allocationSource: true,
       allocationAmount: true,

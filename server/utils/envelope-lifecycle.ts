@@ -89,6 +89,27 @@ export function assertEnvelopeAcceptsBooking(envelope: { closedAt: Date | null; 
   }
 }
 
+/**
+ * Fuehrt die Kette der Uebertraege ab `targetId` zurueck zu `envelopeId`?
+ * A zum 1.12. nach B, danach B zum 1.11. nach A: Beide sind am jeweiligen
+ * Stichtag offen, das Geld kaeme aber nie mehr in einem offenen Umschlag an.
+ */
+export function wouldCreateCarryoverCycle(
+  envelopeId: string,
+  targetId: string,
+  envelopes: Array<{ id: string; carryoverToEnvelopeId: string | null }>,
+): boolean {
+  const seen = new Set<string>()
+  let current: string | null = targetId
+  while (current && !seen.has(current)) {
+    if (current === envelopeId) return true
+    seen.add(current)
+    const id: string = current
+    current = envelopes.find((item) => item.id === id)?.carryoverToEnvelopeId ?? null
+  }
+  return false
+}
+
 type CloseEnvelope = {
   id: string
   householdId: string
@@ -104,7 +125,8 @@ type CloseEnvelope = {
  * - Stichtag ist ein Periodenbeginn, damit keine Periode zugeteilt, aber nur
  *   teilweise genutzt wird, und nicht vor dem Startpunkt.
  * - Ein Ziel-Umschlag liegt im selben Haushalt, ist nicht der Umschlag
- *   selbst und zum Stichtag noch offen — das schliesst Zyklen aus.
+ *   selbst und zum Stichtag noch offen. Zyklen schliesst das nicht aus, wenn
+ *   das Ziel spaeter schliesst, siehe `wouldCreateCarryoverCycle`.
  * - Wiederoeffnen/erneutes Schliessen ist nicht vorgesehen.
  *
  * `targetRequested` unterscheidet "Zu verteilen gewaehlt" von "Ziel-ID

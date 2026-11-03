@@ -75,7 +75,7 @@ const targetPercent = computed(() => {
   const target = envelope.value?.targetAmount
   return target ? Math.max(0, balance.value / target) * 100 : null
 })
-const isClosed = computed(() => Boolean(envelope.value?.closedAt && new Date(envelope.value.closedAt) <= new Date()))
+const isClosed = computed(() => Boolean(envelope.value && !isEnvelopeOpenOn(envelope.value)))
 const hasClosingDate = computed(() => Boolean(envelope.value?.closedAt))
 const successor = computed(() =>
   envelope.value?.carryoverToEnvelopeId ? envelopesById.value.get(envelope.value.carryoverToEnvelopeId) ?? null : null,
@@ -131,21 +131,15 @@ const history = ref<EnvelopeHistoryResponse | null>(null)
 const historyLoading = ref(false)
 const historyError = ref<string | null>(null)
 
-function isoDay(date: Date) {
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${date.getFullYear()}-${month}-${day}`
-}
-
 function historyFrom(to: Date): string {
   if (months.value === 0) {
     // Ohne geladene Umschlag-Liste (erster Aufruf laeuft parallel) kennt die
     // Seite balanceSince noch nicht — dann das Server-Maximum.
-    return allHistoryFrom(envelopeId.value, envelopes.value, isoDay(to), MAX_HISTORY_DAYS)
+    return allHistoryFrom(envelopeId.value, envelopes.value, formatDateToInputString(to), MAX_HISTORY_DAYS)
   }
   const from = new Date(to)
   from.setMonth(from.getMonth() - months.value)
-  return isoDay(from)
+  return formatDateToInputString(from)
 }
 
 async function loadHistory() {
@@ -156,7 +150,7 @@ async function loadHistory() {
   try {
     history.value = await $fetch<EnvelopeHistoryResponse>(
       `/api/households/${householdId.value}/envelopes/${envelopeId.value}/history`,
-      { query: { from: historyFrom(to), to: isoDay(to) } },
+      { query: { from: historyFrom(to), to: formatDateToInputString(to) } },
     )
   } catch (error: any) {
     history.value = null
@@ -307,7 +301,7 @@ function groupLabel(group: { start: string; end: string | null }) {
 // gesuchte, die alten bleiben einen Tipp entfernt.
 const openGroups = ref<Set<string>>(new Set())
 watch(groups, (next) => {
-  const current = envelope.value ? periodStartDay(isoDay(new Date()), envelope.value.frequency) : null
+  const current = envelope.value ? periodStartDay(formatDateToInputString(new Date()), envelope.value.frequency) : null
   const initial = next.find((group) => group.start === current) ?? next[0]
   openGroups.value = new Set(initial ? [initial.start] : [])
 })

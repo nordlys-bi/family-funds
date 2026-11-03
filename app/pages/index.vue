@@ -60,7 +60,7 @@ const monthLabel = computed(() =>
 const summary = computed(() => snapshot.value?.monthSummary ?? null)
 const envelopes = computed(() => snapshot.value?.envelopes ?? [])
 const unassigned = computed(() => snapshot.value?.unassigned ?? { balance: 0, reserved: 0, free: 0 })
-const isOpen = (envelope: EnvelopeItem) => !envelope.closedAt || new Date(envelope.closedAt) > new Date()
+const isOpen = (envelope: EnvelopeItem) => isEnvelopeOpenOn(envelope)
 // Karten: alle offenen laufenden Ausgaben mit Periode.
 const runningEnvelopes = computed(() =>
   envelopes.value.filter((envelope) => envelope.group === 'RUNNING' && envelope.currentPeriod && isOpen(envelope)),

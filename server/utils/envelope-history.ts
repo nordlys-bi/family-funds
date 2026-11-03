@@ -101,12 +101,14 @@ export function computeEnvelopeHistoryPoints(
   return days(from, to).map((date) => {
     const balances = computeEnvelopeBalances(chain, inputs, date)
     const key = dayKey(date)
-    const chainBalance = (envelope: BalanceEnvelope): number => {
+    // `seen` wie in getEnvelopeChain: Altdaten koennen einen Zyklus enthalten.
+    const chainBalance = (envelope: BalanceEnvelope, seen = new Set<string>()): number => {
+      seen.add(envelope.id)
       let total = balances.get(envelope.id)?.balance ?? 0
       for (const predecessor of chain) {
-        if (predecessor.carryoverToEnvelopeId !== envelope.id || !predecessor.closedAt) continue
+        if (predecessor.carryoverToEnvelopeId !== envelope.id || !predecessor.closedAt || seen.has(predecessor.id)) continue
         // Noch nicht eingeflossen: zaehlt neben dem Ziel, sonst steckt er schon drin.
-        if (key < carryoverInflowKey(predecessor, envelope.balanceSince)) total += chainBalance(predecessor)
+        if (key < carryoverInflowKey(predecessor, envelope.balanceSince)) total += chainBalance(predecessor, seen)
       }
       return total
     }
