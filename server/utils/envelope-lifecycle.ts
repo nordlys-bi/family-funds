@@ -90,6 +90,18 @@ export function assertEnvelopeAcceptsBooking(envelope: { closedAt: Date | null; 
 }
 
 /**
+ * Laeuft der Plan ueber den Stichtag seines Umschlags hinaus? "Als bezahlt
+ * markieren" erbt den Umschlag und wuerde dann dauerhaft scheitern, ein Ziel
+ * mit Zuteilung aus Plaenen bekaeme nichts fuer ihn. Ein einmaliger Plan vor
+ * dem Stichtag ist erledigt, ein beendeter ebenso.
+ */
+export function planRunsPast(plan: { frequency: Frequency; startDate: Date; endDate: Date | null }, closedAt: Date) {
+  const closedKey = dayKey(closedAt)
+  if (plan.frequency === 'ONCE') return dayKey(plan.startDate) >= closedKey
+  return !plan.endDate || dayKey(plan.endDate) >= closedKey
+}
+
+/**
  * Fuehrt die Kette der Uebertraege ab `targetId` zurueck zu `envelopeId`?
  * A zum 1.12. nach B, danach B zum 1.11. nach A: Beide sind am jeweiligen
  * Stichtag offen, das Geld kaeme aber nie mehr in einem offenen Umschlag an.
