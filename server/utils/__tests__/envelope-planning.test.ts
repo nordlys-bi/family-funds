@@ -201,6 +201,78 @@ describe('income plans', () => {
   })
 })
 
+describe('plans and the closing date of their envelope', () => {
+  const closed = envelope({ allocationSource: 'NONE', allocationAmount: null, closedAt: day(2026, 7, 1) })
+  const ended = fixedCostPlan({ endDate: day(2026, 6, 30) })
+  const rejected = { statusCode: 409, data: { reason: 'active-plans' } }
+
+  it.each(['fixedCostPlan', 'incomePlan'] as const)('createPlan rejects a %s running past the closing date', async (kind) => {
+    const { tables, ctx } = setup({ envelope: [closed] })
+    await expect(createPlan(HH, kind, planValues, ctx)).rejects.toMatchObject(rejected)
+    expect(tables[kind]).toEqual([])
+  })
+
+  it('createPlan allows a plan that ended before the closing date', async () => {
+    const { tables, ctx } = setup({ envelope: [closed] })
+    await createPlan(HH, 'fixedCostPlan', { ...planValues, startDate: day(2026, 1, 1), endDate: day(2026, 6, 30) }, ctx)
+    expect(tables.fixedCostPlan).toHaveLength(1)
+  })
+
+  it.each(['fixedCostPlan', 'incomePlan'] as const)('updatePlan rejects extending a %s past the closing date', async (kind) => {
+    const { tables, ctx } = setup({ envelope: [closed], [kind]: [ended] })
+    await expect(updatePlan(HH, kind, 'plan', { endDate: day(2026, 12, 31) }, ctx)).rejects.toMatchObject(rejected)
+    expect(tables[kind][0]!.endDate).toEqual(day(2026, 6, 30))
+  })
+
+  it('updatePlan rejects removing the end date', async () => {
+    const { ctx } = setup({ envelope: [closed], fixedCostPlan: [ended] })
+    await expect(updatePlan(HH, 'fixedCostPlan', 'plan', { endDate: null }, ctx)).rejects.toMatchObject(rejected)
+  })
+
+  it('updatePlan rejects moving a running plan to a closed envelope', async () => {
+    const { ctx } = setup({ envelope: [envelope(), { ...closed, id: 'closed' }], fixedCostPlan: [fixedCostPlan()] })
+    await expect(updatePlan(HH, 'fixedCostPlan', 'plan', { envelopeId: 'closed' }, ctx)).rejects.toMatchObject(rejected)
+  })
+
+  it('updatePlan rejects turning a past one-off plan into a recurring one', async () => {
+    const once = fixedCostPlan({ frequency: 'ONCE', startDate: day(2026, 6, 1) })
+    const { ctx } = setup({ envelope: [closed], fixedCostPlan: [once] })
+    await expect(updatePlan(HH, 'fixedCostPlan', 'plan', { frequency: 'MONTHLY' }, ctx)).rejects.toMatchObject(rejected)
+  })
+
+  it('updatePlan allows moving an ended plan to a closed envelope', async () => {
+    const { tables, ctx } = setup({ envelope: [envelope(), { ...closed, id: 'closed' }], fixedCostPlan: [ended] })
+    await updatePlan(HH, 'fixedCostPlan', 'plan', { envelopeId: 'closed' }, ctx)
+    expect(tables.fixedCostPlan[0]).toMatchObject({ envelopeId: 'closed' })
+  })
+
+  it('updatePlan does not block harmless changes on an existing violation', async () => {
+    const { tables, ctx } = setup({ envelope: [closed], fixedCostPlan: [fixedCostPlan()] })
+    // Wie das Formular: alle Felder mit, Umschlag und Laufzeit unveraendert.
+    await updatePlan(HH, 'fixedCostPlan', 'plan', {
+      name: 'Kaltmiete',
+      amount: 90000,
+      frequency: 'MONTHLY',
+      startDate: new Date(2026, 0, 1, 12),
+      endDate: null,
+      envelopeId: 'env',
+    }, ctx)
+    expect(tables.fixedCostPlan[0]).toMatchObject({ name: 'Kaltmiete', amount: 90000 })
+  })
+
+  it('updatePlan lets an existing violation be fixed by moving the plan', async () => {
+    const { tables, ctx } = setup({ envelope: [closed, envelope({ id: 'open' })], fixedCostPlan: [fixedCostPlan()] })
+    await updatePlan(HH, 'fixedCostPlan', 'plan', { envelopeId: 'open' }, ctx)
+    expect(tables.fixedCostPlan[0]).toMatchObject({ envelopeId: 'open' })
+  })
+
+  it('applies to an envelope closing in the future as well', async () => {
+    const { ctx } = setup({ envelope: [envelope({ closedAt: day(2027, 1, 1) })] })
+    await expect(createPlan(HH, 'fixedCostPlan', planValues, ctx)).rejects.toMatchObject(rejected)
+    await createPlan(HH, 'fixedCostPlan', { ...planValues, endDate: day(2026, 12, 31) }, ctx)
+  })
+})
+
 describe('closeEnvelope', () => {
   const CLOSE_NOV = day(2026, 11, 1)
 
@@ -278,6 +350,22 @@ describe('closeEnvelope', () => {
 })
 
 describe('setLedgerStart', () => {
+  it('does not depend on whether someone read before the change', async () => {
+    const LATER = day(2026, 11, 15)
+    const withRead = setup()
+    await ensureAllocations(HH, NOV_15, withRead.db)
+    await setLedgerStart(HH, { ledgerSince: LATER }, withRead.ctx)
+
+    const withoutRead = setup()
+    await setLedgerStart(HH, { ledgerSince: LATER }, withoutRead.ctx)
+
+    const dates = (tables: InMemoryTables) => tables.envelopeTransfer.map((row) => row.date.getTime())
+    expect(dates(withoutRead.tables)).toEqual(dates(withRead.tables))
+    // Die begonnene Periode gehoert zum Bestand zum Stichtag.
+    expect(withoutRead.tables.envelopeTransfer.at(-1)!.date).toEqual(day(2026, 11, 1))
+    expect(withoutRead.tables.household[0]).toMatchObject({ ledgerSince: LATER })
+  })
+
   it('stores the opening balance', async () => {
     const { tables, ctx } = setup()
     await expect(setLedgerStart(HH, { openingBalance: 5000 }, ctx)).resolves.toMatchObject({ openingBalance: 5000 })

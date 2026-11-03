@@ -151,7 +151,10 @@ async function savePlan() {
     const form = planForm.value
     await afterChange(() => `${copy.value.plan} ${isEdit ? 'aktualisiert' : 'angelegt'}.${alreadyAllocatedHint(addedTo, form.frequency, form.startDate, form.endDate)}`)
   } catch (error: any) {
-    notice.value = { severity: 'error', text: `${copy.value.plan} konnte nicht gespeichert werden: ` + (error.statusMessage || error.message) }
+    const reason = error.data?.data?.reason === 'active-plans'
+      ? 'Der Plan läuft über den Stichtag des geschlossenen Umschlags hinaus. Bitte ein früheres Enddatum oder einen anderen Umschlag wählen.'
+      : error.statusMessage || error.message
+    notice.value = { severity: 'error', text: `${copy.value.plan} konnte nicht gespeichert werden: ${reason}` }
   } finally {
     planSaving.value = false
   }

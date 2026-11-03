@@ -15,7 +15,7 @@
 import { createError } from 'h3'
 import type { AllocationSource, EnvelopeGroup, Frequency, PrismaClient } from '@prisma/client'
 import { prisma } from './prisma'
-import { addPeriod, startOfPeriod } from './period'
+import { addPeriod, dayKey, startOfPeriod } from './period'
 import { ensureAllocations } from './envelope-store'
 import { assertAllocationRule, assertCanCloseEnvelope, planRunsPast, wouldCreateCarryoverCycle } from './envelope-lifecycle'
 import type { PlanningKind } from './planning'
@@ -54,15 +54,49 @@ export type LedgerStartChanges = {
   openingBalance?: number
 }
 
-async function assertPlanEnvelopeExists(db: PlanningDb, householdId: string, envelopeId: string | null | undefined) {
-  if (!envelopeId) return
-  const envelope = await db.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { id: true } })
+type PlanRun = Pick<PlanValues, 'envelopeId' | 'frequency' | 'startDate' | 'endDate'>
+
+/**
+ * Der Umschlag gehoert zum Haushalt, und der Plan laeuft nicht ueber dessen
+ * Stichtag hinaus: dieselbe Regel wie beim Schliessen, nur aus der anderen
+ * Richtung.
+ */
+async function assertPlanFitsEnvelope(db: PlanningDb, householdId: string, plan: PlanRun) {
+  if (!plan.envelopeId) return
+  const envelope = await db.envelope.findFirst({ where: { id: plan.envelopeId, householdId }, select: { closedAt: true } })
   if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
+  if (envelope.closedAt && planRunsPast(plan, envelope.closedAt)) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Plan must not run past the closing date of its envelope.',
+      data: { reason: 'active-plans' },
+    })
+  }
+}
+
+/**
+ * Prueft nur, wenn sich Umschlag oder Laufzeit wirklich aendern. Das Formular
+ * schickt immer alle Felder mit; ein bestehender Altfall soll eine Umbenennung
+ * oder einen neuen Betrag nicht blockieren.
+ */
+async function assertPlanChangeFitsEnvelope(db: PlanningDb, householdId: string, existing: PlanRun, changes: Partial<PlanValues>) {
+  const next: PlanRun = {
+    envelopeId: changes.envelopeId === undefined ? existing.envelopeId : changes.envelopeId,
+    frequency: changes.frequency ?? existing.frequency,
+    startDate: changes.startDate ?? existing.startDate,
+    endDate: changes.endDate === undefined ? existing.endDate : changes.endDate,
+  }
+  const endKey = (plan: PlanRun) => (plan.endDate ? dayKey(plan.endDate) : null)
+  const unchanged = next.envelopeId === existing.envelopeId
+    && next.frequency === existing.frequency
+    && dayKey(next.startDate) === dayKey(existing.startDate)
+    && endKey(next) === endKey(existing)
+  if (!unchanged) await assertPlanFitsEnvelope(db, householdId, next)
 }
 
 /** Einnahmen-Plaene fliessen in keine Zuteilung ein und buchen deshalb nicht nach. */
 export async function createPlan(householdId: string, kind: PlanningKind, values: PlanValues, { db = prisma, today = new Date() }: PlanningContext = {}) {
-  await assertPlanEnvelopeExists(db, householdId, values.envelopeId)
+  await assertPlanFitsEnvelope(db, householdId, values)
   if (kind === 'incomePlan') return db.incomePlan.create({ data: { householdId, ...values } })
 
   await ensureAllocations(householdId, today, db)
@@ -81,13 +115,13 @@ export async function updatePlan(
   if (kind === 'incomePlan') {
     const existing = await db.incomePlan.findFirst({ where })
     if (!existing) throw createError({ statusCode: 404, statusMessage: 'Income plan not found.' })
-    await assertPlanEnvelopeExists(db, householdId, changes.envelopeId)
+    await assertPlanChangeFitsEnvelope(db, householdId, existing, changes)
     return db.incomePlan.update({ where: { id: planId }, data: changes })
   }
 
   const existing = await db.fixedCostPlan.findFirst({ where })
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Fixed cost plan not found.' })
-  await assertPlanEnvelopeExists(db, householdId, changes.envelopeId)
+  await assertPlanChangeFitsEnvelope(db, householdId, existing, changes)
   await ensureAllocations(householdId, today, db)
   return db.fixedCostPlan.update({ where: { id: planId }, data: changes })
 }
@@ -210,8 +244,13 @@ export async function closeEnvelope(
   })
 }
 
-/** Startpunkt und Anfangsbestand von "Zu verteilen". */
-export async function setLedgerStart(householdId: string, changes: LedgerStartChanges, { db = prisma }: PlanningContext = {}) {
+/**
+ * Startpunkt und Anfangsbestand von "Zu verteilen". Das Buchungsdatum einer
+ * Zuteilung haengt vom Startpunkt ab, deshalb bucht auch seine Aenderung zuerst
+ * nach. Sonst hinge "Zu verteilen" davon ab, ob vorher jemand abgerufen hat.
+ */
+export async function setLedgerStart(householdId: string, changes: LedgerStartChanges, { db = prisma, today = new Date() }: PlanningContext = {}) {
+  if (changes.ledgerSince !== undefined) await ensureAllocations(householdId, today, db)
   return db.household.update({
     where: { id: householdId },
     data: changes,

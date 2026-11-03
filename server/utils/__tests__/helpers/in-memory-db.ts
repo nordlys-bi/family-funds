@@ -60,16 +60,21 @@ function violatesAllocationIndex(rows: Row[], row: Row) {
   return rows.some((other) => other.toEnvelopeId === row.toEnvelopeId && sameValue(other.allocationPeriodStart, row.allocationPeriodStart))
 }
 
+/** Kopien, damit sich Tests ueber geteilte Fixtures nicht gegenseitig beeinflussen. */
+function copyRows(rows: Row[] = []) {
+  return rows.map((row) => ({ ...row }))
+}
+
 export function createInMemoryDb(seed: Partial<InMemoryTables> = {}) {
   let nextId = 1
   const tables: InMemoryTables = {
-    household: [...(seed.household ?? [])],
-    envelope: [...(seed.envelope ?? [])],
-    envelopeTransfer: [...(seed.envelopeTransfer ?? [])],
-    fixedCostPlan: [...(seed.fixedCostPlan ?? [])],
-    incomePlan: [...(seed.incomePlan ?? [])],
-    expenseTransaction: [...(seed.expenseTransaction ?? [])],
-    incomeTransaction: [...(seed.incomeTransaction ?? [])],
+    household: copyRows(seed.household),
+    envelope: copyRows(seed.envelope),
+    envelopeTransfer: copyRows(seed.envelopeTransfer),
+    fixedCostPlan: copyRows(seed.fixedCostPlan),
+    incomePlan: copyRows(seed.incomePlan),
+    expenseTransaction: copyRows(seed.expenseTransaction),
+    incomeTransaction: copyRows(seed.incomeTransaction),
   }
 
   function model(name: keyof InMemoryTables, expand: (row: Row) => Row = (row) => row) {
