@@ -142,6 +142,24 @@ describe('POST /transactions — expense envelope assignment (regression guard)'
     const data = prismaMocks.expenseTransaction.create.mock.calls[0][0].data
     expect(data).toMatchObject({ envelopeId: 'env-housing', fixedCostPlanId: 'fc-1' })
   })
+
+  it.each([['another envelope', 'env-other'], ['"Zu verteilen"', null]])('keeps the plan envelope when the body names %s', async (_name, envelopeId) => {
+    prismaMocks.fixedCostPlan.findFirst.mockResolvedValue({ id: 'fc-1', envelopeId: 'env-housing' })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'expense', amount: 95000, date: '2026-11-01', fixedCostPlanId: 'fc-1', envelopeId }))
+
+    expect(prismaMocks.expenseTransaction.create.mock.calls[0][0].data.envelopeId).toBe('env-housing')
+  })
+
+  it('uses the body envelope when the plan has none', async () => {
+    prismaMocks.fixedCostPlan.findFirst.mockResolvedValue({ id: 'fc-1', envelopeId: null })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'expense', amount: 95000, date: '2026-11-01', fixedCostPlanId: 'fc-1', envelopeId: 'env-other' }))
+
+    expect(prismaMocks.expenseTransaction.create.mock.calls[0][0].data.envelopeId).toBe('env-other')
+  })
 })
 
 describe('POST /transactions — Gutschrift auf einen Umschlag (ADR-0005)', () => {
@@ -162,6 +180,15 @@ describe('POST /transactions — Gutschrift auf einen Umschlag (ADR-0005)', () =
 
     const data = prismaMocks.incomeTransaction.create.mock.calls[0][0].data
     expect(data.envelopeId).toBe('env-kids')
+  })
+
+  it.each([['another envelope', 'env-other'], ['"Zu verteilen"', null]])('keeps the plan envelope when the body names %s', async (_name, envelopeId) => {
+    prismaMocks.incomePlan.findFirst.mockResolvedValue({ id: 'p-1', envelopeId: 'env-kids' })
+    prismaMocks.envelope.findFirst.mockResolvedValue({ closedAt: null })
+
+    await handler(makeEvent({ kind: 'income', amount: 25500, date: '2026-11-03', incomePlanId: 'p-1', envelopeId }))
+
+    expect(prismaMocks.incomeTransaction.create.mock.calls[0][0].data.envelopeId).toBe('env-kids')
   })
 })
 
