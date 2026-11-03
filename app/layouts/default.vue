@@ -229,8 +229,9 @@ onBeforeUnmount(() => {
         <div v-if="isClerkMode" class="clerk-user-button">
           <UserButton :show-name="true" />
         </div>
+        <!-- Auch mit Clerk: Im UserButton-Menue allein waere Abmelden schwer zu finden,
+             und die mobile Navigation zeigt es ebenfalls immer. -->
         <Button
-          v-else
           label="Abmelden"
           icon="pi pi-power-off"
           severity="secondary"
@@ -353,6 +354,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  /* Sonst waechst die Spalte mit der Seite, und "Abmelden" rutscht auf langen
+     Seiten unter den sichtbaren Bereich. Die Navigation scrollt bei Bedarf selbst. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  height: 100dvh;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 200;
 }
@@ -525,6 +533,7 @@ onBeforeUnmount(() => {
 .clerk-user-button {
   display: flex;
   justify-content: center;
+  margin-bottom: 0.75rem;
 }
 
 .logout-btn {
