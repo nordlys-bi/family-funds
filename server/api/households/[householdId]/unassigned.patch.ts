@@ -12,12 +12,12 @@
  * Auth: `requireHouseholdOwner` — Planung.
  */
 import { createError, defineEventHandler, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../utils/household-access'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 import { parseDateInput } from '../../../utils/planning'
 import { parseMoneyToCentsAllowZero } from '../../../utils/envelope-lifecycle'
+import { setLedgerStart } from '../../../utils/envelope-planning'
 
 type UpdateUnassignedBody = {
   ledgerSince?: string
@@ -38,13 +38,9 @@ export default defineEventHandler(async (event) => {
   if (body.ledgerSince === undefined && body.openingBalance === undefined) {
     throw createError({ statusCode: 400, statusMessage: 'Nothing to update.' })
   }
-  const item = await prisma.household.update({
-    where: { id: householdId },
-    data: {
-      ...(body.ledgerSince !== undefined ? { ledgerSince: parseDateInput(body.ledgerSince, 'ledgerSince') } : {}),
-      ...(body.openingBalance !== undefined ? { openingBalance: parseSignedMoney(body.openingBalance) } : {}),
-    },
-    select: { ledgerSince: true, openingBalance: true },
+  const item = await setLedgerStart(householdId, {
+    ...(body.ledgerSince !== undefined ? { ledgerSince: parseDateInput(body.ledgerSince, 'ledgerSince') } : {}),
+    ...(body.openingBalance !== undefined ? { openingBalance: parseSignedMoney(body.openingBalance) } : {}),
   })
   return defineApiResponse({ kind: 'unassigned', item })
 })

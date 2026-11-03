@@ -64,17 +64,3 @@ export async function assertBookingEnvelope(householdId: string, envelopeId: str
   if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
   assertEnvelopeAcceptsBooking(envelope, date)
 }
-
-/** Umschlag eines Fixkosten- oder Einnahmen-Plans. `undefined` = nicht angegeben. */
-export async function parsePlanEnvelope(
-  householdId: string,
-  body: { envelopeId?: string | null },
-): Promise<string | null | undefined> {
-  if (body.envelopeId === undefined) return undefined
-  const envelopeId = body.envelopeId?.trim() || null
-  if (envelopeId) {
-    const envelope = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { id: true } })
-    if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
-  }
-  return envelopeId
-}

@@ -1,5 +1,4 @@
 import { defineEventHandler, createError, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../utils/household-access'
 import {
   assertFrequency,
@@ -10,8 +9,8 @@ import {
 } from '../../../utils/planning'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { ensureAllocations } from '../../../utils/envelope-store'
-import { parsePlanEnvelope } from '../../../utils/envelope-transfer'
+import { updatePlan } from '../../../utils/envelope-planning'
+import { parseEnvelopeSide } from '../../../utils/envelope-transfer'
 
 type PlanningUpdateBody = {
   kind: string
@@ -48,81 +47,14 @@ export default defineEventHandler(async (event) => {
 
   const name = body.name?.trim()
 
-  switch (kind) {
-    case 'incomePlan': {
-      const existing = await prisma.incomePlan.findFirst({
-        where: {
-          id: body.id,
-          householdId,
-        },
-      })
+  const item = await updatePlan(householdId, kind, body.id, {
+    ...(name ? { name } : {}),
+    ...(body.amount !== undefined ? { amount: parseMoneyToCents(body.amount, 'Amount') } : {}),
+    ...(body.frequency ? { frequency: assertFrequency(body.frequency) } : {}),
+    ...(body.startDate ? { startDate: parseDateInput(body.startDate, 'Start date') } : {}),
+    ...(body.endDate !== undefined ? { endDate: parseOptionalDateInput(body.endDate) } : {}),
+    envelopeId: parseEnvelopeSide(body.envelopeId),
+  })
 
-      if (!existing) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Income plan not found.',
-        })
-      }
-
-      // Umschlag muss zum Haushalt gehoeren; undefined = nicht aendern,
-      // null = explizit kein Umschlag.
-      const envelopeId = await parsePlanEnvelope(householdId, body)
-
-      const item = await prisma.incomePlan.update({
-        where: { id: body.id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(body.amount !== undefined ? { amount: parseMoneyToCents(body.amount, 'Amount') } : {}),
-          ...(body.frequency ? { frequency: assertFrequency(body.frequency) } : {}),
-          ...(body.startDate ? { startDate: parseDateInput(body.startDate, 'Start date') } : {}),
-          ...(body.endDate !== undefined ? { endDate: parseOptionalDateInput(body.endDate) } : {}),
-          ...(envelopeId !== undefined ? { envelopeId } : {}),
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
-    case 'fixedCostPlan': {
-      const existing = await prisma.fixedCostPlan.findFirst({
-        where: {
-          id: body.id,
-          householdId,
-        },
-      })
-
-      if (!existing) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Fixed cost plan not found.',
-        })
-      }
-
-      const envelopeId = await parsePlanEnvelope(householdId, body)
-
-      // Betrag, Frequenz, Laufzeit und Umschlag bestimmen die Zuteilung
-      // eines Fixkosten-Umschlags — erst nachbuchen, dann aendern
-      // (ADR-0005, Regel 1), damit die Aenderung erst ab der naechsten
-      // noch nicht gebuchten Periode wirkt.
-      if (existing.envelopeId || envelopeId) await ensureAllocations(householdId)
-
-      const item = await prisma.fixedCostPlan.update({
-        where: { id: body.id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(body.amount !== undefined ? { amount: parseMoneyToCents(body.amount, 'Amount') } : {}),
-          ...(body.frequency ? { frequency: assertFrequency(body.frequency) } : {}),
-          ...(body.startDate ? { startDate: parseDateInput(body.startDate, 'Start date') } : {}),
-          ...(body.endDate !== undefined ? { endDate: parseOptionalDateInput(body.endDate) } : {}),
-          ...(envelopeId !== undefined ? { envelopeId } : {}),
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
-    default:
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Unsupported planning kind.',
-      })
-  }
+  return defineApiResponse({ kind, item })
 })
