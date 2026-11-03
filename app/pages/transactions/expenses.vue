@@ -172,6 +172,7 @@ const envelopeFilterOptions = computed(() => [
   ...envelopeOptions.value.map((envelope) => ({
     label: envelope.name,
     value: envelope.id as string | null,
+    group: envelope.group,
   })),
 ])
 
@@ -191,7 +192,7 @@ const transactionForm = ref({
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
   ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
 watch(envelopeSelectOptions, (options) => {
   if (!envelopesLoaded.value) return
@@ -201,7 +202,7 @@ watch(envelopeSelectOptions, (options) => {
 })
 const rowEditorEnvelopeOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
-  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
+  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
 ])
 
 // Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
@@ -836,7 +837,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         @update:model-value="onUserIdFilterChange"
       />
       <!-- Issue #55: Umschlag-Filter, "Alle Umschläge" als Default. -->
-      <Select
+      <EnvelopeSelect
         :model-value="envelopeIdFilter"
         :options="envelopeFilterOptions"
         option-label="label"
@@ -1092,7 +1093,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         />
       </FormFieldRow>
       <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
-        <Select
+        <EnvelopeSelect
           id="transaction-envelope"
           v-model="transactionForm.envelopeId"
           :options="envelopeSelectOptions"

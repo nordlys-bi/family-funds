@@ -62,7 +62,7 @@ const { envelopes, unassignedFree, ledgerSince, loaded: envelopesLoaded, failed:
 // ADR-0005: Nur Umschlaege anbieten, die am Buchungsdatum Buchungen annehmen.
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
-  ...envelopesBookableOn(envelopes.value, form.value.date).map((envelope) => ({ label: envelope.name, value: envelope.id })),
+  ...envelopesBookableOn(envelopes.value, form.value.date).map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
 
 // Faellt der gewaehlte Umschlag durch einen Datumswechsel weg, auf "Zu
@@ -231,7 +231,7 @@ async function save() {
 
     <template v-if="isTransfer">
       <FormFieldRow label="Von" html-for="quick-capture-from" wide>
-        <Select
+        <EnvelopeSelect
           id="quick-capture-from"
           v-model="form.fromEnvelopeId"
           :options="envelopeSelectOptions"
@@ -241,7 +241,7 @@ async function save() {
         />
       </FormFieldRow>
       <FormFieldRow label="Nach" html-for="quick-capture-to" wide>
-        <Select
+        <EnvelopeSelect
           id="quick-capture-to"
           v-model="form.toEnvelopeId"
           :options="envelopeSelectOptions"
@@ -258,7 +258,7 @@ async function save() {
       </Message>
     </template>
     <FormFieldRow v-else label="Umschlag" html-for="quick-capture-envelope" wide>
-      <Select
+      <EnvelopeSelect
         id="quick-capture-envelope"
         v-model="form.envelopeId"
         :options="envelopeSelectOptions"

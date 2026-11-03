@@ -23,6 +23,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Frequency } from '~/types/planning'
+import type { EnvelopeGroup } from '~/utils/envelope-options'
 
 export type RecurringPlanFormData = {
   name: string
@@ -42,7 +43,7 @@ const props = defineProps<{
   /** Placeholder für das Name-Feld. */
   namePlaceholder: string
   /** Umschlaege des Haushalts fuer die Auswahl; geschlossene nur, wenn der Plan schon daran haengt. */
-  envelopes: Array<{ id: string; name: string; closedAt?: string | Date | null }>
+  envelopes: Array<{ id: string; name: string; group: EnvelopeGroup; closedAt?: string | Date | null }>
 }>()
 
 const emit = defineEmits<{
@@ -60,7 +61,7 @@ const envelopeOptions = computed(() => [
   { label: 'Zu verteilen', value: null as string | null },
   ...props.envelopes
     .filter((envelope) => !envelope.closedAt || envelope.id === props.modelValue.envelopeId)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id as string | null })),
+    .map((envelope) => ({ label: envelope.name, value: envelope.id as string | null, group: envelope.group })),
 ])
 </script>
 
@@ -93,7 +94,7 @@ const envelopeOptions = computed(() => [
   </FormFieldRow>
   <!-- Buchungen aus dem Plan erben den Umschlag (issue #59). -->
   <FormFieldRow label="Umschlag" :htmlFor="`${idPrefix}-envelope`" wide>
-    <Select
+    <EnvelopeSelect
       :id="`${idPrefix}-envelope`"
       :modelValue="modelValue.envelopeId ?? null"
       @update:modelValue="(v) => update('envelopeId', v ?? null)"

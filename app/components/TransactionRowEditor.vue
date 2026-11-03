@@ -27,7 +27,7 @@
 import { computed, ref, watch } from 'vue'
 import type { TransactionItem } from '~/composables/useTransactionList'
 import { fromDateInputValue, toDateInputValue } from '~/utils/form-helpers'
-import { isEnvelopeBookableOn } from '~/utils/envelope-options'
+import { isEnvelopeBookableOn, type EnvelopeGroup } from '~/utils/envelope-options'
 
 export type TransactionEditPayload = {
   amount: number | null
@@ -40,7 +40,7 @@ const props = defineProps<{
   transaction: TransactionItem
   /** Optionen fuer das Umschlag-Dropdown. Ohne diese Prop rendert der Editor
    *  das Feld nicht. */
-  envelopeOptions?: Array<{ label: string; value: string; balanceSince?: string | Date; closedAt?: string | Date | null }>
+  envelopeOptions?: Array<{ label: string; value: string; group?: EnvelopeGroup; balanceSince?: string | Date; closedAt?: string | Date | null }>
   /** Waehrungscode fuer den MoneyInput. */
   currency: string
   /** Saving-State — true waehrend PATCH läuft, disablest Inputs + Save. */
@@ -166,7 +166,7 @@ function handleCancel() {
       class="row-editor__field row-editor__field--envelope"
     >
       <label :for="`tx-edit-envelope-${transaction.id}`" class="row-editor__label">Umschlag</label>
-      <Select
+      <EnvelopeSelect
         :input-id="`tx-edit-envelope-${transaction.id}`"
         v-model="draft.envelopeId"
         :options="availableEnvelopeOptions"

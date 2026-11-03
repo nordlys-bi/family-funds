@@ -183,7 +183,7 @@ const closeTargetOptions = computed(() => [
   { label: 'Zu verteilen', value: UNASSIGNED_TARGET },
   ...props.envelopes
     .filter((envelope) => envelope.id !== closeForm.value.envelopeId && (!envelope.closedAt || (closeForm.value.closedAt && isEnvelopeOpenOn(envelope, closeForm.value.closedAt))))
-    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
 
 function openClose(envelope: EnvelopeItem) {
@@ -254,7 +254,7 @@ const transferCounterpartOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
   ...sortEnvelopes(envelopesBookableOn(props.envelopes, transferForm.value.date))
     .filter((envelope) => envelope.id !== transferForm.value.envelopeId)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
 const transferDirectionOptions = computed(() => [
   { label: 'Aus diesem Umschlag', value: 'out' },
@@ -363,7 +363,7 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
       <DatePicker id="close-date" v-model="closeForm.closedAt" show-icon date-format="dd.mm.yy" />
     </FormFieldRow>
     <FormFieldRow label="Ziel" html-for="close-target" wide>
-      <Select
+      <EnvelopeSelect
         id="close-target"
         v-model="closeForm.targetId"
         :options="closeTargetOptions"
@@ -395,7 +395,7 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
       />
     </FormFieldRow>
     <FormFieldRow :label="transferForm.direction === 'out' ? 'Nach' : 'Von'" html-for="transfer-counterpart" wide>
-      <Select
+      <EnvelopeSelect
         id="transfer-counterpart"
         v-model="transferForm.counterpartId"
         :options="transferCounterpartOptions"
