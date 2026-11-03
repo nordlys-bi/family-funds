@@ -142,7 +142,7 @@ const overBudgetCount = computed(
         <div class="action-required__body">
           <!-- Issue #52: Deep-Link auf die Expenses-Page mit aktivem
                unassigned-Filter. Die Page wertet ?unassigned=1 aus und
-               zeigt nur Buchungen ohne BudgetId, ohne dass der User
+               zeigt nur Buchungen ohne Umschlag, ohne dass der User
                selbst nach "Sonstiges" filtern muss. -->
           <NuxtLink to="/transactions/expenses?unassigned=1" class="action-required__link">
             <strong>{{ formatMoney(props.unassignedExpenses) }} ohne Umschlag diesen Monat</strong>

@@ -335,6 +335,16 @@ describe('computePeriodAvailability', () => {
   })
 })
 
+describe('computePeriodAvailability without money', () => {
+  it('shows an empty envelope without spending as unused, not overdrawn', () => {
+    expect(computePeriodAvailability({ balance: 0, spent: 0 }).percentUsed).toBe(0)
+  })
+
+  it('keeps null for a negative balance', () => {
+    expect(computePeriodAvailability({ balance: -15000, spent: 0 }).percentUsed).toBeNull()
+  })
+})
+
 describe('computeRemainingTimeShare', () => {
   const start = day(2026, 11, 2)
   const end = day(2026, 11, 9)

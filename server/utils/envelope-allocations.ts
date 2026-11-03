@@ -213,7 +213,7 @@ export type PeriodAvailability = {
   /** Aktueller Saldo + Ausgaben der Periode. */
   available: number
   spent: number
-  /** Ausgaben ÷ verfuegbar in %; null, wenn nichts verfuegbar war. */
+  /** Ausgaben ÷ verfuegbar in %; null bei negativem Saldo ohne verfuegbares Geld. */
   percentUsed: number | null
 }
 
@@ -228,7 +228,8 @@ export function computePeriodAvailability(input: { balance: number; spent: numbe
   return {
     available,
     spent: input.spent,
-    percentUsed: available > 0 ? (input.spent / available) * 100 : null,
+    // Saldo 0 ohne Ausgaben ist kein Ueberzug: Nichts da, aber auch nichts verbraucht.
+    percentUsed: available > 0 ? (input.spent / available) * 100 : input.balance < 0 ? null : 0,
   }
 }
 

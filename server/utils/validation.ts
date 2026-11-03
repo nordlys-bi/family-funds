@@ -40,7 +40,7 @@ export function parseUuidParam(event: H3Event, paramName: string): string {
 }
 
 /**
- * Liest einen OPTIONALEN UUID-Query-Parameter (z. B. `?userId=`, `?budgetId=`
+ * Liest einen OPTIONALEN UUID-Query-Parameter (z. B. `?userId=`, `?envelopeId=`
  * als Listenfilter). Fehlt der Param oder ist er leer, kommt `null` zurück —
  * die Pages normalisieren leere Filter ebenfalls zu "kein Filter". Ein
  * gesetzter Wert, der keine UUID ist, wirft `400` (aus demselben Grund wie

@@ -106,6 +106,15 @@ describe('periodStartDay / nextPeriodStartDay', () => {
 })
 
 describe('groupEntriesByPeriod', () => {
+  it('puts a backdated allocation into its own period, not the booking date', () => {
+    const entries = [
+      { type: 'allocation', date: '2026-11-03', periodStart: '2026-08-01', amount: 19000, id: 'aug' },
+      { type: 'allocation', date: '2026-11-03', periodStart: '2026-11-01', amount: 19000, id: 'nov' },
+    ]
+    const groups = groupEntriesByPeriod(entries, 'MONTHLY', [{ date: '2026-11-03', balance: 38000 }])
+    expect(groups.map((group) => [group.start, group.allocation])).toEqual([['2026-11-01', 19000], ['2026-08-01', 19000]])
+  })
+
   it('keeps the allocations of a group reachable for editing', () => {
     const entries = [
       { type: 'allocation', date: '2026-10-05', amount: 24000, id: 'a1' },

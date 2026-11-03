@@ -141,7 +141,7 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 ## Migration
 
 - `Budget` → Umschlag, Gruppe `RUNNING`; `allocationAmount` = Betrag der aktuell gültigen `BudgetVersion`. Die bisher berechneten Zuteilungen werden einmalig als `EnvelopeTransfer`-Zeilen gebucht, danach entfällt `BudgetVersion`. **IDs bleiben erhalten**, damit Links und Verweise (`carryoverToBudgetId`, Pläne, Ausgaben) gültig bleiben.
-- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
+- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; `endDate` wird `targetDate` (derzeit ohne Oberfläche und Wirkung); die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
 - `SavingsGoalExecution` mit `sourceBudgetId` → `EnvelopeTransfer` zwischen den beiden Umschlägen (Vorzeichen bestimmt die Richtung).
 - `SavingsGoalExecution` ohne Quelle, positiv → `EnvelopeTransfer` aus "Zu verteilen".
 - `SavingsGoalExecution` ohne Quelle, negativ (Doppelbuchung nach ADR-0001): Gibt es **genau eine** umschlaglose Ausgabe mit gleichem Betrag am selben Tag, bekommt sie `envelopeId` = Sparziel und die Execution entfällt. Sonst → `EnvelopeTransfer` in "Zu verteilen". Beide Wege ergeben dieselben Salden; der erste ist nur sauberer.

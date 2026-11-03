@@ -133,6 +133,7 @@ model Envelope {
   // Aenderung wirkt ab der naechsten noch nicht gebuchten.
   allocationAmount Int?              // Cent value
   targetAmount     Int?              // Cent value, Sparziel
+  // Aus SavingsGoal.endDate uebernommen, derzeit ohne Oberflaeche und Wirkung.
   targetDate       DateTime?
   balanceSince     DateTime
   // Gesetzt, wenn ein Umschlag ohne Zuteilung eine Regel bekommt: Perioden

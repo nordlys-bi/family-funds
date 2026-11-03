@@ -32,7 +32,6 @@ type QuickCaptureState = {
   /**
    * Vorausgewaehlter Umschlag fuer den naechsten Open-Aufruf (z. B. von
    * einer Karte auf dem Dashboard).
-   * relevant — <QuickCaptureRoot> ignoriert es bei Einnahmen.
    */
   envelopeId: string | null
 }
@@ -56,7 +55,7 @@ export function useQuickCapture() {
   /**
    * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `envelopeId`
    * (optional) fuellt das Umschlag-Feld vor — z. B. beim Klick auf die
-   * "+"-Aktion einer Dashboard-Budget-Karte.
+   * "+"-Aktion einer Dashboard-Karte.
    */
   function open(nextKind: QuickCaptureKind = 'expense', options?: { envelopeId?: string | null }) {
     state.value = { open: true, kind: nextKind, envelopeId: options?.envelopeId ?? null }

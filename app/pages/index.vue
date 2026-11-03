@@ -155,9 +155,9 @@ watch(quickCapture.savedTick, loadDashboard)
     <template v-else-if="snapshot">
       <!-- Karten der laufenden Ausgaben: oberste Prio auf dem Dashboard. Jede
            Karte bezieht sich auf die eigene, aktuell laufende Periode des
-           Budgets (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
+           Umschlags (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
            Kalendermonat — ersetzt die alte, kalendermonats-skalierte
-           "Budget-Auslastung"-Liste (DashboardBudgetList). -->
+           Auslastungs-Liste. -->
       <ListPanel title="Laufende Ausgaben" :compact="true" :no-bleed="true">
         <template #actions>
           <NuxtLink to="/budgeting/envelopes">
@@ -177,9 +177,9 @@ watch(quickCapture.savedTick, loadDashboard)
       <!-- Handlungsbedarf (issue #37): stand urspruenglich ganz oben, weil
            die Alltagsfrage "Was muss ich mir ansehen?" wichtiger war als
            "Wie hoch waren meine Einnahmen?" — steht jetzt direkt unter den
-           Budget-Perioden-Karten (neue oberste Prio). Issue #97: zeigt nur echten
-           Handlungsbedarf (kritische Budgets, unzugeordnete Buchungen,
-           fällige wiederkehrende Posten) + das freie Restbudget — sonst
+           Perioden-Karten (neue oberste Prio). Issue #97: zeigt nur echten
+           Handlungsbedarf (kritische Umschlaege, unzugeordnete Buchungen,
+           fällige wiederkehrende Posten) + mehr verplant als da ist — sonst
            einen ruhigen Einzeiler. -->
       <DashboardActionRequired
         :envelopes="envelopes"

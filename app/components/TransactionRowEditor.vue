@@ -8,7 +8,7 @@
   Verwendung:
   <TransactionRowEditor
     :transaction="row"
-    :budget-options="budgetSelectOptions"
+    :envelope-options="envelopeOptions"
     :currency="currencyCode"
     :saving="isSaving"
     @save="(payload) => saveRow(row.id, payload)"

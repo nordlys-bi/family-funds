@@ -21,7 +21,7 @@ const props = withDefaults(
      * Prozentwert (0-100+). Ueber 100 wird der Balken auf den Gesamtwert
      * skaliert: Bei 155 % endet die normale Fuellung bei 100/155 der Breite,
      * dort sitzt eine Markierung, dahinter ist der Ueberzug rot — so stimmen
-     * die Proportionen. `null` = es war nichts verfuegbar, alles ist Ueberzug.
+     * die Proportionen. `null` = im Minus ohne verfuegbares Geld, alles ist Ueberzug.
      */
     percent: number | null
     /**

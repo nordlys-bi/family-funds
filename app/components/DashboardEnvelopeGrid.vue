@@ -42,7 +42,7 @@ function captureExpense(envelopeId: string) {
           <span v-if="envelope.currentPeriod" class="card__period">{{ formatEnvelopePeriodLabel(envelope.frequency, envelope.currentPeriod.start, envelope.currentPeriod.end) }}</span>
         </div>
         <div v-if="envelope.currentPeriod" class="card__body">
-          <!-- ADR-0005: Der Ring misst die Ausgaben am Verfuegbaren; nichts verfuegbar heisst voll. -->
+          <!-- ADR-0005: Der Ring misst die Ausgaben am Verfuegbaren; im Minus ist er voll. -->
           <EnvelopePeriodRing :percent="envelope.currentPeriod.percentUsed ?? 100" :severity="envelope.severity" :size="56" class="card__ring" />
           <dl class="card__amounts">
             <div class="card__amount-row">
