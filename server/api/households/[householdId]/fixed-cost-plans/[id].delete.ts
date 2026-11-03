@@ -6,12 +6,11 @@
  *
  * Auth: `requireHouseholdOwner`.
  */
-import { createError, defineEventHandler } from 'h3'
-import { prisma } from '../../../../utils/prisma'
+import { defineEventHandler } from 'h3'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
-import { ensureAllocations } from '../../../../utils/envelope-store'
+import { deleteFixedCostPlan } from '../../../../utils/envelope-planning'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -19,22 +18,7 @@ export default defineEventHandler(async (event) => {
 
   await requireHouseholdOwner(event, householdId)
 
-  const existing = await prisma.fixedCostPlan.findFirst({
-    where: { id: planId, householdId },
-    select: { id: true },
-  })
-
-  if (!existing) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Fixed cost plan not found.',
-    })
-  }
-
-  // Ein geloeschter Plan fehlt in der Zuteilung seines Fixkosten-Umschlags —
-  // erst nachbuchen, dann aendern (ADR-0005, Regel 1).
-  await ensureAllocations(householdId)
-  await prisma.fixedCostPlan.delete({ where: { id: planId } })
+  await deleteFixedCostPlan(householdId, planId)
 
   return defineApiResponse({ kind: 'fixedCostPlan', deleted: true })
 })

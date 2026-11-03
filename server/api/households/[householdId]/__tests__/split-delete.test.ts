@@ -34,6 +34,7 @@ const prismaMocks = vi.hoisted(() => ({
   savingsGoal: { findFirst: vi.fn(), delete: vi.fn() },
   // ensureAllocations vor dem Loeschen eines Fixkosten-Plans (ADR-0005).
   envelope: { findMany: vi.fn().mockResolvedValue([]) },
+  envelopeTransfer: { findMany: vi.fn().mockResolvedValue([]) },
 }))
 
 const authMocks = vi.hoisted(() => ({

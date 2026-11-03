@@ -46,10 +46,8 @@ export function toAllocationEnvelope(row: AllocationRow): AllocationEnvelope {
 /**
  * Bucht alle faelligen, noch nicht gebuchten Zuteilungen des Haushalts bis
  * einschliesslich `today` (ADR-0005, Regel 2: ein Einstieg). Muss vor jedem
- * Saldo-Abruf laufen und vor jeder Aenderung an Zuteilungsregel, Plaenen,
- * Frequenz oder Schliessung (Regel 1: erst nachbuchen, dann aendern) —
- * sonst bekaeme eine begonnene, aber noch nicht gebuchte Periode den neuen
- * Betrag.
+ * Saldo-Abruf laufen. Vor Aenderungen an der Planung (Regel 1) ruft es
+ * `envelope-planning.ts` auf.
  *
  * Parallele Requests sind unkritisch: Der Unique-Index auf
  * `(toEnvelopeId, allocationPeriodStart)` und `skipDuplicates` verhindern
@@ -58,6 +56,15 @@ export function toAllocationEnvelope(row: AllocationRow): AllocationEnvelope {
  * @returns Anzahl neu gebuchter Zuteilungen.
  */
 export async function ensureAllocations(householdId: string, today: Date = new Date(), db: Db = prisma): Promise<number> {
+  // Erst die gebuchten Zeilen, dann die Umschlaege: Schliessen loescht Zeilen ab
+  // dem Stichtag und setzt `closedAt` in einer Transaktion. In dieser Reihenfolge
+  // sieht ein paralleler Abruf die alten Zeilen oder schon `closedAt` und legt
+  // nichts an. Umgekehrt saehe er den Umschlag offen, die Zeilen aber geloescht,
+  // und buchte sie neu.
+  const booked = await db.envelopeTransfer.findMany({
+    where: { householdId, allocationPeriodStart: { not: null } },
+    select: { toEnvelopeId: true, allocationPeriodStart: true },
+  })
   const envelopes = await db.envelope.findMany({
     where: { householdId, allocationSource: { not: 'NONE' } },
     select: {
@@ -73,10 +80,6 @@ export async function ensureAllocations(householdId: string, today: Date = new D
   })
   if (envelopes.length === 0) return 0
 
-  const booked = await db.envelopeTransfer.findMany({
-    where: { householdId, toEnvelopeId: { in: envelopes.map((envelope) => envelope.id) }, allocationPeriodStart: { not: null } },
-    select: { toEnvelopeId: true, allocationPeriodStart: true },
-  })
   const { ledgerSince } = await db.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true } })
   const bookedByEnvelope = new Map<string, Date[]>()
   for (const row of booked) {

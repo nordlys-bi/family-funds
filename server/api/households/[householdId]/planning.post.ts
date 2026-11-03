@@ -1,5 +1,4 @@
 import { defineEventHandler, createError, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../utils/household-access'
 import {
   assertFrequency,
@@ -8,8 +7,8 @@ import {
   parseMoneyToCents,
   parseOptionalDateInput,
 } from '../../../utils/planning'
-import { ensureAllocations } from '../../../utils/envelope-store'
-import { parsePlanEnvelope } from '../../../utils/envelope-transfer'
+import { createPlan } from '../../../utils/envelope-planning'
+import { parseEnvelopeSide } from '../../../utils/envelope-transfer'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 
@@ -46,57 +45,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  switch (kind) {
-    case 'incomePlan': {
-      const amount = parseMoneyToCents(body.amount, 'Amount')
-      const frequency = assertFrequency(body.frequency)
-      const startDate = parseDateInput(body.startDate, 'Start date')
-      const endDate = parseOptionalDateInput(body.endDate)
-      const envelopeId = (await parsePlanEnvelope(householdId, body)) ?? null
+  const item = await createPlan(householdId, kind, {
+    name,
+    amount: parseMoneyToCents(body.amount, 'Amount'),
+    frequency: assertFrequency(body.frequency),
+    startDate: parseDateInput(body.startDate, 'Start date'),
+    endDate: parseOptionalDateInput(body.endDate),
+    envelopeId: parseEnvelopeSide(body.envelopeId) ?? null,
+  })
 
-      const item = await prisma.incomePlan.create({
-        data: {
-          householdId,
-          name,
-          amount,
-          frequency,
-          startDate,
-          endDate,
-          envelopeId,
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
-    case 'fixedCostPlan': {
-      const amount = parseMoneyToCents(body.amount, 'Amount')
-      const frequency = assertFrequency(body.frequency)
-      const startDate = parseDateInput(body.startDate, 'Start date')
-      const endDate = parseOptionalDateInput(body.endDate)
-      const envelopeId = (await parsePlanEnvelope(householdId, body)) ?? null
-
-      // Ein neuer Plan aendert die Zuteilung eines Fixkosten-Umschlags —
-      // erst nachbuchen, dann aendern (ADR-0005, Regel 1).
-      if (envelopeId) await ensureAllocations(householdId)
-
-      const item = await prisma.fixedCostPlan.create({
-        data: {
-          householdId,
-          name,
-          amount,
-          frequency,
-          startDate,
-          endDate,
-          envelopeId,
-        },
-      })
-
-      return defineApiResponse({ kind, item })
-    }
-    default:
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'Unsupported planning kind.',
-      })
-  }
+  return defineApiResponse({ kind, item })
 })

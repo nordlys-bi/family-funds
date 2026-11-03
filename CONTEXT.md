@@ -248,6 +248,12 @@ Geplante Werte und tatsächliche Buchungen werden getrennt gespeichert.
 
 Dadurch bleiben Auswertungen und spätere Erweiterungen möglich.
 
+### Planung
+
+Alles, was der OWNER für künftiges Geld festlegt: die geplanten Werte, dazu das Schließen von Umschlägen und der Startpunkt von „Zu verteilen“. Das Gegenstück sind die tatsächlichen Buchungen.
+
+Ändert sich an der Planung etwas, das eine Zuteilung betreffen kann, werden zuerst alle fälligen Zuteilungen nachgebucht. Ein Plan darf nicht über den Stichtag seines Umschlags hinauslaufen.
+
 ---
 
 ## Buchungs-Logik

@@ -51,6 +51,8 @@ const copy = computed(() => (isFixedCost.value
 
 const plans = ref<PlanItem[]>([])
 const notice = ref<{ severity: 'success' | 'error'; text: string } | null>(null)
+// Im Dialog statt in `notice`: Der Dialog bleibt offen und verdeckt die Liste.
+const planError = ref<string | null>(null)
 const householdId = computed(() => activeHousehold.value?.id ?? null)
 const currency = computed(() => activeHousehold.value?.currency ?? 'EUR')
 const formatMoney = (value: number) => formatMoneyFromCents(value, currency.value)
@@ -108,19 +110,23 @@ const planForm = ref(blankForm())
 function openCreate() {
   loadEnvelopes(householdId.value)
   planEditId.value = null
+  planError.value = null
   planForm.value = blankForm()
   planDialogOpen.value = true
 }
 
 function openEdit(plan: PlanItem) {
   loadEnvelopes(householdId.value)
+  planError.value = null
   planEditId.value = plan.id
   planForm.value = {
     name: plan.name,
     amount: plan.amount / 100,
     frequency: plan.frequency,
     startDate: new Date(plan.startDate),
-    endDate: parseDateInputString(plan.endDate),
+    // Der Server liefert ISO-Zeitstempel. `parseDateInputString` kennt nur
+    // 'YYYY-MM-DD' und ergaebe null, das Speichern loeschte dann das Enddatum.
+    endDate: plan.endDate ? new Date(plan.endDate) : null,
     envelopeId: plan.envelopeId,
   }
   planDialogOpen.value = true
@@ -130,6 +136,7 @@ async function savePlan() {
   if (!householdId.value) return
   planSaving.value = true
   notice.value = null
+  planError.value = null
   try {
     const isEdit = Boolean(planEditId.value)
     const previousEnvelopeId = plans.value.find((plan) => plan.id === planEditId.value)?.envelopeId ?? null
@@ -151,7 +158,10 @@ async function savePlan() {
     const form = planForm.value
     await afterChange(() => `${copy.value.plan} ${isEdit ? 'aktualisiert' : 'angelegt'}.${alreadyAllocatedHint(addedTo, form.frequency, form.startDate, form.endDate)}`)
   } catch (error: any) {
-    notice.value = { severity: 'error', text: `${copy.value.plan} konnte nicht gespeichert werden: ` + (error.statusMessage || error.message) }
+    const reason = error.data?.data?.reason === 'active-plans'
+      ? 'Der Plan läuft über den Stichtag des geschlossenen Umschlags hinaus. Bitte ein früheres Enddatum oder einen anderen Umschlag wählen.'
+      : error.statusMessage || error.message
+    planError.value = `${copy.value.plan} konnte nicht gespeichert werden: ${reason}`
   } finally {
     planSaving.value = false
   }
@@ -335,6 +345,7 @@ async function submitMark() {
       @save="savePlan"
       @cancel="planDialogOpen = false"
     >
+      <Message v-if="planError" severity="error" variant="simple" class="mark-error">{{ planError }}</Message>
       <RecurringPlanForm
         v-model="planForm"
         :id-prefix="kind"

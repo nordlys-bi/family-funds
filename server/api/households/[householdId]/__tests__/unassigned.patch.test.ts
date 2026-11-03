@@ -5,10 +5,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { H3Event } from 'h3'
 
-const prismaMocks = vi.hoisted(() => ({ household: { update: vi.fn() } }))
+const planningMocks = vi.hoisted(() => ({ setLedgerStart: vi.fn() }))
 const authMocks = vi.hoisted(() => ({ requireHouseholdOwner: vi.fn() }))
 
-vi.mock('../../../../utils/prisma', () => ({ prisma: prismaMocks }))
+vi.mock('../../../../utils/prisma', () => ({ prisma: {} }))
+vi.mock('../../../../utils/envelope-planning', () => planningMocks)
 vi.mock('../../../../utils/household-access', () => authMocks)
 
 import updateUnassigned from '../unassigned.patch'
@@ -29,7 +30,7 @@ function makeEvent(body: Record<string, unknown>): H3Event {
 describe('PATCH /api/households/:id/unassigned', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    prismaMocks.household.update.mockResolvedValue({ ledgerSince: new Date(), openingBalance: 0 })
+    planningMocks.setLedgerStart.mockResolvedValue({ ledgerSince: new Date(), openingBalance: 0 })
   })
 
   it.each([
@@ -40,11 +41,16 @@ describe('PATCH /api/households/:id/unassigned', () => {
   ])('stores %s as %i cents', async (openingBalance, cents) => {
     await updateUnassigned(makeEvent({ openingBalance }))
     expect(authMocks.requireHouseholdOwner).toHaveBeenCalled()
-    expect(prismaMocks.household.update.mock.calls[0]![0].data).toEqual({ openingBalance: cents })
+    expect(planningMocks.setLedgerStart).toHaveBeenCalledWith(HH_ID, { openingBalance: cents })
+  })
+
+  it('parses the start date', async () => {
+    await updateUnassigned(makeEvent({ ledgerSince: '2026-11-15' }))
+    expect(planningMocks.setLedgerStart).toHaveBeenCalledWith(HH_ID, { ledgerSince: new Date('2026-11-15T12:00:00') })
   })
 
   it('rejects an empty update', async () => {
     await expect(updateUnassigned(makeEvent({}))).rejects.toMatchObject({ statusCode: 400 })
-    expect(prismaMocks.household.update).not.toHaveBeenCalled()
+    expect(planningMocks.setLedgerStart).not.toHaveBeenCalled()
   })
 })

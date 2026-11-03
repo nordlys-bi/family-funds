@@ -66,9 +66,38 @@ describe('ensureAllocations', () => {
     expect(createMany).not.toHaveBeenCalled()
   })
 
-  it('does not query transfers without allocating envelopes', async () => {
+  it('writes nothing without allocating envelopes', async () => {
     const { db, createMany } = makeDb({ envelopes: [] })
     await expect(ensureAllocations('h1', day(2026, 11, 3), db)).resolves.toBe(0)
+    expect(createMany).not.toHaveBeenCalled()
+  })
+
+  it('does not rebook deleted allocations when the envelope closes during the read', async () => {
+    // Schliessen zum 26.10. committet genau nach der ersten Query dieses Abrufs.
+    const closedAt = day(2026, 10, 26)
+    let closed = false
+    const close = () => { closed = true }
+    const rows = [day(2026, 10, 19), day(2026, 10, 26), day(2026, 11, 2)].map((date) => ({ toEnvelopeId: 'groceries', allocationPeriodStart: date }))
+    const createMany = vi.fn(async ({ data }: { data: unknown[] }) => ({ count: data.length }))
+    const db = {
+      envelope: {
+        findMany: vi.fn(async () => {
+          const result = [{ ...groceries, closedAt: closed ? closedAt : null }]
+          close()
+          return result
+        }),
+      },
+      envelopeTransfer: {
+        findMany: vi.fn(async () => {
+          const result = closed ? rows.filter((row) => row.allocationPeriodStart < closedAt) : rows
+          close()
+          return result
+        }),
+        createMany,
+      },
+      household: { findUniqueOrThrow: vi.fn(async () => ({ ledgerSince: day(2026, 1, 1) })) },
+    }
+    await expect(ensureAllocations('h1', day(2026, 11, 3), db as never)).resolves.toBe(0)
     expect(createMany).not.toHaveBeenCalled()
   })
 

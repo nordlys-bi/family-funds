@@ -1,11 +1,11 @@
 /*
  * Tests fuer die Umschlag- und Umbuchungs-Endpunkte (ADR-0005, #155):
- * Anlegen, Aendern (erst nachbuchen, dann aendern), Schliessen (auch nach
- * "Zu verteilen"), Loeschen nur ohne Spuren, Umbuchungen und gebuchte
- * Zuteilungen.
+ * Anlegen, Loeschen nur ohne Spuren, Umbuchungen und gebuchte Zuteilungen.
+ * Bei Aendern und Schliessen nur Auth und Parsen; die Regeln dahinter testet
+ * `server/utils/__tests__/envelope-planning.test.ts`.
  *
- * Mock-Strategie wie transactions.post.test.ts: Prisma, Auth und
- * `ensureAllocations` gemockt, Parsing und Regeln laufen echt.
+ * Mock-Strategie wie transactions.post.test.ts: Prisma und Auth gemockt,
+ * Parsing und Regeln laufen echt.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Role } from '@prisma/client'
@@ -16,8 +16,6 @@ const prismaMocks = vi.hoisted(() => ({
   envelopeTransfer: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn(), delete: vi.fn(), deleteMany: vi.fn(), count: vi.fn() },
   expenseTransaction: { count: vi.fn() },
   incomeTransaction: { count: vi.fn() },
-  fixedCostPlan: { count: vi.fn() },
-  incomePlan: { count: vi.fn() },
   household: { findUniqueOrThrow: vi.fn() },
   $transaction: vi.fn(),
 }))
@@ -27,11 +25,11 @@ const authMocks = vi.hoisted(() => ({
   requireHouseholdOwner: vi.fn(),
 }))
 
-const storeMocks = vi.hoisted(() => ({ ensureAllocations: vi.fn() }))
+const planningMocks = vi.hoisted(() => ({ updateEnvelope: vi.fn(), closeEnvelope: vi.fn() }))
 
 vi.mock('../../../../utils/prisma', () => ({ prisma: prismaMocks }))
 vi.mock('../../../../utils/household-access', () => authMocks)
-vi.mock('../../../../utils/envelope-store', () => storeMocks)
+vi.mock('../../../../utils/envelope-planning', () => planningMocks)
 
 import createEnvelope from '../envelopes.post'
 import updateEnvelope from '../envelopes/[id].patch'
@@ -67,7 +65,7 @@ beforeEach(() => {
   prismaMocks.envelopeTransfer.create.mockImplementation(async ({ data }) => ({ id: TRANSFER_ID, ...data }))
   prismaMocks.envelopeTransfer.update.mockImplementation(async ({ data }) => ({ id: TRANSFER_ID, ...data }))
   prismaMocks.$transaction.mockImplementation(async (callback: (tx: typeof prismaMocks) => unknown) => callback(prismaMocks))
-  for (const count of [prismaMocks.expenseTransaction.count, prismaMocks.incomeTransaction.count, prismaMocks.envelopeTransfer.count, prismaMocks.envelope.count, prismaMocks.fixedCostPlan.count, prismaMocks.incomePlan.count]) {
+  for (const count of [prismaMocks.expenseTransaction.count, prismaMocks.incomeTransaction.count, prismaMocks.envelopeTransfer.count, prismaMocks.envelope.count]) {
     count.mockResolvedValue(0)
   }
   prismaMocks.envelope.findMany.mockResolvedValue([])
@@ -109,126 +107,59 @@ describe('POST /envelopes', () => {
 })
 
 describe('PATCH /envelopes/:id', () => {
-  const existing = { id: ENV_ID, householdId: HH_ID, frequency: 'MONTHLY', allocationSource: 'FIXED', allocationAmount: 25000 }
+  beforeEach(() => planningMocks.updateEnvelope.mockResolvedValue({ id: ENV_ID }))
 
-  it('books due allocations before changing the rule', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(existing)
-    const order: string[] = []
-    storeMocks.ensureAllocations.mockImplementation(async () => { order.push('ensure') })
-    prismaMocks.envelope.update.mockImplementation(async () => { order.push('update'); return {} })
-
-    await updateEnvelope(makeEvent({ allocationAmount: '280' }, { id: ENV_ID }))
-
-    expect(order).toEqual(['ensure', 'update'])
-    expect(prismaMocks.envelope.update.mock.calls[0][0].data).toMatchObject({ allocationSource: 'FIXED', allocationAmount: 28000 })
+  it('passes parsed changes on and wraps the response', async () => {
+    const response = await updateEnvelope(makeEvent({ name: ' Schule ', group: 'RESERVE', allocationSource: 'FIXED', allocationAmount: '280', targetAmount: null }, { id: ENV_ID }))
+    expect(authMocks.requireHouseholdOwner).toHaveBeenCalled()
+    expect(planningMocks.updateEnvelope).toHaveBeenCalledWith(HH_ID, ENV_ID, {
+      name: 'Schule',
+      group: 'RESERVE',
+      allocationSource: 'FIXED',
+      allocationAmount: 28000,
+      targetAmount: null,
+    })
+    expect(response).toEqual({ data: { kind: 'envelope', item: { id: ENV_ID } } })
   })
 
-  it('does not book allocations for a rename', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(existing)
-    await updateEnvelope(makeEvent({ name: 'Kinder & Schule' }, { id: ENV_ID }))
-    expect(storeMocks.ensureAllocations).not.toHaveBeenCalled()
+  it('passes nothing for fields the body does not contain', async () => {
+    await updateEnvelope(makeEvent({ name: 'Schule' }, { id: ENV_ID }))
+    expect(planningMocks.updateEnvelope.mock.calls[0][2]).toEqual({ name: 'Schule' })
   })
 
-  it('starts a first rule with the next period instead of booking the past', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue({ ...existing, allocationSource: 'NONE', allocationAmount: null })
-    await updateEnvelope(makeEvent({ allocationSource: 'FIXED', allocationAmount: '100' }, { id: ENV_ID }))
-
-    const { allocationsSince } = prismaMocks.envelope.update.mock.calls[0][0].data
-    const firstOfNextMonth = new Date()
-    firstOfNextMonth.setMonth(firstOfNextMonth.getMonth() + 1, 1)
-    expect(allocationsSince.getDate()).toBe(1)
-    expect(allocationsSince.getMonth()).toBe(firstOfNextMonth.getMonth())
-  })
-
-  it('leaves the lower bound alone when an existing rule changes', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(existing)
-    await updateEnvelope(makeEvent({ allocationSource: 'PLANS' }, { id: ENV_ID }))
-    expect(prismaMocks.envelope.update.mock.calls[0][0].data).not.toHaveProperty('allocationsSince')
-  })
-
-  it('clears the amount when switching away from a fixed allocation', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(existing)
-    await updateEnvelope(makeEvent({ allocationSource: 'NONE' }, { id: ENV_ID }))
-    expect(prismaMocks.envelope.update.mock.calls[0][0].data).toMatchObject({ allocationSource: 'NONE', allocationAmount: null })
-  })
-
-  it('404s for an envelope of another household', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(null)
-    await expect(updateEnvelope(makeEvent({ name: 'x' }, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 404 })
-  })
-})
-
-describe('POST /envelopes/:id/close: active plans and cycles', () => {
-  const open = { id: ENV_ID, householdId: HH_ID, frequency: 'MONTHLY', balanceSince: new Date(2026, 0, 1, 12), closedAt: null }
-
-  it('blocks while a plan runs past the closing date', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(open)
-    prismaMocks.fixedCostPlan.count.mockResolvedValue(1)
-    await expect(
-      closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: null }, { id: ENV_ID })),
-    ).rejects.toMatchObject({ statusCode: 409, data: { reason: 'active-plans' } })
-    expect(prismaMocks.envelope.update).not.toHaveBeenCalled()
-  })
-
-  it('rejects a target that already flows into this envelope', async () => {
-    prismaMocks.envelope.findFirst.mockImplementation(async ({ where }: { where: { id: string } }) => ({
-      ...open,
-      id: where.id,
-      closedAt: where.id === OTHER_ID ? new Date(2026, 11, 1, 12) : null,
-    }))
-    prismaMocks.envelope.findMany.mockResolvedValue([{ id: OTHER_ID, carryoverToEnvelopeId: ENV_ID }])
-    await expect(
-      closeEnvelope(makeEvent({ closedAt: '2026-11-01', carryoverToEnvelopeId: OTHER_ID }, { id: ENV_ID })),
-    ).rejects.toMatchObject({ statusCode: 400, data: { reason: 'carryover-cycle' } })
-    expect(prismaMocks.envelope.update).not.toHaveBeenCalled()
+  it.each([
+    ['name', { name: '  ' }],
+    ['group', { group: 'OTHER' }],
+    ['source', { allocationSource: 'OTHER' }],
+    ['amount', { allocationAmount: 'abc' }],
+  ])('rejects an invalid %s', async (_name, body) => {
+    await expect(updateEnvelope(makeEvent(body, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 400 })
+    expect(planningMocks.updateEnvelope).not.toHaveBeenCalled()
   })
 })
 
 describe('POST /envelopes/:id/close', () => {
-  const open = { id: ENV_ID, householdId: HH_ID, frequency: 'MONTHLY', balanceSince: new Date(2026, 0, 1, 12), closedAt: null }
+  beforeEach(() => planningMocks.closeEnvelope.mockResolvedValue({ id: ENV_ID }))
 
   it('closes into "Zu verteilen" with an explicit null target', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(open)
+    const response = await closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: null }, { id: ENV_ID }))
+    expect(authMocks.requireHouseholdOwner).toHaveBeenCalled()
+    expect(planningMocks.closeEnvelope).toHaveBeenCalledWith(HH_ID, ENV_ID, new Date('2026-12-01T12:00:00'), null)
+    expect(response).toEqual({ data: { kind: 'envelope', item: { id: ENV_ID } } })
+  })
 
-    await closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: null }, { id: ENV_ID }))
-
-    expect(prismaMocks.envelope.update.mock.calls[0][0].data).toMatchObject({ carryoverToEnvelopeId: null })
-    expect(storeMocks.ensureAllocations).toHaveBeenCalled()
-    // Zuteilungen ab dem Stichtag gehoeren nicht mehr dem Umschlag.
-    expect(prismaMocks.envelopeTransfer.deleteMany.mock.calls[0][0].where).toMatchObject({ toEnvelopeId: ENV_ID })
+  it('passes the target on', async () => {
+    await closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: ` ${OTHER_ID} ` }, { id: ENV_ID }))
+    expect(planningMocks.closeEnvelope.mock.calls[0][3]).toBe(OTHER_ID)
   })
 
   it('requires the target field so "Zu verteilen" is a deliberate choice', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(open)
     await expect(closeEnvelope(makeEvent({ closedAt: '2026-12-01' }, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 400 })
+    expect(planningMocks.closeEnvelope).not.toHaveBeenCalled()
   })
 
-  it('closes into another open envelope', async () => {
-    prismaMocks.envelope.findFirst.mockImplementation(async ({ where }) => (where.id === ENV_ID ? open : { ...open, id: OTHER_ID }))
-    await closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: OTHER_ID }, { id: ENV_ID }))
-    expect(prismaMocks.envelope.update.mock.calls[0][0].data).toMatchObject({ carryoverToEnvelopeId: OTHER_ID })
-  })
-
-  it('rejects a target that does not exist', async () => {
-    prismaMocks.envelope.findFirst.mockImplementation(async ({ where }) => (where.id === ENV_ID ? open : null))
-    await expect(
-      closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: OTHER_ID }, { id: ENV_ID })),
-    ).rejects.toMatchObject({ statusCode: 404 })
-  })
-
-  it('blocks when bookings exist on or after the closing date', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(open)
-    prismaMocks.incomeTransaction.count.mockResolvedValue(1)
-    await expect(
-      closeEnvelope(makeEvent({ closedAt: '2026-12-01', carryoverToEnvelopeId: null }, { id: ENV_ID })),
-    ).rejects.toMatchObject({ statusCode: 409 })
-  })
-
-  it('rejects a closing date that is not a period start', async () => {
-    prismaMocks.envelope.findFirst.mockResolvedValue(open)
-    await expect(
-      closeEnvelope(makeEvent({ closedAt: '2026-12-15', carryoverToEnvelopeId: null }, { id: ENV_ID })),
-    ).rejects.toMatchObject({ statusCode: 400 })
+  it('requires a closing date', async () => {
+    await expect(closeEnvelope(makeEvent({ carryoverToEnvelopeId: null }, { id: ENV_ID }))).rejects.toMatchObject({ statusCode: 400 })
   })
 })
 

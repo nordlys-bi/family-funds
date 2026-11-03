@@ -9,23 +9,15 @@
  *   name, group, allocationSource, allocationAmount, targetAmount, targetDate
  * }
  *
- * Erst nachbuchen, dann aendern (ADR-0005, Regel 1): Faellige Zuteilungen
- * werden vorher mit der alten Regel gebucht, die neue wirkt ab der naechsten
- * noch nicht gebuchten Periode.
- *
  * Auth: `requireHouseholdOwner` — Aendern ist Planung.
  */
 import { createError, defineEventHandler, readBody } from 'h3'
-import type { Prisma } from '@prisma/client'
-import { prisma } from '../../../../utils/prisma'
 import { requireHouseholdOwner } from '../../../../utils/household-access'
 import { defineApiResponse } from '../../../../utils/api-response'
 import { parseUuidParam } from '../../../../utils/validation'
 import { parseOptionalDateInput } from '../../../../utils/planning'
-import { addPeriod, startOfPeriod } from '../../../../utils/period'
-import { ensureAllocations } from '../../../../utils/envelope-store'
+import { updateEnvelope, type EnvelopeChanges } from '../../../../utils/envelope-planning'
 import {
-  assertAllocationRule,
   parseAllocationSource,
   parseEnvelopeGroup,
   parseMoneyToCentsAllowZero,
@@ -46,44 +38,23 @@ export default defineEventHandler(async (event) => {
   await requireHouseholdOwner(event, householdId)
 
   const body = (await readBody<UpdateEnvelopeBody>(event)) ?? {}
-  const existing = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId } })
-  if (!existing) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
 
-  const data: Prisma.EnvelopeUpdateInput = {}
+  const changes: EnvelopeChanges = {}
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!name) throw createError({ statusCode: 400, statusMessage: 'Name is required.' })
-    data.name = name
+    changes.name = name
   }
-  if (body.group !== undefined) data.group = parseEnvelopeGroup(body.group)
+  if (body.group !== undefined) changes.group = parseEnvelopeGroup(body.group)
   if (body.targetAmount !== undefined) {
-    data.targetAmount = body.targetAmount === null || body.targetAmount === '' ? null : parseMoneyToCentsAllowZero(body.targetAmount, 'Target amount')
+    changes.targetAmount = body.targetAmount === null || body.targetAmount === '' ? null : parseMoneyToCentsAllowZero(body.targetAmount, 'Target amount')
   }
-  if (body.targetDate !== undefined) data.targetDate = parseOptionalDateInput(body.targetDate)
-
-  const changesRule = body.allocationSource !== undefined || body.allocationAmount !== undefined
-  if (changesRule) {
-    const allocationSource = body.allocationSource === undefined ? existing.allocationSource : parseAllocationSource(body.allocationSource)
-    const allocationAmount = allocationSource !== 'FIXED'
-      ? null
-      : body.allocationAmount === undefined
-        ? existing.allocationAmount
-        : body.allocationAmount === null || body.allocationAmount === ''
-          ? null
-          : parseMoneyToCentsAllowZero(body.allocationAmount, 'Allocation amount')
-    assertAllocationRule(existing.frequency, allocationSource, allocationAmount)
-    data.allocationSource = allocationSource
-    data.allocationAmount = allocationAmount
-    // Ohne Regel gibt es keine Zeilen, die vergangene Perioden als erledigt
-    // markieren. Die neue Regel startet deshalb wie jede Aenderung mit der
-    // naechsten Periode, statt rueckwirkend nachzubuchen. ONCE hat kein Raster
-    // und bekommt seine eine Zuteilung.
-    if (existing.allocationSource === 'NONE' && allocationSource !== 'NONE' && existing.frequency !== 'ONCE') {
-      data.allocationsSince = addPeriod(startOfPeriod(new Date(), existing.frequency), existing.frequency)
-    }
-    await ensureAllocations(householdId)
+  if (body.targetDate !== undefined) changes.targetDate = parseOptionalDateInput(body.targetDate)
+  if (body.allocationSource !== undefined) changes.allocationSource = parseAllocationSource(body.allocationSource)
+  if (body.allocationAmount !== undefined) {
+    changes.allocationAmount = body.allocationAmount === null || body.allocationAmount === '' ? null : parseMoneyToCentsAllowZero(body.allocationAmount, 'Allocation amount')
   }
 
-  const item = await prisma.envelope.update({ where: { id: envelopeId }, data })
+  const item = await updateEnvelope(householdId, envelopeId, changes)
   return defineApiResponse({ kind: 'envelope', item })
 })
