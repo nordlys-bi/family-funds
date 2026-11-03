@@ -91,7 +91,7 @@ Vorteile:
 
 #### Datenbank
 
-* Neon PostgreSQL
+* Supabase PostgreSQL
 
 Vorteile:
 
@@ -330,7 +330,7 @@ Die produktive Authentifizierung erfolgt jedoch über Clerk.
 | ORM                            | Prisma                 |
 | Authentifizierung              | Clerk (OIDC)           |
 | Hosting                        | Vercel                 |
-| Datenbank-Hosting              | Neon                   |
+| Datenbank-Hosting              | Supabase               |
 | Lokale Entwicklung             | Docker Compose         |
 | Benutzerverwaltung             | Externer Auth Provider |
 | Mehrere Haushalte pro Benutzer | Ja                     |
