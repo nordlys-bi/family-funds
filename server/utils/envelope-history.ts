@@ -114,21 +114,17 @@ export function computeEnvelopeHistoryPoints(
   to: Date,
 ): HistoryPoint[] {
   const byId = new Map(chain.map((envelope) => [envelope.id, envelope]))
+  // Jeder Umschlag der Kette zaehlt, bis er eingeflossen ist; danach steckt er
+  // im Saldo seines Ziels. Als Summe statt als Abstieg, damit auch ein Vorgaenger
+  // zaehlt, dessen Ziel schon weitergeflossen ist, er selbst aber noch nicht.
   const balanceAtEndOf = (date: Date) => {
     const balances = computeEnvelopeBalances(chain, inputs, date)
     const key = dayKey(date)
-    // `seen` wie in getEnvelopeChain: Altdaten koennen einen Zyklus enthalten.
-    const chainBalance = (envelope: BalanceEnvelope, seen = new Set<string>()): number => {
-      seen.add(envelope.id)
-      let total = balances.get(envelope.id)?.balance ?? 0
-      for (const predecessor of chain) {
-        if (predecessor.carryoverToEnvelopeId !== envelope.id || !predecessor.closedAt || seen.has(predecessor.id)) continue
-        // Noch nicht eingeflossen: zaehlt neben dem Ziel, sonst steckt er schon drin.
-        if (key < carryoverInflowKey(predecessor, envelope.balanceSince)) total += chainBalance(predecessor, seen)
-      }
-      return total
-    }
-    return chainBalance(byId.get(chain[0]!.id)!)
+    return chain.reduce((total, envelope, index) => {
+      const target = index > 0 && envelope.carryoverToEnvelopeId ? byId.get(envelope.carryoverToEnvelopeId) : undefined
+      const flowedIn = target && key >= carryoverInflowKey(envelope, target.balanceSince)
+      return flowedIn ? total : total + (balances.get(envelope.id)?.balance ?? 0)
+    }, 0)
   }
   const dayBefore = new Date(dayKey(from))
   dayBefore.setDate(dayBefore.getDate() - 1)

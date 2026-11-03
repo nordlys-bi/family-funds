@@ -71,9 +71,9 @@ async function load() {
 onMounted(load)
 watch(householdId, load)
 
-async function afterChange(text: string) {
+async function afterChange(text: string | (() => string)) {
   await load()
-  notice.value = { severity: 'success', text }
+  notice.value = { severity: 'success', text: typeof text === 'function' ? text() : text }
   emit('changed')
 }
 
@@ -103,13 +103,17 @@ const blankForm = () => ({
 })
 const planForm = ref(blankForm())
 
+// Die Umschlag-Auswahl frisch laden: Auf derselben Seite kann gerade einer
+// angelegt worden sein, den das Panel beim Mounten noch nicht kannte.
 function openCreate() {
+  loadEnvelopes(householdId.value)
   planEditId.value = null
   planForm.value = blankForm()
   planDialogOpen.value = true
 }
 
 function openEdit(plan: PlanItem) {
+  loadEnvelopes(householdId.value)
   planEditId.value = plan.id
   planForm.value = {
     name: plan.name,
@@ -128,6 +132,7 @@ async function savePlan() {
   notice.value = null
   try {
     const isEdit = Boolean(planEditId.value)
+    const previousEnvelopeId = plans.value.find((plan) => plan.id === planEditId.value)?.envelopeId ?? null
     await $fetch(`/api/households/${householdId.value}/planning`, {
       method: isEdit ? 'PATCH' : 'POST',
       body: {
@@ -142,12 +147,31 @@ async function savePlan() {
       },
     })
     planDialogOpen.value = false
-    await afterChange(`${copy.value.plan} ${isEdit ? 'aktualisiert' : 'angelegt'}.`)
+    const addedTo = !isEdit || previousEnvelopeId !== planForm.value.envelopeId ? planForm.value.envelopeId : null
+    const form = planForm.value
+    await afterChange(() => `${copy.value.plan} ${isEdit ? 'aktualisiert' : 'angelegt'}.${alreadyAllocatedHint(addedTo, form.frequency, form.startDate, form.endDate)}`)
   } catch (error: any) {
     notice.value = { severity: 'error', text: `${copy.value.plan} konnte nicht gespeichert werden: ` + (error.statusMessage || error.message) }
   } finally {
     planSaving.value = false
   }
+}
+
+// ADR-0005, Regel 1: Eine begonnene Periode ist gebucht, ein neuer Plan aendert
+// sie nicht. Ohne Hinweis stuende der Umschlag bei der ersten Zahlung im Minus,
+// ein einmaliger Plan bekaeme gar nichts. Laeuft nach dem Neuladen: Das Speichern
+// bucht die Periode, und `currentPeriod` stammt aus der frischen Uebersicht.
+function alreadyAllocatedHint(envelopeId: string | null, frequency: Frequency, startDate: Date | null, endDate: Date | null) {
+  const envelope = envelopes.value.find((item) => item.id === envelopeId)
+  const period = envelope?.currentPeriod
+  if (!isFixedCost.value || !period || envelope?.allocationSource !== 'PLANS' || !startDate) return ''
+  const start = new Date(period.start)
+  const end = new Date(period.end)
+  const once = frequency === 'ONCE'
+  if (startDate >= end || (endDate && endDate < start) || (once && startDate < start)) return ''
+  return once
+    ? ' Diese Periode ist schon zugeteilt: Der einmalige Betrag bekommt sonst kein Geld, bitte die Zuteilung im Umschlag erhöhen.'
+    : ' Diese Periode ist schon zugeteilt: Das Geld fließt ab der nächsten Periode, für diese bitte die Zuteilung im Umschlag erhöhen.'
 }
 
 const deletingId = ref<string | null>(null)

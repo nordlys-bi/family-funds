@@ -7,9 +7,13 @@
  * Option und das Formular bleibt benutzbar.
  */
 import { ref } from 'vue'
-import { sortEnvelopes, type EnvelopeOption } from '~/utils/envelope-options'
+import { sortEnvelopes, type AllocationSource, type EnvelopeOption } from '~/utils/envelope-options'
 
-export type BookableEnvelope = EnvelopeOption & { balance: { balance: number } }
+export type BookableEnvelope = EnvelopeOption & {
+  balance: { balance: number }
+  allocationSource: AllocationSource
+  currentPeriod: { start: string; end: string } | null
+}
 
 export function useEnvelopeOptions() {
   const envelopes = ref<BookableEnvelope[]>([])

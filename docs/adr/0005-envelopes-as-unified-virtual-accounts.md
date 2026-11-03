@@ -86,9 +86,9 @@ Damit das Ergebnis nicht vom Zeitpunkt des Abrufs abhängt, gelten vier Regeln:
 3. **Auslassen heißt Betrag 0, nicht löschen.** Eine gelöschte Zuteilung würde beim nächsten Abruf neu angelegt; die Zeile bleibt als Merker.
 4. **Keine vorgemerkten Regeländerungen.** "Ab Januar 350 €" wird am 1. Januar geändert. Ein Feld für eine geplante Änderung kommt erst, wenn es gebraucht wird.
 
-Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, solange dieser nicht in der Zukunft liegt: Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
+Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, auch wenn dieser in der Zukunft liegt (Migrationstag): Sonst hinge das Ergebnis davon ab, wann zuerst abgerufen wird. Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
 
-Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen.
+Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen. Das gilt auch für einen Plan, der in einer schon gebuchten Periode dazukommt: Wiederkehrende Pläne wirken ab der nächsten Periode, ein einmaliger bekommt nur in einer noch nicht gebuchten Periode automatisch Geld. Die App weist beim Speichern darauf hin.
 
 ## Vorgemerkt
 

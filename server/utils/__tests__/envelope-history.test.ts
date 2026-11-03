@@ -50,6 +50,15 @@ describe('computeEnvelopeHistoryPoints', () => {
     expect(points[0]!.date).toEqual(day(2026, 8, 3))
   })
 
+  it('stays level when a predecessor flows into a target that already moved on', () => {
+    const a: BalanceEnvelope = { id: 'a', balanceSince: day(2026, 1, 1), closedAt: day(2026, 3, 1), carryoverToEnvelopeId: 'b' }
+    const b: BalanceEnvelope = { id: 'b', balanceSince: day(2026, 1, 1), closedAt: day(2026, 2, 1), carryoverToEnvelopeId: 'c' }
+    const c: BalanceEnvelope = { id: 'c', balanceSince: day(2026, 1, 1), closedAt: null, carryoverToEnvelopeId: null }
+    const income = { expenses: [], incomes: [{ id: 'i', envelopeId: 'a', amount: 10000, date: day(2026, 1, 10), description: null }], transfers: [] }
+    const balances = computeEnvelopeHistoryPoints(getEnvelopeChain([a, b, c], 'c'), income, day(2026, 1, 31), day(2026, 3, 2)).slice(1).map((point) => point.balance)
+    expect(new Set(balances)).toEqual(new Set([10000]))
+  })
+
   it('survives a carryover cycle in legacy data', () => {
     const left: BalanceEnvelope = { id: 'left', balanceSince: day(2026, 1, 1), closedAt: day(2026, 12, 1), carryoverToEnvelopeId: 'right' }
     const right: BalanceEnvelope = { id: 'right', balanceSince: day(2026, 1, 1), closedAt: day(2026, 11, 1), carryoverToEnvelopeId: 'left' }

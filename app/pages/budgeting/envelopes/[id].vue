@@ -172,6 +172,8 @@ onMounted(async () => {
   await reload()
 })
 watch(householdId, reload)
+// Der globale Erfassen-Dialog bucht auch von hier aus: Saldo und Verlauf neu holen.
+watch(useQuickCapture().savedTick, reload)
 // Vorgaenger/Nachfolger-Links bleiben in derselben Komponente — bei neuer
 // ID alles neu laden statt veraltete Daten zu zeigen.
 watch(envelopeId, () => {
@@ -480,7 +482,9 @@ async function saveTransferEdit() {
     transferEdit.value = null
     await reload()
   } catch (error: any) {
-    transferEditError.value = 'Umbuchung konnte nicht geändert werden: ' + (error.statusMessage || error.message)
+    transferEditError.value = error.data?.data?.reason === 'before-ledger'
+      ? 'Das Datum liegt vor dem Start von „Zu verteilen“. Bitte ein späteres Datum wählen.'
+      : 'Umbuchung konnte nicht geändert werden: ' + (error.statusMessage || error.message)
   } finally {
     transferSaving.value = false
   }
@@ -773,7 +777,7 @@ function onDeleted(id: string) {
                 <div v-show="openGroups.has(group.start)" :id="`period-${group.start}-list`">
                   <!-- Gebuchte Zuteilungen: einzeln aenderbar, 0 heisst ausgesetzt (ADR-0005). -->
                   <p v-for="entry in group.allocationEntries" :key="entry.id ?? entry.date" class="period-group__allocation">
-                    {{ entry.amount === 0 ? 'Zuteilung ausgesetzt' : `Zuteilung ${compactMoney(entry.amount)}` }}{{ chainSuffix(entry) }}
+                    {{ entry.amount === 0 ? '0 € zugeteilt' : `Zuteilung ${compactMoney(entry.amount)}` }}{{ chainSuffix(entry) }}
                     <button
                       v-if="canManageHousehold && entry.id"
                       type="button"

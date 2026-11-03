@@ -177,14 +177,12 @@ export function listDueAllocations(
  * angelegter Monatsumschlag startet am 1. und laege vor `ledgerSince`.
  * `allocationPeriodStart` bleibt der Periodenbeginn.
  *
- * Liegt `ledgerSince` noch in der Zukunft, gilt das nicht: Die Zuteilung
- * zaehlt zum Bestand am Stichtag, und mit einem kuenftigen Datum waere sie
- * bis dahin nicht im Saldo.
+ * Auch bei einem `ledgerSince` in der Zukunft (Migrationstag), sonst hinge das
+ * Ergebnis davon ab, an welchem Tag zuerst abgerufen wird.
  */
-export function getAllocationBookingDate(periodStart: Date, ledgerSince: Date, today: Date): Date {
+export function getAllocationBookingDate(periodStart: Date, ledgerSince: Date): Date {
   const ledgerKey = dayKey(ledgerSince)
-  if (dayKey(periodStart) >= ledgerKey || ledgerKey > dayKey(today)) return periodStart
-  return new Date(ledgerKey)
+  return dayKey(periodStart) >= ledgerKey ? periodStart : new Date(ledgerKey)
 }
 
 /** Erster Tag des Folgemonats von `today` — Ende des Vormerk-Horizonts (exklusiv). */
