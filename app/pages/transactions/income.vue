@@ -109,7 +109,7 @@ const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
   ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id })),
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
 watch(envelopeSelectOptions, (options) => {
   if (!envelopesLoaded.value) return
@@ -119,7 +119,7 @@ watch(envelopeSelectOptions, (options) => {
 })
 const rowEditorEnvelopeOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
-  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
+  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
 ])
 
 // Issue #55: Option-Liste fuer die Person-Filter-Select.
@@ -793,7 +793,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         <small class="form-field-helper">{{ todayDateHelperText }}</small>
       </FormFieldRow>
       <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
-        <Select
+        <EnvelopeSelect
           id="transaction-envelope"
           v-model="transactionForm.envelopeId"
           :options="envelopeSelectOptions"
