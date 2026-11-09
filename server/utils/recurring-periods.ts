@@ -126,7 +126,7 @@ function toDate(value: Date | string): Date {
 /**
  * Setzt die Stunden auf 0, damit reine Datums-Vergleiche
  * (Monat, Woche) robust gegen Timezones sind. Lokal — konsistent
- * mit `startOfDay` in budget-evaluation.ts.
+ * mit `dayKey` in period.ts.
  */
 function startOfDay(date: Date): Date {
   const value = new Date(date)

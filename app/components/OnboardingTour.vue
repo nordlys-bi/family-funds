@@ -75,10 +75,10 @@ const steps: StepContent[] = [
     step: 'budget',
     index: 2,
     icon: 'pi pi-chart-line',
-    title: 'Erstes Budget anlegen',
+    title: 'Ersten Umschlag anlegen',
     description:
-      'Lege dein erstes Budget fuer eine Kategorie an (z. B. Lebensmittel). Du siehst sofort, wie viel du pro Periode verplanst hast.',
-    cta: 'Budget anlegen',
+      'Lege deinen ersten Umschlag an (z. B. Lebensmittel). Du siehst sofort, wie viel Geld darin liegt.',
+    cta: 'Umschlag anlegen',
     spotlight: '[data-onboarding-spotlight="budget"]',
   },
   {

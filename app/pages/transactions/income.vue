@@ -6,12 +6,6 @@ import { todayDateHelperText } from '~/utils/form-helpers'
 
 definePageMeta({ layout: 'default' })
 
-type BudgetItem = {
-  id: string
-  key: string
-  name: string
-}
-
 // Issue #55: Mitgliederliste fuer die Person-Filter-Select.
 // Server liefert { id, role, user: { id, email, displayName } },
 // wir flachen das auf { id, email, displayName }.
@@ -25,7 +19,6 @@ type PlanningHousehold = {
   id: string
   name: string
   currency: string
-  budgets: BudgetItem[]
   members: MemberItem[]
 }
 
@@ -72,8 +65,8 @@ function formatDateInput(value: Date) {
 // würde NICHT auto-unwrap — Consumer bekämen dann den Ref-Proxy.
 const tx = useTransactionList({
   initialMonth: typeof route.query.month === 'string' ? route.query.month : undefined,
-  // Issue #55: Person-Filter fuer Income-Listen (Budget-Filter nicht
-  // relevant, weil Einnahmen kein Budget haben — wird nicht angeboten).
+  // Issue #55: Person-Filter fuer Income-Listen. Einen Umschlag-Filter bietet
+  // die Seite nicht an, die Zeilen zeigen ihren Umschlag aber an (ADR-0005).
   initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
 })
 const month = tx.month
@@ -106,7 +99,28 @@ const transactionForm = ref({
   amount: null as number | null,
   description: '',
   date: new Date(),
+  envelopeId: '',
 })
+
+// ADR-0005: Eine Einnahme kann einem Umschlag gutgeschrieben werden, sonst
+// geht sie nach "Zu verteilen". Der Dialog bietet nur am Datum buchbare
+// Umschlaege an, der Inline-Editor filtert selbst nach seinem Entwurfs-Datum.
+const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
+const envelopeSelectOptions = computed(() => [
+  { label: 'Zu verteilen', value: '' },
+  ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
+])
+watch(envelopeSelectOptions, (options) => {
+  if (!envelopesLoaded.value) return
+  if (transactionForm.value.envelopeId && !options.some((option) => option.value === transactionForm.value.envelopeId)) {
+    transactionForm.value.envelopeId = ''
+  }
+})
+const rowEditorEnvelopeOptions = computed(() => [
+  { label: 'Zu verteilen', value: '' },
+  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
+])
 
 // Issue #55: Option-Liste fuer die Person-Filter-Select.
 // value: null = "Alle Mitglieder" (kein Filter).
@@ -186,7 +200,7 @@ const activeFilterLabel = computed(() => {
 /**
  * Aktive Filter als Chip-Liste fuer die Toolbar (siehe expenses.vue fuer
  * die ausfuehrliche Begruendung). Hier nur der Person-Filter — Einnahmen
- * kennen weder Budget noch Zeitraum-Modus.
+ * kennen weder Umschlag-Filter noch Zeitraum-Modus.
  */
 type FilterChip = { key: string; label: string; icon: string; onRemove: () => void }
 const activeFilterChips = computed<FilterChip[]>(() => {
@@ -244,12 +258,13 @@ async function loadCurrentHousehold() {
 async function loadAll() {
   await Promise.all([
     loadCurrentHousehold(),
+    loadEnvelopes(activeHouseholdId.value),
     loadTransactions(activeHouseholdId.value),
   ])
 }
 
 const resetForm = () => {
-  transactionForm.value = { amount: null, description: '', date: new Date() }
+  transactionForm.value = { amount: null, description: '', date: new Date(), envelopeId: '' }
   editingTransactionId.value = null
 }
 
@@ -275,7 +290,7 @@ const inlineEditError = ref<string | null>(null)
 
 async function saveInlineEdit(
   transactionId: string,
-  payload: { amount: number | null; description: string; date: string; budgetId: string | null },
+  payload: { amount: number | null; description: string; date: string; envelopeId: string | null },
 ) {
   if (!activeHouseholdId.value) return
   if (payload.amount == null || payload.amount <= 0) {
@@ -294,6 +309,7 @@ async function saveInlineEdit(
     amount: amountCents,
     description: payload.description,
     date: payload.date,
+    envelopeId: payload.envelopeId,
   })
   if (!original) {
     actionLoadingKey.value = null
@@ -309,6 +325,7 @@ async function saveInlineEdit(
         amount: payload.amount,
         description: payload.description,
         date: payload.date,
+        envelopeId: payload.envelopeId || null,
       },
     })
     editingTransactionId.value = null
@@ -345,6 +362,7 @@ const saveTransaction = async () => {
       amount: transactionForm.value.amount ?? undefined,
       description: transactionForm.value.description,
       date: transactionForm.value.date ? formatDateInput(transactionForm.value.date) : undefined,
+      envelopeId: transactionForm.value.envelopeId || null,
     }
     await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
       method: editingTransactionId.value ? 'PATCH' : 'POST',
@@ -435,7 +453,7 @@ const deleteTransaction = async (transaction: { id: string; description?: string
 
 // === Mobile-Kartenliste: Datum-Gruppierung + Floating Options-Menu ======
 // Siehe expenses.vue fuer die ausfuehrliche Begruendung (gleiche Logik,
-// hier ohne Budget-Chip — Einnahmen haben kein Budget).
+// hier ohne Umschlag-Chip — die Seite filtert nicht nach Umschlag).
 const groupedByDate = computed(() => {
   const groups: { dateLabel: string; items: typeof visibleTransactions.value }[] = []
   for (const transaction of visibleTransactions.value) {
@@ -528,8 +546,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         <MonthSwitcher :model-value="month" :loading="txLoading" @update:model-value="onMonthChange" />
       </div>
       <!-- Issue #95: Person-Filter hinter dem Toggle — gleiche Optik
-           wie /transactions/expenses. Budget-Filter gibt es hier nicht
-           (Einnahmen haben kein Budget). -->
+           wie /transactions/expenses. Umschlag-Filter gibt es hier nicht. -->
       <FilterDisclosure v-model:open="filtersOpen" :active-count="activeFilterCount" />
       <!-- Issue #92: Auf Mobile (< 640px) verdeckt der FAB Speed-Dial
            diesen Button und bietet dieselbe Aktion — hier ausblenden. -->
@@ -634,6 +651,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
               <td colspan="5" class="data-table__edit-cell">
                 <TransactionRowEditor
                   :transaction="transaction"
+                  :envelope-options="rowEditorEnvelopeOptions"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `income:${transaction.id}`"
                   :error="inlineEditError"
@@ -644,7 +662,10 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
             </template>
             <template v-else>
               <td class="muted">{{ formatDate(transaction.date) }}</td>
-              <td class="name">{{ transaction.description || 'Einnahme' }}</td>
+              <td class="name">
+                {{ transaction.description || 'Einnahme' }}
+                <span v-if="transaction.envelopeName" class="income-envelope">{{ transaction.envelopeName }}</span>
+              </td>
               <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
               <td class="num income-amount">+{{ formatMoney(transaction.amount) }}</td>
               <td class="actions">
@@ -694,6 +715,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                 <TransactionRowEditor
                   v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
+                  :envelope-options="rowEditorEnvelopeOptions"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `income:${transaction.id}`"
                   :error="inlineEditError"
@@ -721,6 +743,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   <div class="data-table__card-line">
                     <span class="data-table__card-name">
                       {{ transaction.description || 'Einnahme' }}
+                      <span v-if="transaction.envelopeName" class="income-envelope">{{ transaction.envelopeName }}</span>
                     </span>
                     <span class="data-table__card-amount income-amount">
                       +{{ formatMoney(transaction.amount) }}
@@ -769,10 +792,24 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
         <small class="form-field-helper">{{ todayDateHelperText }}</small>
       </FormFieldRow>
+      <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
+        <EnvelopeSelect
+          id="transaction-envelope"
+          v-model="transactionForm.envelopeId"
+          :options="envelopeSelectOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Zu verteilen"
+        />
+      </FormFieldRow>
       <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
         <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />
       </FormFieldRow>
     </FormDialog>
+
+    <!-- ADR-0005: Einnahmen-Plaene, aus denen die Buchung entsteht. Frueher auf
+         der Seite "Wiederkehrend". -->
+    <RecurringPlansPanel v-if="activeHousehold" kind="income" class="income-plans" @changed="loadTransactions(activeHouseholdId)" />
 
     <!-- Undo-Snackbar (issue #58): siehe expenses.vue fuer Details. -->
     <UndoSnackbar
@@ -788,6 +825,17 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 </template>
 
 <style scoped>
+.income-plans {
+  margin-top: 1rem;
+}
+
+.income-envelope {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
 .income-amount {
   color: var(--color-accent-success-text);
 }

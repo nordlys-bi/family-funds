@@ -6,13 +6,6 @@ import { todayDateHelperText } from '~/utils/form-helpers'
 
 definePageMeta({ layout: 'default' })
 
-type BudgetItem = {
-  id: string
-  key: string
-  name: string
-  closedAt?: string | null
-}
-
 // Issue #55: Mitgliederliste aus /api/households/current fuer die
 // Person-Filter-Select. Der Endpoint liefert pro Mitglied die
 // Membership-Zeile (id/role/createdAt) plus den verschachtelten
@@ -29,12 +22,15 @@ type PlanningHousehold = {
   id: string
   name: string
   currency: string
-  budgets: BudgetItem[]
   members: MemberItem[]
 }
 
 const { activeHousehold, fetchHouseholds } = useHousehold()
 const route = useRoute()
+const envelopeIdFromQuery = () => {
+  const value = route.query.envelopeId
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
 const router = useRouter()
 
 const currentHousehold = ref<PlanningHousehold | null>(null)
@@ -64,10 +60,6 @@ const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
 // --- Month-Filter via Composable (issue #9) ---
 // Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
 // WICHTIG: die Refs MÜSSEN top-level destructuriert werden, damit
@@ -80,11 +72,11 @@ const tx = useTransactionList({
   // in der URL. Die Page liest das hier und übergibt es als initial-Filter
   // an die Composable, damit der Deep-Link ohne Roundtrip greift.
   initialUnassignedOnly: route.query.unassigned === '1',
-  // Issue #55: Person- und Budget-Filter aus URL-Parametern uebernehmen.
+  // Issue #55: Person- und Umschlag-Filter aus URL-Parametern uebernehmen.
   // Leere Strings werden vom Composable als null behandelt, damit die
   // Default-URL sauber bleibt (kein "?userId=" in der Adressleiste).
   initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
-  initialBudgetIdFilter: typeof route.query.budgetId === 'string' && route.query.budgetId.length > 0 ? route.query.budgetId : null,
+  initialEnvelopeIdFilter: envelopeIdFromQuery(),
   // Klick auf eine Dashboard-Budget-Karte verlinkt hierher mit
   // ?from=<periodStart>&to=<periodEnd> (ISO) statt ?month — die exakte
   // Budget-Periode passt bei WEEKLY/QUARTERLY/YEARLY/ONCE nicht auf
@@ -96,7 +88,7 @@ const month = tx.month
 const range = tx.range
 const unassignedOnly = tx.unassignedOnly
 const userIdFilter = tx.userIdFilter
-const budgetIdFilter = tx.budgetIdFilter
+const envelopeIdFilter = tx.envelopeIdFilter
 const hasLocalFilters = tx.hasLocalFilters
 const monthLabel = tx.monthLabel
 const summary = tx.summary
@@ -105,7 +97,7 @@ const txError = tx.error
 const setMonth = tx.setMonth
 const setUnassignedOnly = tx.setUnassignedOnly
 const setUserIdFilter = tx.setUserIdFilter
-const setBudgetIdFilter = tx.setBudgetIdFilter
+const setEnvelopeIdFilter = tx.setEnvelopeIdFilter
 const setRange = tx.setRange
 const clearRange = tx.clearRange
 const clearLocalFilters = tx.clearLocalFilters
@@ -159,12 +151,12 @@ const showFirstTimeEmpty = computed(
   () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
 )
 
-const budgetOptions = computed(() => currentHousehold.value?.budgets ?? [])
+const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
 
 // Issue #55: Option-Listen fuer die Filter-Selects in der Toolbar.
-// Bewusst getrennt von `budgetSelectOptions` (Dialog), weil:
+// Bewusst getrennt von `envelopeSelectOptions` (Dialog), weil:
 //  - Filter-Select hat "Alle …" als Default-Option (value null)
-//  - Dialog-Select hat "Sonstiges" (value '') als Default-Option
+//  - Dialog-Select hat "Zu verteilen" (value '') als Default-Option
 // value: null ist noetig, damit PrimeVue-Select sauber zwischen "kein
 // Filter" und "Filter auf ID" unterscheiden kann.
 const memberOptions = computed(() => currentHousehold.value?.members ?? [])
@@ -175,40 +167,42 @@ const userFilterOptions = computed(() => [
     value: member.id as string | null,
   })),
 ])
-const budgetFilterOptions = computed(() => [
-  { label: 'Alle Budgets', value: null as string | null },
-  ...budgetOptions.value.map((budget) => ({
-    label: budget.name,
-    value: budget.id as string | null,
+const envelopeFilterOptions = computed(() => [
+  { label: 'Alle Umschläge', value: null as string | null },
+  ...envelopeOptions.value.map((envelope) => ({
+    label: envelope.name,
+    value: envelope.id as string | null,
+    group: envelope.group,
   })),
 ])
 
-const budgetLabel = (transaction: { budgetName?: string | null }) => transaction.budgetName ?? 'Sonstiges'
-const isUnassigned = (transaction: { budgetId?: string | null }) => !transaction.budgetId
+const envelopeLabel = (transaction: { envelopeName?: string | null }) => transaction.envelopeName ?? 'Zu verteilen'
+const isUnassigned = (transaction: { envelopeId?: string | null }) => !transaction.envelopeId
 
 const transactionForm = ref({
   amount: null as number | null,
   description: '',
   date: new Date(),
-  budgetId: '',
+  envelopeId: '',
 })
 
 // ADR-0004: Das Anlege-Dialog-Select bietet nur am Buchungsdatum offene
 // Budgets an. Der Inline-Editor bekommt alle Budgets samt `closedAt` und
 // filtert selbst nach seinem Entwurfs-Datum.
-const budgetSelectOptions = computed(() => [
-  { label: 'Sonstiges', value: '' },
-  ...budgetsOpenOn(budgetOptions.value, transactionForm.value.date)
-    .map((budget) => ({ label: budget.name, value: budget.id })),
+const envelopeSelectOptions = computed(() => [
+  { label: 'Zu verteilen', value: '' },
+  ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
+    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
 ])
-watch(budgetSelectOptions, (options) => {
-  if (transactionForm.value.budgetId && !options.some((option) => option.value === transactionForm.value.budgetId)) {
-    transactionForm.value.budgetId = ''
+watch(envelopeSelectOptions, (options) => {
+  if (!envelopesLoaded.value) return
+  if (transactionForm.value.envelopeId && !options.some((option) => option.value === transactionForm.value.envelopeId)) {
+    transactionForm.value.envelopeId = ''
   }
 })
-const rowEditorBudgetOptions = computed(() => [
-  { label: 'Sonstiges', value: '' },
-  ...budgetOptions.value.map((budget) => ({ label: budget.name, value: budget.id, closedAt: budget.closedAt ?? null })),
+const rowEditorEnvelopeOptions = computed(() => [
+  { label: 'Zu verteilen', value: '' },
+  ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
 ])
 
 // Month-Spinner-Change → URL-Sync + Reload (kein Full-Page-Reload)
@@ -219,7 +213,7 @@ async function onMonthChange(newMonth: string) {
   // sauber bleibt (kein "?month=2026-07" im Juli, wenn Juli der Default ist).
   // Issue #52: aktiven unassigned-Filter in der Query erhalten, damit der
   // Deep-Link ueber Browser-Back / -Forward bestehen bleibt.
-  // Issue #55: zusaetzlich userId- und budgetId-Filter preserved, damit
+  // Issue #55: zusaetzlich userId- und envelopeId-Filter preserved, damit
   // ein Monats-Wechsel die anderen Filter nicht zuruecksetzt.
   const query = buildRouteQuery({ monthOverride: newMonth })
   await router.replace({ query })
@@ -228,7 +222,7 @@ async function onMonthChange(newMonth: string) {
 /**
  * Baut den URL-Query aus dem aktuellen Filter-State. Wird von allen
  * Change-Handlern (onMonthChange, toggleUnassignedFilter,
- * onUserIdFilterChange, onBudgetIdFilterChange) gemeinsam genutzt,
+ * onUserIdFilterChange, onEnvelopeIdFilterChange) gemeinsam genutzt,
  * damit die "Query-ist-sauber"-Regel an einer Stelle lebt.
  *
  * Default-URL-Konvention (issue #55 / #52): nur aktive Filter und
@@ -240,7 +234,7 @@ async function onMonthChange(newMonth: string) {
  * - month: nur wenn nicht aktueller Monat (und kein Zeitraum aktiv)
  * - unassigned: nur wenn aktiv
  * - userId: nur wenn gesetzt
- * - budgetId: nur wenn gesetzt
+ * - envelopeId: nur wenn gesetzt
  *
  * `monthOverride` ist ein Hack fuer `onMonthChange`: der neue Monat
  * ist noch nicht in `month.value` committed, wenn die Query gebaut
@@ -261,7 +255,7 @@ function buildRouteQuery(options: { monthOverride?: string } = {}): Record<strin
   }
   if (unassignedOnly.value) query.unassigned = '1'
   if (userIdFilter.value) query.userId = userIdFilter.value
-  if (budgetIdFilter.value) query.budgetId = budgetIdFilter.value
+  if (envelopeIdFilter.value) query.envelopeId = envelopeIdFilter.value
   return query
 }
 
@@ -288,9 +282,9 @@ async function onUserIdFilterChange(value: string | null) {
   await router.replace({ query: buildRouteQuery() })
 }
 
-// Issue #55: Budget-Filter aendern. Gleiches Pattern wie Person-Filter.
-async function onBudgetIdFilterChange(value: string | null) {
-  setBudgetIdFilter(value)
+// Issue #55: Umschlag-Filter aendern. Gleiches Pattern wie Person-Filter.
+async function onEnvelopeIdFilterChange(value: string | null) {
+  setEnvelopeIdFilter(value)
   await loadTransactions(activeHouseholdId.value)
   await router.replace({ query: buildRouteQuery() })
 }
@@ -314,7 +308,7 @@ const filtersOpen = ref(!isRangeMode.value && (unassignedOnly.value || hasLocalF
 const activeFilterCount = computed(
   () =>
     (userIdFilter.value ? 1 : 0) +
-    (budgetIdFilter.value ? 1 : 0) +
+    (envelopeIdFilter.value ? 1 : 0) +
     (unassignedOnly.value ? 1 : 0),
 )
 
@@ -342,9 +336,9 @@ const activeFilterLabel = computed(() => {
     const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
     parts.push(member?.displayName || member?.email || 'diese Person')
   }
-  if (budgetIdFilter.value) {
-    const budget = budgetOptions.value.find((b) => b.id === budgetIdFilter.value)
-    parts.push(budget ? `im ${budget.name}` : 'dieses Budget')
+  if (envelopeIdFilter.value) {
+    const envelope = envelopeOptions.value.find((item) => item.id === envelopeIdFilter.value)
+    parts.push(envelope ? `in ${envelope.name}` : 'in diesem Umschlag')
   }
   return parts.join(' ')
 })
@@ -370,17 +364,17 @@ const activeFilterChips = computed<FilterChip[]>(() => {
       onRemove: () => onUserIdFilterChange(null),
     })
   }
-  if (budgetIdFilter.value) {
-    const budget = budgetOptions.value.find((b) => b.id === budgetIdFilter.value)
+  if (envelopeIdFilter.value) {
+    const envelope = envelopeOptions.value.find((item) => item.id === envelopeIdFilter.value)
     chips.push({
-      key: 'budget',
-      label: budget?.name ?? 'Budget',
+      key: 'envelope',
+      label: envelope?.name ?? 'Umschlag',
       icon: 'pi pi-wallet',
-      onRemove: () => onBudgetIdFilterChange(null),
+      onRemove: () => onEnvelopeIdFilterChange(null),
     })
   }
   if (unassignedOnly.value) {
-    chips.push({ key: 'unassigned', label: 'Ohne Budget', icon: 'pi pi-filter', onRemove: toggleUnassignedFilter })
+    chips.push({ key: 'unassigned', label: 'Ohne Umschlag', icon: 'pi pi-filter', onRemove: toggleUnassignedFilter })
   }
   return chips
 })
@@ -417,11 +411,11 @@ watch(
   },
 )
 watch(
-  () => route.query.budgetId,
+  () => route.query.envelopeId,
   async (newValue) => {
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
-    if (next !== budgetIdFilter.value) {
-      setBudgetIdFilter(next)
+    if (next !== envelopeIdFilter.value) {
+      setEnvelopeIdFilter(next)
       await loadTransactions(activeHouseholdId.value)
     }
   },
@@ -473,12 +467,13 @@ async function loadCurrentHousehold() {
 async function loadAll() {
   await Promise.all([
     loadCurrentHousehold(),
+    loadEnvelopes(activeHouseholdId.value),
     loadTransactions(activeHouseholdId.value),
   ])
 }
 
 const resetForm = () => {
-  transactionForm.value = { amount: null, description: '', date: new Date(), budgetId: '' }
+  transactionForm.value = { amount: null, description: '', date: new Date(), envelopeId: '' }
   editingTransactionId.value = null
 }
 
@@ -505,7 +500,7 @@ const inlineEditError = ref<string | null>(null)
 
 async function saveInlineEdit(
   transactionId: string,
-  payload: { amount: number | null; description: string; date: string; budgetId: string | null },
+  payload: { amount: number | null; description: string; date: string; envelopeId: string | null },
 ) {
   if (!activeHouseholdId.value) return
   if (payload.amount == null || payload.amount <= 0) {
@@ -525,7 +520,7 @@ async function saveInlineEdit(
     amount: amountCents,
     description: payload.description,
     date: payload.date,
-    budgetId: payload.budgetId,
+    envelopeId: payload.envelopeId,
   })
   if (!original) {
     actionLoadingKey.value = null
@@ -541,7 +536,7 @@ async function saveInlineEdit(
         amount: payload.amount,
         description: payload.description,
         date: payload.date,
-        budgetId: payload.budgetId,
+        envelopeId: payload.envelopeId,
       },
     })
     editingTransactionId.value = null
@@ -571,8 +566,8 @@ const saveTransaction = async () => {
       ...(editingTransactionId.value ? { id: editingTransactionId.value } : {}),
       amount: transactionForm.value.amount ?? undefined,
       description: transactionForm.value.description,
-      date: transactionForm.value.date ? formatDateInput(transactionForm.value.date) : undefined,
-      budgetId: transactionForm.value.budgetId || null,
+      date: transactionForm.value.date ? formatDateToInputString(transactionForm.value.date) : undefined,
+      envelopeId: transactionForm.value.envelopeId || null,
     }
     await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
       method: editingTransactionId.value ? 'PATCH' : 'POST',
@@ -786,7 +781,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       <Tag
         v-if="summary.unassignedExpenseTotal > 0"
         severity="secondary"
-        :value="`Ohne Budget ${formatMoney(summary.unassignedExpenseTotal)}`"
+        :value="`Ohne Umschlag ${formatMoney(summary.unassignedExpenseTotal)}`"
       />
     </template>
 
@@ -826,7 +821,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
     </div>
 
     <!-- Issue #95: aufklappbare Filter-Leiste. Initial offen, wenn per
-         Deep-Link (?userId / ?budgetId / ?unassigned) schon ein Filter
+         Deep-Link (?userId / ?envelopeId / ?unassigned) schon ein Filter
          aktiv ist. -->
     <div v-if="filtersOpen" class="filter-panel" role="group" aria-label="Filter">
       <!-- Issue #55: Person-Filter. Wert null = "Alle Mitglieder". -->
@@ -841,27 +836,27 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         class="toolbar-filter"
         @update:model-value="onUserIdFilterChange"
       />
-      <!-- Issue #55: Budget-Filter, "Alle Budgets" als Default. -->
-      <Select
-        :model-value="budgetIdFilter"
-        :options="budgetFilterOptions"
+      <!-- Issue #55: Umschlag-Filter, "Alle Umschläge" als Default. -->
+      <EnvelopeSelect
+        :model-value="envelopeIdFilter"
+        :options="envelopeFilterOptions"
         option-label="label"
         option-value="value"
-        placeholder="Alle Budgets"
+        placeholder="Alle Umschläge"
         :loading="txLoading"
-        aria-label="Buchungen nach Budget filtern"
+        aria-label="Buchungen nach Umschlag filtern"
         class="toolbar-filter"
-        @update:model-value="onBudgetIdFilterChange"
+        @update:model-value="onEnvelopeIdFilterChange"
       />
       <!-- Issue #52: Toggle fuer den ?unassigned=1-Filter. -->
       <Button
-        :label="unassignedOnly ? 'Alle anzeigen' : 'Nur ohne Budget'"
+        :label="unassignedOnly ? 'Alle anzeigen' : 'Nur ohne Umschlag'"
         :icon="unassignedOnly ? 'pi pi-times' : 'pi pi-filter'"
         :severity="unassignedOnly ? 'warn' : 'secondary'"
         :outlined="!unassignedOnly"
         size="small"
         :aria-pressed="unassignedOnly"
-        aria-label="Nach Buchungen ohne Budgetzuordnung filtern"
+        aria-label="Nach Buchungen ohne Umschlag filtern"
         @click="toggleUnassignedFilter"
       />
       <Button
@@ -902,8 +897,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
       variant="no-data"
       icon="pi pi-check-circle"
       icon-tone="success"
-      :headline="`Alle Ausgaben in ${periodOrMonthLabel} haben ein Budget`"
-      :description="`In ${periodOrMonthLabel} ist keine Ausgabe ohne Budgetzuordnung offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
+      :headline="`Alle Ausgaben in ${periodOrMonthLabel} haben einen Umschlag`"
+      :description="`In ${periodOrMonthLabel} ist keine Ausgabe ohne Umschlag offen. Du kannst den Filter ausschalten, um alle Buchungen zu sehen.`"
       :cta="{ label: 'Alle Ausgaben anzeigen', onClick: toggleUnassignedFilter, severity: 'secondary' }"
     />
     <!-- Issue #55: Empty-State fuer die Person/Budget-Filter. Wenn aktiv
@@ -938,7 +933,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
           <template #head>
             <th>Datum</th>
             <th>Beschreibung</th>
-            <th>Budget</th>
+            <th>Umschlag</th>
             <th class="muted">Von</th>
             <th class="num">Betrag</th>
             <th class="actions"></th>
@@ -949,7 +944,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
               <td colspan="6" class="data-table__edit-cell">
                 <TransactionRowEditor
                   :transaction="transaction"
-                  :budget-options="rowEditorBudgetOptions"
+                  :envelope-options="rowEditorEnvelopeOptions"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `expense:${transaction.id}`"
                   :error="inlineEditError"
@@ -962,11 +957,11 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
               <td class="muted">{{ formatDate(transaction.date) }}</td>
               <td class="name">
                 {{ transaction.description || 'Ausgabe' }}
-                <span v-if="isUnassigned(transaction)" class="sub">ohne Budgetzuordnung</span>
+                <span v-if="isUnassigned(transaction)" class="sub">ohne Umschlag</span>
               </td>
               <td>
-                <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
-                  {{ budgetLabel(transaction) }}
+                <span :class="['envelope-pill', isUnassigned(transaction) ? 'envelope-pill--muted' : '']">
+                  {{ envelopeLabel(transaction) }}
                 </span>
               </td>
               <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
@@ -1018,7 +1013,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                 <TransactionRowEditor
                   v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
-                  :budget-options="rowEditorBudgetOptions"
+                  :envelope-options="rowEditorEnvelopeOptions"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `expense:${transaction.id}`"
                   :error="inlineEditError"
@@ -1052,8 +1047,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                     </span>
                   </div>
                   <div class="data-table__card-meta">
-                    <span :class="['budget-pill', isUnassigned(transaction) ? 'budget-pill--muted' : '']">
-                      {{ budgetLabel(transaction) }}
+                    <span :class="['envelope-pill', isUnassigned(transaction) ? 'envelope-pill--muted' : '']">
+                      {{ envelopeLabel(transaction) }}
                     </span>
                     <span class="data-table__card-user">
                       {{ transaction.user.displayName || transaction.user.email }}
@@ -1097,14 +1092,14 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
           placeholder="0,00"
         />
       </FormFieldRow>
-      <FormFieldRow label="Budget" html-for="transaction-budget" wide>
-        <Select
-          id="transaction-budget"
-          v-model="transactionForm.budgetId"
-          :options="budgetSelectOptions"
+      <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
+        <EnvelopeSelect
+          id="transaction-envelope"
+          v-model="transactionForm.envelopeId"
+          :options="envelopeSelectOptions"
           optionLabel="label"
           optionValue="value"
-          placeholder="Budget wählen"
+          placeholder="Zu verteilen"
         />
       </FormFieldRow>
       <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
@@ -1140,7 +1135,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   color: var(--color-accent-danger-text);
 }
 
-.budget-pill {
+.envelope-pill {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
@@ -1151,7 +1146,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
   white-space: nowrap;
 }
 
-.budget-pill--muted {
+.envelope-pill--muted {
   background: rgba(148, 163, 184, 0.16);
   color: var(--color-text-muted);
 }

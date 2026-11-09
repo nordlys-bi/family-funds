@@ -1,7 +1,7 @@
 import { createError, defineEventHandler, getQuery } from 'h3'
 import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
-import { getMonthWindow } from '../../../utils/budget-evaluation'
+import { getMonthWindow } from '../../../utils/period'
 import { parseOptionalUuidQuery, parseUuidParam } from '../../../utils/validation'
 
 const DEFAULT_LIMIT = 200
@@ -19,9 +19,9 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                       liefern 400. Aggregate beziehen sich auf den
  *                       gefilterten Monat.
  *   - `?from=DATE[&to=DATE]`  Expliziter Zeitraum (ISO-8601), hat Vorrang
- *                       vor `?month`. Fuer Budget-Perioden, die nicht auf
+ *                       vor `?month`. Fuer Umschlag-Perioden, die nicht auf
  *                       Kalendermonate passen (WEEKLY/QUARTERLY/YEARLY/
- *                       ONCE — siehe Dashboard-Budget-Karten). `to` ist
+ *                       ONCE — siehe Dashboard-Karten). `to` ist
  *                       exklusiv (wie `monthEnd`) und optional — ohne `to`
  *                       ist der Zeitraum nach oben offen (ONCE ohne
  *                       Nachfolge-Version).
@@ -35,33 +35,33 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                          Aggregate angewendet). Wird fuer "Restore"
  *                          UI-Pattern gebraucht, falls man eine Vorschau
  *                          der geloeschten Items braucht.
- *   - `?unassigned=1`     Nur Ausgaben ohne Budget-Zuordnung (issue #52,
+ *   - `?unassigned=1`     Nur Buchungen ohne Umschlag (issue #52,
  *                          Dashboard "Handlungsbedarf"-Link) und ohne
  *                          Fixkosten-Plan — Fixkosten sind ueber ihren Plan
  *                          zugeordnet und kein Handlungsbedarf. Setzt
- *                          `budgetId: null, fixedCostPlanId: null` auf dem
+ *                          `envelopeId: null, fixedCostPlanId: null` auf dem
  *                          Expense-Read UND im
  *                          `expenseTotal`-Aggregate (dort dann
- *                          expenseTotal === unassignedExpenseTotal). Income
- *                          ist nicht betroffen (kein Budget-Bezug).
+ *                          expenseTotal === unassignedExpenseTotal). 
+ *                          Gilt auch fuer Einnahmen (ADR-0005).
  *   - `?userId=UUID`      Nur Buchungen dieser Person („Wer hat gebucht?“,
  *                          issue #55) — gilt fuer Ausgaben UND Einnahmen,
  *                          in Listen und Aggregaten. Keine UUID -> 400.
- *   - `?budgetId=UUID`    Nur Ausgaben dieses Budgets (issue #55, u. a.
- *                          Deep-Link der Dashboard-Budget-Karte). Income
- *                          ist nicht betroffen (kein Budget-Bezug).
+ *   - `?envelopeId=UUID`  Nur Buchungen dieses Umschlags (issue #55, u. a.
+ *                          Deep-Link der Dashboard-Budget-Karte). 
+ *                          Gilt auch fuer Einnahmen (ADR-0005).
  *                          Keine UUID -> 400. Zusammen mit `?unassigned=1`
  *                          (schliesst sich aus) ergibt sich die leere Menge.
  *
  * Summary (issue #134): Die Aggregate (`expenseTotal`, `incomeTotal`,
  * `unassignedExpenseTotal`) spiegeln dieselben Filter wie die Listen
- * (Zeitraum + userId + budgetId + unassigned) — die Badge oben auf den
+ * (Zeitraum + userId + envelopeId + unassigned) — die Badge oben auf den
  * Seiten muss zur sichtbaren Liste passen. Der Server ist dafuer die Single
  * Source of Truth, weil die Liste paginiert ist (`limit`) und eine
  * clientseitige Summe ueber die geladenen Zeilen bei `hasMore` falsch waere.
  * `unassignedExpenseTotal` ignoriert bewusst `unassigned` (der "Ohne
- * Budget"-Chip soll auch ohne aktiven Filter seinen Wert zeigen), beachtet
- * aber `userId`, damit er zur Person-Filterung passt; mit `?budgetId=` ist er
+ * Umschlag"-Chip soll auch ohne aktiven Filter seinen Wert zeigen), beachtet
+ * aber `userId`, damit er zur Person-Filterung passt; mit `?envelopeId=` ist er
  * 0. `netTotal` ist immer `incomeTotal - expenseTotal` der jeweils
  * gelieferten (gefilterten) Werte.
  *
@@ -111,7 +111,7 @@ export default defineEventHandler(async (event) => {
       }
       monthEnd = parsedTo
     } else {
-      // Kein oberes Ende (ONCE-Budget ohne Nachfolge-Version) — Query
+      // Kein oberes Ende (ONCE-Umschlag) — Query
       // laesst `lt` unten einfach weg.
       monthEnd = null
     }
@@ -182,27 +182,32 @@ export default defineEventHandler(async (event) => {
   // Die Filter gelten fuer Liste UND Summary-Aggregates, damit die Badge zur
   // sichtbaren Liste passt (siehe Doc-Kommentar oben).
   const userIdParam = parseOptionalUuidQuery(query, 'userId')
-  const budgetIdParam = parseOptionalUuidQuery(query, 'budgetId')
+  const envelopeIdParam = parseOptionalUuidQuery(query, 'envelopeId')
   const userFilter = userIdParam ? { userId: userIdParam } : {}
 
-  // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Budgetzuordnung"
-  // verlinkt auf ?unassigned=1. Setzt budgetId + fixedCostPlanId: null auf dem Expense-Read UND
+  // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Umschlag"
+  // verlinkt auf ?unassigned=1. Setzt envelopeId + fixedCostPlanId: null auf dem Expense-Read UND
   // im expenseTotal-Aggregate (dort dann expenseTotal === unassignedExpenseTotal),
-  // laesst Income unveraendert (kein Budget-Bezug).
+  // filtert Income auf `envelopeId: null` (ADR-0005).
   const unassignedOnly = query.unassigned === '1'
 
-  // `unassigned` (budgetId IS NULL) und `budgetId=X` sind AND-verknuepfte
+  // `unassigned` (envelopeId IS NULL) und `envelopeId=X` sind AND-verknuepfte
   // Filter. Beide zusammen sind ein Widerspruch — die leere Menge, nicht
   // stillschweigend einer der beiden (die Liste war in dem Fall schon vor
   // #134 leer, als der Budget-Filter noch im Client lief).
-  const budgetFilter =
-    unassignedOnly && budgetIdParam
-      ? { budgetId: { in: [] as string[] } }
+  // ADR-0005: Auch Einnahmen koennen an einem Umschlag haengen, also gilt der
+  // Filter fuer beide Seiten. Fixkosten zaehlen nur bei Ausgaben als Ausnahme.
+  const incomeEnvelopeFilter =
+    unassignedOnly && envelopeIdParam
+      ? { envelopeId: { in: [] as string[] } }
       : unassignedOnly
-        ? { budgetId: null, fixedCostPlanId: null }
-        : budgetIdParam
-          ? { budgetId: budgetIdParam }
+        ? { envelopeId: null }
+        : envelopeIdParam
+          ? { envelopeId: envelopeIdParam }
           : {}
+  const envelopeFilter = unassignedOnly && !envelopeIdParam
+    ? { ...incomeEnvelopeFilter, fixedCostPlanId: null }
+    : incomeEnvelopeFilter
 
   // Basis-Zeitraum als eigener Wert: `monthEnd` ist nur bei explizitem
   // `?from` ohne `?to` (offene ONCE-Periode) null — dann faellt `lt` ganz weg,
@@ -217,7 +222,7 @@ export default defineEventHandler(async (event) => {
     householdId,
     ...softDeleteFilter,
     ...userFilter,
-    ...budgetFilter,
+    ...envelopeFilter,
     date: {
       ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
@@ -227,6 +232,7 @@ export default defineEventHandler(async (event) => {
     householdId,
     ...softDeleteFilter,
     ...userFilter,
+    ...incomeEnvelopeFilter,
     date: {
       ...dateRangeFilter,
       ...(beforeDate ? { lt: beforeDate } : {}),
@@ -247,12 +253,11 @@ export default defineEventHandler(async (event) => {
         date: true,
         createdAt: true,
         updatedAt: true,
-        budgetId: true,
-        budget: {
+        envelopeId: true,
+        envelope: {
           select: {
             id: true,
             name: true,
-            key: true,
           },
         },
         user: {
@@ -277,6 +282,8 @@ export default defineEventHandler(async (event) => {
         date: true,
         createdAt: true,
         updatedAt: true,
+        envelopeId: true,
+        envelope: { select: { name: true } },
         user: {
           select: {
             id: true,
@@ -287,17 +294,17 @@ export default defineEventHandler(async (event) => {
       },
     }),
     prisma.incomeTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, ...userFilter, date: dateRangeFilter },
+      where: { householdId, ...softDeleteFilter, ...userFilter, ...incomeEnvelopeFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
     prisma.expenseTransaction.aggregate({
-      where: { householdId, ...softDeleteFilter, ...userFilter, ...budgetFilter, date: dateRangeFilter },
+      where: { householdId, ...softDeleteFilter, ...userFilter, ...envelopeFilter, date: dateRangeFilter },
       _sum: { amount: true },
     }),
-    // Mit aktivem Budget-Filter kann keine Ausgabe "ohne Budget" sein — 0,
-    // ohne DB-Roundtrip. Ohne Budget-Filter: bewusst OHNE `unassigned`-Filter
+    // Mit aktivem Umschlag-Filter kann keine Ausgabe "ohne Umschlag" sein — 0,
+    // ohne DB-Roundtrip. Ohne Filter: bewusst OHNE `unassigned`-Filter
     // (siehe Doc-Kommentar), aber mit `userId`.
-    budgetIdParam
+    envelopeIdParam
       ? Promise.resolve({ _sum: { amount: 0 } })
       : prisma.expenseTransaction.aggregate({
           where: {
@@ -305,9 +312,9 @@ export default defineEventHandler(async (event) => {
             ...softDeleteFilter,
             ...userFilter,
             date: dateRangeFilter,
-            budgetId: null,
+            envelopeId: null,
             // Gleiche Definition wie `?unassigned=1` und die Dashboard-
-            // Meldung: Fixkosten zaehlen nicht als "ohne Budget".
+            // Meldung: Fixkosten zaehlen nicht als "ohne Umschlag".
             fixedCostPlanId: null,
           },
           _sum: { amount: true },
@@ -323,9 +330,8 @@ export default defineEventHandler(async (event) => {
       date: transaction.date,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
-      budgetId: transaction.budgetId,
-      budgetName: transaction.budget?.name ?? null,
-      budgetKey: transaction.budget?.key ?? null,
+      envelopeId: transaction.envelopeId,
+      envelopeName: transaction.envelope?.name ?? null,
       user: transaction.user,
     })),
     ...incomes.map((transaction) => ({
@@ -336,6 +342,8 @@ export default defineEventHandler(async (event) => {
       date: transaction.date,
       createdAt: transaction.createdAt,
       updatedAt: transaction.updatedAt,
+      envelopeId: transaction.envelopeId,
+      envelopeName: transaction.envelope?.name ?? null,
       user: transaction.user,
     })),
   ]

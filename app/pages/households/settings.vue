@@ -20,6 +20,8 @@ type HouseholdDetail = {
   id: string
   name: string
   currency: string
+  ledgerSince: string
+  openingBalance: number
   members: HouseholdMember[]
   invitations: { id: string }[]
 }
@@ -68,6 +70,38 @@ const loadCurrentHousehold = async () => {
     message.value = { severity: 'error', text: 'Haushalt konnte nicht geladen werden: ' + (error.statusMessage || error.message) }
   } finally {
     currentLoading.value = false
+  }
+}
+
+// ADR-0005: Der Anfangsbestand ist das freie Geld zum Stichtag. Den Stichtag
+// selbst bietet die Maske bewusst nicht an: Ein frueherer Tag wuerde die beim
+// Umstieg migrierten Zuteilungen von "Zu verteilen" abziehen.
+const openingDialogOpen = ref(false)
+const openingForm = ref<number | null>(null)
+const saveOpeningLoading = ref(false)
+
+const openOpeningDialog = () => {
+  if (!currentHousehold.value) return
+  openingForm.value = currentHousehold.value.openingBalance / 100
+  openingDialogOpen.value = true
+}
+
+const handleSaveOpening = async () => {
+  if (!currentHousehold.value) return
+  saveOpeningLoading.value = true
+  message.value = null
+  try {
+    await $fetch(`/api/households/${currentHousehold.value.id}/unassigned`, {
+      method: 'PATCH',
+      body: { openingBalance: openingForm.value ?? 0 },
+    })
+    await loadCurrentHousehold()
+    openingDialogOpen.value = false
+    message.value = { severity: 'success', text: 'Anfangsbestand wurde aktualisiert.' }
+  } catch (error: any) {
+    message.value = { severity: 'error', text: 'Anfangsbestand konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
+  } finally {
+    saveOpeningLoading.value = false
   }
 }
 
@@ -158,6 +192,32 @@ const restartOnboarding = async () => {
     </article>
 
     <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
+      <h3 class="settings-help-title">Zu verteilen</h3>
+      <p class="settings-help-text">
+        Der Anfangsbestand ist das freie Geld zu Beginn, zusätzlich zu dem, was
+        schon in Umschlägen liegt. Er kann auch negativ sein.
+      </p>
+      <div class="settings-row">
+        <span class="settings-label">Zählt ab</span>
+        <span class="settings-value">{{ formatPlanningDate(currentHousehold.ledgerSince) }}</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Anfangsbestand</span>
+        <span class="settings-value">{{ formatMoneyFromCents(currentHousehold.openingBalance, currentHousehold.currency) }}</span>
+      </div>
+      <div v-if="canManageHousehold">
+        <Button
+          label="Anfangsbestand ändern"
+          icon="pi pi-pen-to-square"
+          severity="secondary"
+          outlined
+          size="small"
+          @click="openOpeningDialog"
+        />
+      </div>
+    </article>
+
+    <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
       <h3 class="settings-help-title">Darstellung</h3>
       <p class="settings-help-text">
         Folgt standardmäßig dem Farbschema deines Geräts. Du kannst Hell oder
@@ -205,6 +265,20 @@ const restartOnboarding = async () => {
       <FormFieldRow label="Währung" wide>
         <!-- Issue #81: Währung fest auf EUR, nicht editierbar. -->
         <Tag :value="`${FIXED_CURRENCY} (fest)`" severity="info" />
+      </FormFieldRow>
+    </FormDialog>
+
+    <FormDialog
+      v-model:visible="openingDialogOpen"
+      header="Anfangsbestand ändern"
+      submit-label="Speichern"
+      :saving="saveOpeningLoading"
+      @save="handleSaveOpening"
+      @cancel="openingDialogOpen = false"
+      width="min(34rem, 94vw)"
+    >
+      <FormFieldRow label="Anfangsbestand" html-for="household-opening-balance" wide>
+        <MoneyInput id="household-opening-balance" v-model="openingForm" :currency="currentHousehold?.currency" />
       </FormFieldRow>
     </FormDialog>
   </ListPageShell>

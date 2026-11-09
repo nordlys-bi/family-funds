@@ -5,7 +5,8 @@ import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
 import { assertTransactionKind } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { assertBudgetOpenOn } from '../../../utils/budget-lifecycle'
+import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
+import { dayKey } from '../../../utils/period'
 
 type TransactionUpdateBody = {
   kind: string
@@ -13,7 +14,28 @@ type TransactionUpdateBody = {
   amount?: string | number
   description?: string | null
   date?: string
-  budgetId?: string | null
+  // ADR-0005: Umschlag, null = "Zu verteilen". Fuer Ausgaben und Einnahmen.
+  envelopeId?: string | null
+}
+
+/**
+ * Umschlag und Datum nur pruefen, wenn sich eines davon aendert: Altbestand
+ * vor dem Startpunkt eines Umschlags muss sich weiter korrigieren lassen
+ * (Betrag, Beschreibung), und das Formular schickt das Datum immer mit.
+ */
+function changesBooking(
+  existing: { envelopeId: string | null; date: Date },
+  envelopeId: string | null | undefined,
+  date: Date | undefined,
+) {
+  return (envelopeId !== undefined && envelopeId !== existing.envelopeId)
+    || (date !== undefined && dayKey(date) !== dayKey(existing.date))
+}
+
+/** `undefined` = nicht geaendert, `null` = "Zu verteilen". */
+function parseEnvelopeChange(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined
+  return value?.trim() || null
 }
 
 export default defineEventHandler(async (event) => {
@@ -55,30 +77,13 @@ export default defineEventHandler(async (event) => {
       })
     }
 
-    const budgetId = body.budgetId === undefined ? undefined : body.budgetId?.trim() || null
+    const envelopeId = parseEnvelopeChange(body.envelopeId)
 
-    // ADR-0004: Gegen das resultierende Budget/Datum pruefen — auch ein
-    // reines Datums-Update darf eine Ausgabe nicht hinter den Stichtag
-    // eines geschlossenen Budgets schieben.
-    const effectiveBudgetId = budgetId === undefined ? existing.budgetId : budgetId
-
-    if (effectiveBudgetId) {
-      const budget = await prisma.budget.findFirst({
-        where: {
-          id: effectiveBudgetId,
-          householdId,
-        },
-        select: { id: true, closedAt: true },
-      })
-
-      if (!budget) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Budget not found.',
-        })
-      }
-
-      assertBudgetOpenOn(budget, date ?? existing.date)
+    // ADR-0005: Gegen den resultierenden Umschlag und das Datum pruefen —
+    // auch ein reines Datums-Update darf eine Ausgabe nicht hinter den
+    // Stichtag eines geschlossenen Umschlags schieben.
+    if (changesBooking(existing, envelopeId, date)) {
+      await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
     }
 
     const item = await prisma.expenseTransaction.update({
@@ -87,7 +92,7 @@ export default defineEventHandler(async (event) => {
         ...(amount !== undefined ? { amount } : {}),
         ...(description !== undefined ? { description } : {}),
         ...(date ? { date } : {}),
-        ...(budgetId !== undefined ? { budgetId } : {}),
+        ...(envelopeId !== undefined ? { envelopeId } : {}),
       },
     })
 
@@ -110,12 +115,18 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  const envelopeId = parseEnvelopeChange(body.envelopeId)
+  if (changesBooking(existing, envelopeId, date)) {
+    await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
+  }
+
   const item = await prisma.incomeTransaction.update({
     where: { id: body.id },
     data: {
       ...(amount !== undefined ? { amount } : {}),
       ...(description !== undefined ? { description } : {}),
       ...(date ? { date } : {}),
+      ...(envelopeId !== undefined ? { envelopeId } : {}),
     },
   })
 

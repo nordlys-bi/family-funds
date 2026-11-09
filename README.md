@@ -1,7 +1,7 @@
 # Family Funds
 
 Family Funds ist eine Haushalts- und Finanzverwaltungs-App für mehrere Personen pro Haushalt.  
-Die Anwendung unterstützt geplante Einnahmen, Fixkosten, Budgets, Sparziele und echte Buchungen.  
+Die Anwendung unterstützt geplante Einnahmen, Fixkosten, Umschläge und echte Buchungen.  
 Authentifizierung läuft über Clerk, lokal kann die App aber auch im Mock-Modus ohne Clerk verwendet werden.
 
 ## Dokumentation
@@ -16,12 +16,11 @@ Authentifizierung läuft über Clerk, lokal kann die App aber auch im Mock-Modus
 - Mehrere Haushalte pro Benutzer
 - Haushaltswechsel im Header
 - Haushaltsverwaltung mit Mitgliedern und Einladungen
-- Budgetierung mit wiederkehrenden Versionen pro Zeitraum
-- Geplante Einnahmen
-- Wiederkehrende Fixkosten
-- Sparziele mit monatlicher Sparrate
+- Umschläge für laufende Ausgaben, Fixkosten, Rücklagen, Sparziele und Persönliches
+- Geplante Einnahmen und Fixkosten
+- Umbuchungen und „Zu verteilen“
 - Transaktionen für Einnahmen und Ausgaben
-- Monatsauswertung mit Budget- und Restbudget-Übersicht
+- Monatsauswertung und Bewertung nach Saldo
 - Mock-Auth für lokale Entwicklung ohne Clerk
 
 ## Tech-Stack
@@ -163,14 +162,12 @@ Die App speichert unter anderem:
 - `Household`
 - `HouseholdMember`
 - `HouseholdInvitation`
-- `Budget`
-- `BudgetVersion`
+- `Envelope`
+- `EnvelopeTransfer`
 - `IncomePlan`
 - `FixedCostPlan`
 - `ExpenseTransaction`
 - `IncomeTransaction`
-- `SavingsGoal`
-- `SavingsGoalExecution`
 
 ## Aktueller Fokus
 

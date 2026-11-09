@@ -29,11 +29,11 @@ export const useHousehold = () => {
   const activeHouseholdId = computed(() => activeHousehold.value?.id ?? null)
 
   // Zentrale Owner-Pruefung (issue #128). Spiegelt die serverseitigen
-  // `requireHouseholdOwner`-Endpoints (Budgets/Plaene/Sparziele anlegen,
+  // `requireHouseholdOwner`-Endpoints (Umschlaege und Plaene anlegen,
   // bearbeiten, loeschen; Haushalt, Mitglieder, Einladungen) — die UI
   // bietet diese Aktionen MEMBERn gar nicht erst an, statt sie erst beim
   // Speichern mit 403 scheitern zu lassen. NICHT damit sperren: Buchungen,
-  // Sparziel-Einzahlungen/-Entnahmen und "als bezahlt markieren" — die
+  // Umbuchungen und "als bezahlt markieren" — die
   // duerfen alle Mitglieder (`requireHouseholdMembership`). Die Rolle kommt
   // aus `/api/households` und steht damit schon vor dem ersten Seiten-Fetch
   // fest (im Gegensatz zur Rolle aus dem Mitglieder-Detail der Seiten).

@@ -33,7 +33,7 @@ const SHOTS = [
   { name: 'members-desktop-fixed', path: '/households/members', viewport: 'desktop' },
 
   // Not-reproducible bug
-  { name: 'recurring-current', path: '/budgeting/recurring', viewport: 'desktop' },
+  { name: 'recurring-current', path: '/budgeting/envelopes?group=FIXED', viewport: 'desktop' },
 ]
 
 const VP = {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import type { EnvelopeItem, UnassignedOverview } from '~/types/envelope'
 
 definePageMeta({ layout: 'default' })
 
@@ -11,84 +12,18 @@ type DashboardData = {
     balance: number
     unassignedExpenses: number
   }
-  // Issue: Dashboard-"oberste Prio"-Budget-Karten. Beziehen sich auf die
-  // aktuell laufende Periode jedes Budgets (eigene Frequenz), nicht auf
-  // den Kalendermonat — siehe DashboardBudgetPeriodGrid.vue.
-  budgetPeriodCards: Array<{
-    budgetId: string
-    key: string
-    name: string
-    frequency: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE'
-    periodStart: string
-    periodEnd: string | null
-    plannedAmount: number
-    spentAmount: number
-    remainingAmount: number
-    percentUsed: number
-    severity: 'ok' | 'warning' | 'over'
-    balance?: number
-    // ADR-0004: Saldo im Wochenraster der letzten 3 Monate (Sparkline).
-    balanceTrend?: number[]
-  }>
-  budgetAlerts: Array<{
-    budgetId: string
-    name: string
-    plannedAmount: number
-    spentAmount: number
-    remainingAmount: number
-    percentUsed: number
-    severity: 'ok' | 'warning' | 'over'
-    // Issue #82: Wochen-Detail ist im Frontend optional, daher hier
-    // ebenfalls optional. Frontend prueft `currentFrequency === 'WEEKLY'`,
-    // bevor es `periods` rendert.
-    currentFrequency?: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'YEARLY' | 'ONCE' | null
-    periods?: Array<{
-      start: string
-      end: string
-      plannedAmount: number
-      spentAmount: number
-      remainingAmount: number
-      percentUsed: number
-      severity: 'ok' | 'warning' | 'over'
-    }>
-    // Issue #60 / ADR 0003: Forecast auf Monatsende. Linear extrapoliert,
-    // serverseitig berechnet. Frontend rendert es zwischen Ist-Row und
-    // Wochen-Toggle.
-    forecast?: {
-      forecastTotal: number
-      forecastRemaining: number
-      severity: 'on-track' | 'warning' | 'over'
-      basisDays: number
-      basisAmount: number
-      computedAt: string
-    }
-  }>
+  // ADR-0005: Umschlaege mit Saldo, Periode und Bewertung nach Saldo.
+  envelopes: EnvelopeItem[]
+  unassigned: UnassignedOverview
   recentActivity: Array<{
     id: string
     kind: 'expense' | 'income'
     amount: number
     description: string | null
     date: string
-    budgetName: string | null
+    envelopeName: string | null
     userDisplayName: string | null
   }>
-  savingsGoals: Array<{
-    id: string
-    name: string
-    targetAmount: number
-    currentAmount: number
-    monthlyRate: number
-    percentToTarget: number
-  }>
-  // Issue #60 / ADR 0003: Aggregierter Forecast für den month-strip.
-  // 4. Zelle „Voraussicht" (Variante 1, entschieden 2026-08-27).
-  monthForecast?: {
-    forecastTotal: number
-    plannedTotal: number
-    delta: number
-    severity: 'on-track' | 'warning' | 'over'
-    computedAt: string
-  }
   // Issue #98: fällige, noch nicht (voll) gedeckte Recurring-Pläne
   // diesen Monat — Zähler für den „Handlungsbedarf"-Block.
   recurringDue?: {
@@ -123,19 +58,28 @@ const monthLabel = computed(() =>
 )
 
 const summary = computed(() => snapshot.value?.monthSummary ?? null)
-// Issue #60 / ADR 0003: aggregierter Forecast für die 4. Zelle.
-const monthForecast = computed(() => snapshot.value?.monthForecast ?? null)
-
-function forecastSeverityLabel(severity: 'on-track' | 'warning' | 'over'): string {
-  switch (severity) {
-    case 'on-track': return 'im Plan'
-    case 'warning': return 'knapp über Plan'
-    case 'over': return 'über Plan'
-  }
-}
-const savingsGoals = computed(() => snapshot.value?.savingsGoals ?? [])
-const budgetAlerts = computed(() => snapshot.value?.budgetAlerts ?? [])
-const budgetPeriodCards = computed(() => snapshot.value?.budgetPeriodCards ?? [])
+const envelopes = computed(() => snapshot.value?.envelopes ?? [])
+const unassigned = computed(() => snapshot.value?.unassigned ?? { balance: 0, reserved: 0, free: 0 })
+const isOpen = (envelope: EnvelopeItem) => isEnvelopeOpenOn(envelope)
+// Karten: alle offenen laufenden Ausgaben mit Periode.
+const runningEnvelopes = computed(() =>
+  envelopes.value.filter((envelope) => envelope.group === 'RUNNING' && envelope.currentPeriod && isOpen(envelope)),
+)
+// Sparziele: alles Offene mit Zielbetrag, unabhaengig von der Gruppe. `monthlyRate`
+// nur bei monatlicher Zuteilung — sonst waere die Angabe "/ Monat" falsch.
+const savingsGoals = computed(() =>
+  envelopes.value
+    .filter((envelope) => envelope.targetAmount !== null && isOpen(envelope))
+    .map((envelope) => ({
+      id: envelope.id,
+      name: envelope.name,
+      targetAmount: envelope.targetAmount!,
+      currentAmount: envelope.balance.balance,
+      monthlyRate: envelope.frequency === 'MONTHLY' ? envelope.allocationAmount ?? 0 : 0,
+      percentToTarget: envelope.targetAmount! > 0 ? Math.max(0, envelope.balance.balance / envelope.targetAmount!) * 100 : 0,
+    }))
+    .sort((left, right) => right.percentToTarget - left.percentToTarget),
+)
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
 // Issue #97: der Schnellzugriff auf die letzte Buchung ist aus dem
 // "Handlungsbedarf"-Block in den "Letzte Buchungen"-Panel-Header gewandert.
@@ -209,58 +153,48 @@ watch(quickCapture.savedTick, loadDashboard)
     </Message>
 
     <template v-else-if="snapshot">
-      <!-- Budget-Perioden-Karten: oberste Prio auf dem Dashboard. Jede
+      <!-- Karten der laufenden Ausgaben: oberste Prio auf dem Dashboard. Jede
            Karte bezieht sich auf die eigene, aktuell laufende Periode des
-           Budgets (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
+           Umschlags (Woche/Monat/Quartal/Jahr/einmalig) statt auf den
            Kalendermonat — ersetzt die alte, kalendermonats-skalierte
-           "Budget-Auslastung"-Liste (DashboardBudgetList). -->
-      <ListPanel title="Budgets" :compact="true" :no-bleed="true">
+           Auslastungs-Liste. -->
+      <ListPanel title="Laufende Ausgaben" :compact="true" :no-bleed="true">
         <template #actions>
-          <NuxtLink to="/budgeting/budgets">
+          <NuxtLink to="/budgeting/envelopes">
             <Button
               icon="pi pi-external-link"
               size="small"
               severity="secondary"
               outlined
               text
-              aria-label="Alle Budgets anzeigen"
+              aria-label="Alle Umschläge anzeigen"
             />
           </NuxtLink>
         </template>
-        <DashboardBudgetPeriodGrid :cards="budgetPeriodCards" :format-money="formatMoney" />
+        <DashboardEnvelopeGrid :envelopes="runningEnvelopes" :format-money="formatMoney" />
       </ListPanel>
 
       <!-- Handlungsbedarf (issue #37): stand urspruenglich ganz oben, weil
            die Alltagsfrage "Was muss ich mir ansehen?" wichtiger war als
            "Wie hoch waren meine Einnahmen?" — steht jetzt direkt unter den
-           Budget-Perioden-Karten (neue oberste Prio). Issue #97: zeigt nur echten
-           Handlungsbedarf (kritische Budgets, unzugeordnete Buchungen,
-           fällige wiederkehrende Posten) + das freie Restbudget — sonst
+           Perioden-Karten (neue oberste Prio). Issue #97: zeigt nur echten
+           Handlungsbedarf (kritische Umschlaege, unzugeordnete Buchungen,
+           fällige wiederkehrende Posten) + mehr verplant als da ist — sonst
            einen ruhigen Einzeiler. -->
       <DashboardActionRequired
-        :budget-alerts="budgetAlerts"
+        :envelopes="envelopes"
         :unassigned-expenses="summary?.unassignedExpenses ?? 0"
+        :unassigned-free="unassigned.free"
         :recurring-due="snapshot.recurringDue ?? null"
         :format-money="formatMoney"
       />
 
-      <!-- Issue #57: Konsolidierte Liquiditaets-Zahl (Spartoepfe +
-           freies Restbudget) als eigene Karte zwischen Action-Required
-           und der Monatszeile. Beantwortet die Alltagsfrage "Wieviel
-           Geld liegt gerade da?" mit einem Blick, ohne dass der User
-           die Summe aus zwei Panels zusammensetzen muss. Wird
-           automatisch ausgeblendet, wenn weder Toepfe noch freies
-           Restbudget vorhanden sind. -->
-      <DashboardLiquidityCard
-        :savings-goals="savingsGoals"
-        :budget-alerts="budgetAlerts"
-        :format-money="formatMoney"
-      />
+      <!-- ADR-0005: "Wie viel kann ich noch verteilen?" zwischen Handlungsbedarf
+           und Monatszeile. Loest die Liquiditaets-Karte aus issue #57 ab. -->
+      <DashboardUnassignedCard :unassigned="unassigned" :format-money="formatMoney" />
 
       <!-- Kompakte Monatszeile (issue #37): Der Saldo ist die Leitzahl,
-           Einnahmen/Ausgaben stehen sekundaer daneben. Die "Voraussicht"
-           erscheint nur, wenn sie vom Plan abweicht — "im Plan" ist keine
-           Information, die eine eigene Zelle verdient. -->
+           Einnahmen/Ausgaben stehen sekundaer daneben. -->
       <div class="month-strip" :class="`month-strip--${balanceTone}`" role="group" aria-label="Monatsübersicht">
         <div class="month-strip__primary">
           <span class="month-strip__label">Saldo · {{ monthLabel }}</span>
@@ -278,19 +212,6 @@ watch(quickCapture.savedTick, loadDashboard)
           <div class="month-strip__pair">
             <dt>Einnahmen</dt>
             <dd :class="incomeIsZero ? 'month-strip__muted' : 'month-strip__pos'">{{ formatMoney(summary?.income) }}</dd>
-          </div>
-          <!-- Issue #60 / ADR 0003: Voraussicht auf Monatsende — nur bei
-               Abweichung vom Plan (warning/over), nicht im Normalfall. -->
-          <div
-            v-if="monthForecast && monthForecast.severity !== 'on-track'"
-            class="month-strip__pair"
-            :class="`month-strip__pair--forecast--${monthForecast.severity}`"
-          >
-            <dt>Voraussicht</dt>
-            <dd>
-              {{ formatMoney(monthForecast.forecastTotal) }}
-              <span class="month-strip__tag">{{ forecastSeverityLabel(monthForecast.severity) }}</span>
-            </dd>
           </div>
         </dl>
       </div>
@@ -337,10 +258,10 @@ watch(quickCapture.savedTick, loadDashboard)
                ?new=1 oeffnet den Sparziel-Dialog direkt auf der Zielseite
                (useQueryTrigger in savings.vue) — gleicher Button-Style wie
                "Ausgabe erfassen" oben. -->
-          <NuxtLink v-if="canManageHousehold" to="/budgeting/savings?new=1">
+          <NuxtLink v-if="canManageHousehold" to="/budgeting/envelopes?group=SAVINGS&new=1">
             <Button label="Sparziel anlegen" icon="pi pi-plus" size="small" severity="primary" />
           </NuxtLink>
-          <NuxtLink to="/budgeting/savings">
+          <NuxtLink to="/budgeting/envelopes?group=SAVINGS">
             <Button
               label="Alle anzeigen"
               icon="pi pi-list"
@@ -475,33 +396,6 @@ watch(quickCapture.savedTick, loadDashboard)
    prominent gruen, sondern gedaempft. */
 .month-strip__aside dd.month-strip__muted {
   color: var(--color-text-muted, #94a3b8);
-}
-
-/* Issue #60 / ADR 0003: Voraussicht nur bei Abweichung vom Plan. */
-.month-strip__aside .month-strip__pair--forecast--warning dd {
-  color: var(--color-accent-warning-text);
-}
-
-.month-strip__aside .month-strip__pair--forecast--over dd {
-  color: var(--color-accent-danger-text);
-}
-
-.month-strip__tag {
-  display: inline-block;
-  margin-left: 0.3rem;
-  font-size: 0.6rem;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 999px;
-  letter-spacing: 0.02em;
-  vertical-align: middle;
-  background: rgba(251, 191, 36, 0.14);
-  color: var(--color-accent-warning-text);
-}
-
-.month-strip__pair--forecast--over .month-strip__tag {
-  background: rgba(248, 113, 113, 0.14);
-  color: var(--color-accent-danger-text);
 }
 
 @media (max-width: 640px) {

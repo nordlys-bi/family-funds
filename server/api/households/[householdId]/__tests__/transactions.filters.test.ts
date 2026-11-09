@@ -4,14 +4,14 @@ import type { H3Event } from 'h3'
 
 /**
  * Tests fuer die Filter-Konsistenz von `GET /api/households/:id/transactions`
- * (issue #134): Person-Filter (`?userId=`), Budget-Filter (`?budgetId=`) und
+ * (issue #134): Person-Filter (`?userId=`), Umschlag-Filter (`?envelopeId=`) und
  * `?unassigned=1` muessen NICHT nur die Liste, sondern auch die Summary-
  * Aggregates einschraenken — sonst zeigt die Badge auf der Ausgaben-/
  * Einnahmen-Seite die Gesamtsumme des Zeitraums statt der gefilterten Liste.
  *
  * Prisma ist gemockt; geprueft wird das `where` der Aggregate-/findMany-Calls.
  * Reihenfolge der Expense-Aggregates im Handler: [0] expenseTotal,
- * [1] unassignedExpenseTotal (entfaellt bei aktivem Budget-Filter).
+ * [1] unassignedExpenseTotal (entfaellt bei aktivem Umschlag-Filter).
  */
 
 const prismaMocks = vi.hoisted(() => ({
@@ -81,7 +81,7 @@ describe('GET /transactions — ?userId= (Person-Filter)', () => {
     expect(incomeAggregateWhere().userId).toBe(USER_ID)
     // Der "Ohne Budget"-Chip soll zur Person-Filterung passen.
     expect(unassignedTotalWhere().userId).toBe(USER_ID)
-    expect(unassignedTotalWhere().budgetId).toBeNull()
+    expect(unassignedTotalWhere().envelopeId).toBeNull()
   })
 
   it('does not add a userId condition when the param is absent or empty', async () => {
@@ -125,23 +125,23 @@ describe('GET /transactions — ?userId= (Person-Filter)', () => {
   })
 })
 
-describe('GET /transactions — ?budgetId= (Budget-Filter)', () => {
-  it('applies budgetId to the expense list and the expenseTotal aggregate', async () => {
-    await handler(makeEvent({ month: '2026-05', budgetId: BUDGET_ID }))
+describe('GET /transactions — ?envelopeId= (Umschlag-Filter)', () => {
+  it('applies envelopeId to the expense list and the expenseTotal aggregate', async () => {
+    await handler(makeEvent({ month: '2026-05', envelopeId: BUDGET_ID }))
 
-    expect(expenseFindWhere().budgetId).toBe(BUDGET_ID)
-    expect(expenseTotalWhere().budgetId).toBe(BUDGET_ID)
+    expect(expenseFindWhere().envelopeId).toBe(BUDGET_ID)
+    expect(expenseTotalWhere().envelopeId).toBe(BUDGET_ID)
   })
 
-  it('does not touch income (kein Budget-Bezug)', async () => {
-    await handler(makeEvent({ month: '2026-05', budgetId: BUDGET_ID }))
+  it('filters income as well (ADR-0005)', async () => {
+    await handler(makeEvent({ month: '2026-05', envelopeId: BUDGET_ID }))
 
-    expect(incomeFindWhere()).not.toHaveProperty('budgetId')
-    expect(incomeAggregateWhere()).not.toHaveProperty('budgetId')
+    expect(incomeFindWhere()).toMatchObject({ envelopeId: BUDGET_ID })
+    expect(incomeAggregateWhere()).toMatchObject({ envelopeId: BUDGET_ID })
   })
 
   it('reports unassignedExpenseTotal as 0 without querying it', async () => {
-    const response = await handler(makeEvent({ month: '2026-05', budgetId: BUDGET_ID }))
+    const response = await handler(makeEvent({ month: '2026-05', envelopeId: BUDGET_ID }))
 
     // Nur der expenseTotal-Aggregate laeuft — kein Ausgabe kann zugleich
     // dieses Budget haben und "ohne Budget" sein.
@@ -150,10 +150,10 @@ describe('GET /transactions — ?budgetId= (Budget-Filter)', () => {
   })
 
   it('combines with userId (AND) in list and aggregate', async () => {
-    await handler(makeEvent({ month: '2026-05', budgetId: BUDGET_ID, userId: USER_ID }))
+    await handler(makeEvent({ month: '2026-05', envelopeId: BUDGET_ID, userId: USER_ID }))
 
-    expect(expenseFindWhere()).toMatchObject({ budgetId: BUDGET_ID, userId: USER_ID })
-    expect(expenseTotalWhere()).toMatchObject({ budgetId: BUDGET_ID, userId: USER_ID })
+    expect(expenseFindWhere()).toMatchObject({ envelopeId: BUDGET_ID, userId: USER_ID })
+    expect(expenseTotalWhere()).toMatchObject({ envelopeId: BUDGET_ID, userId: USER_ID })
   })
 
   it('works with an explicit from/to range (Dashboard-Budget-Karte)', async () => {
@@ -161,20 +161,20 @@ describe('GET /transactions — ?budgetId= (Budget-Filter)', () => {
       makeEvent({
         from: '2026-05-01T00:00:00.000Z',
         to: '2026-06-01T00:00:00.000Z',
-        budgetId: BUDGET_ID,
+        envelopeId: BUDGET_ID,
       }),
     )
 
     const totalWhere = expenseTotalWhere()
-    expect(totalWhere.budgetId).toBe(BUDGET_ID)
+    expect(totalWhere.envelopeId).toBe(BUDGET_ID)
     expect(totalWhere.date).toEqual({
       gte: new Date('2026-05-01T00:00:00.000Z'),
       lt: new Date('2026-06-01T00:00:00.000Z'),
     })
   })
 
-  it('rejects a budgetId that is not a UUID with 400', async () => {
-    await expect(handler(makeEvent({ month: '2026-05', budgetId: '123' }))).rejects.toMatchObject({
+  it('rejects an envelopeId that is not a UUID with 400', async () => {
+    await expect(handler(makeEvent({ month: '2026-05', envelopeId: '123' }))).rejects.toMatchObject({
       statusCode: 400,
     })
     expect(prismaMocks.expenseTransaction.findMany).not.toHaveBeenCalled()
@@ -182,48 +182,48 @@ describe('GET /transactions — ?budgetId= (Budget-Filter)', () => {
 })
 
 describe('GET /transactions — ?unassigned=1 im Aggregate (issue #134)', () => {
-  it('applies budgetId: null to the expenseTotal aggregate, not only to the list', async () => {
+  it('applies envelopeId: null to the expenseTotal aggregate, not only to the list', async () => {
     await handler(makeEvent({ month: '2026-05', unassigned: '1' }))
 
-    expect(expenseFindWhere().budgetId).toBeNull()
-    expect(expenseTotalWhere().budgetId).toBeNull()
+    expect(expenseFindWhere().envelopeId).toBeNull()
+    expect(expenseTotalWhere().envelopeId).toBeNull()
   })
 
   it('still reports unassignedExpenseTotal via its own aggregate', async () => {
     await handler(makeEvent({ month: '2026-05', unassigned: '1' }))
 
     expect(prismaMocks.expenseTransaction.aggregate).toHaveBeenCalledTimes(2)
-    expect(unassignedTotalWhere().budgetId).toBeNull()
+    expect(unassignedTotalWhere().envelopeId).toBeNull()
   })
 
-  it('leaves the income aggregate alone', async () => {
+  it('counts only incomes without envelope in the income aggregate (ADR-0005)', async () => {
     await handler(makeEvent({ month: '2026-05', unassigned: '1' }))
 
-    expect(incomeAggregateWhere()).not.toHaveProperty('budgetId')
+    expect(incomeAggregateWhere().envelopeId).toBeNull()
   })
 
   it('does not filter the aggregate for other unassigned values (strikt "1")', async () => {
     await handler(makeEvent({ month: '2026-05', unassigned: 'true' }))
 
-    expect(expenseTotalWhere()).not.toHaveProperty('budgetId')
+    expect(expenseTotalWhere()).not.toHaveProperty('envelopeId')
   })
 
   it('yields the empty set when combined with a budget filter (Widerspruch)', async () => {
-    await handler(makeEvent({ month: '2026-05', unassigned: '1', budgetId: BUDGET_ID }))
+    await handler(makeEvent({ month: '2026-05', unassigned: '1', envelopeId: BUDGET_ID }))
 
-    // `budgetId IN ()` matcht nichts — Liste und Summe sind konsistent leer.
-    expect(expenseFindWhere().budgetId).toEqual({ in: [] })
-    expect(expenseTotalWhere().budgetId).toEqual({ in: [] })
+    // `envelopeId IN ()` matcht nichts — Liste und Summe sind konsistent leer.
+    expect(expenseFindWhere().envelopeId).toEqual({ in: [] })
+    expect(expenseTotalWhere().envelopeId).toEqual({ in: [] })
   })
 })
 
 describe('GET /transactions — ohne Filter (Regression)', () => {
-  it('keeps the aggregates unfiltered by user/budget and unassignedExpenseTotal budgetId: null', async () => {
+  it('keeps the aggregates unfiltered by user/budget and unassignedExpenseTotal envelopeId: null', async () => {
     await handler(makeEvent({ month: '2026-05' }))
 
     expect(expenseTotalWhere()).not.toHaveProperty('userId')
-    expect(expenseTotalWhere()).not.toHaveProperty('budgetId')
+    expect(expenseTotalWhere()).not.toHaveProperty('envelopeId')
     expect(incomeAggregateWhere()).not.toHaveProperty('userId')
-    expect(unassignedTotalWhere().budgetId).toBeNull()
+    expect(unassignedTotalWhere().envelopeId).toBeNull()
   })
 })

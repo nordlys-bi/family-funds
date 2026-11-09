@@ -122,7 +122,7 @@ watch(
 const stepNavTargets: Record<string, string | null> = {
   household: null,
   invite: '/households/members',
-  budget: '/budgeting/budgets',
+  budget: '/budgeting/envelopes',
   transaction: '/transactions/expenses',
 }
 
@@ -194,24 +194,16 @@ onBeforeUnmount(() => {
           <i class="pi pi-list nav-icon"></i>
           <span>Buchungen</span>
         </NuxtLink>
-        <!-- Aktiv auch auf den Detailseiten /budgeting/budgets/:id — das sind
+        <!-- Aktiv auch auf den Detailseiten /budgeting/envelopes/:id — das sind
              Geschwister-Routen, active-class wuerde dort nicht greifen. -->
         <NuxtLink
-          to="/budgeting/budgets"
+          to="/budgeting/envelopes"
           class="nav-item"
-          :class="{ 'nav-item-active': route.path.startsWith('/budgeting/budgets') }"
-          :aria-current="route.path === '/budgeting/budgets' ? 'page' : undefined"
+          :class="{ 'nav-item-active': route.path.startsWith('/budgeting/envelopes') }"
+          :aria-current="route.path === '/budgeting/envelopes' ? 'page' : undefined"
         >
           <i class="pi pi-wallet nav-icon"></i>
-          <span>Budgets</span>
-        </NuxtLink>
-        <NuxtLink to="/budgeting/savings" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-star nav-icon"></i>
-          <span>Sparziele</span>
-        </NuxtLink>
-        <NuxtLink to="/budgeting/recurring" class="nav-item" active-class="nav-item-active">
-          <i class="pi pi-sync nav-icon"></i>
-          <span>Wiederkehrend</span>
+          <span>Umschläge</span>
         </NuxtLink>
 
         <div class="nav-divider" role="separator"></div>
@@ -237,8 +229,9 @@ onBeforeUnmount(() => {
         <div v-if="isClerkMode" class="clerk-user-button">
           <UserButton :show-name="true" />
         </div>
+        <!-- Auch mit Clerk: Im UserButton-Menue allein waere Abmelden schwer zu finden,
+             und die mobile Navigation zeigt es ebenfalls immer. -->
         <Button
-          v-else
           label="Abmelden"
           icon="pi pi-power-off"
           severity="secondary"
@@ -361,6 +354,13 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  /* Sonst waechst die Spalte mit der Seite, und "Abmelden" rutscht auf langen
+     Seiten unter den sichtbaren Bereich. Die Navigation scrollt bei Bedarf selbst. */
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  height: 100vh;
+  height: 100dvh;
   transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 200;
 }
@@ -533,6 +533,7 @@ onBeforeUnmount(() => {
 .clerk-user-button {
   display: flex;
   justify-content: center;
+  margin-bottom: 0.75rem;
 }
 
 .logout-btn {

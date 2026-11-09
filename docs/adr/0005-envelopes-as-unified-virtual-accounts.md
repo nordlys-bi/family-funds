@@ -1,6 +1,6 @@
 # Umschläge: Budgets, Sparziele und Fixkosten als ein virtuelles Konto
 
-Status: accepted (noch nicht umgesetzt)
+Status: accepted
 
 Seit [ADR-0004](0004-budget-as-virtual-account.md) sind Budgets virtuelle Konten mit fortlaufendem Saldo. Sparziele sind es der Sache nach auch — ihr Stand ist die Summe der Bewegungen —, werden aber als eigenes Modell mit eigenen Buchungsregeln geführt. Daraus entstehen Sonderwege, die sich gegenseitig stützen müssen:
 
@@ -36,7 +36,7 @@ Jeder Umschlag gehört zu genau einer Gruppe. Die Gruppe ist **gespeichert und v
 
 | Gruppe | `group` | Beispiele | Vorgabe beim Anlegen | Darstellung |
 |---|---|---|---|---|
-| Laufende Ausgaben | `RUNNING` | Lebensmittel, Tanken, Kinder | feste Zuteilung je Woche/Monat | Saldo, Periodenfortschritt, Prognose |
+| Laufende Ausgaben | `RUNNING` | Lebensmittel, Tanken, Kinder | feste Zuteilung je Woche/Monat | Saldo, Periodenfortschritt |
 | Fixkosten | `FIXED` | Wohnen, Streaming, Kfz | Zuteilung aus verknüpften Plänen | Pläne, Fälligkeiten, offen/bezahlt, Saldo |
 | Rücklagen | `RESERVE` | Autoreparatur, Kleidung, Weihnachten | feste Zuteilung, kein Ziel | Saldo, Verlauf |
 | Sparziele | `SAVINGS` | Urlaub | Zielbetrag | Fortschritt zum Ziel |
@@ -65,7 +65,7 @@ frei(t)  = saldo(Zu verteilen, t) − vorgemerkt(t)
 
 Salden werden weiterhin nicht persistiert, sondern pro Request über reale Zeilen summiert. Anders als in ADR-0004 sind **Zuteilungen aber gebuchte Zeilen** (siehe "Zuteilung"); der Saldo ist damit eine reine Summe, ohne Perioden abzulaufen.
 
-**Invariante:** `Σ saldo(alle Umschläge) + saldo(Zu verteilen) = openingBalance + Σ Einnahmen − Σ Ausgaben`. Zuteilungen und Umbuchungen verschieben nur. In Stufe 2 wird die rechte Seite durch die Summe der reellen Kontostände überprüfbar.
+**Invariante:** `Σ saldo(Umschläge, t) + saldo(Zu verteilen, t) = Σ saldo(Umschläge, Stichtag) + openingBalance + Σ Einnahmen − Σ Ausgaben`, mit Einnahmen und Ausgaben seit dem Stichtag `ledgerSince`. Zuteilungen und Umbuchungen verschieben nur. Zählen darf dabei nur, wessen Endsaldo noch nicht weitergeflossen ist: Der Saldo eines geschlossenen Umschlags steckt nach dem Einfließen im Ziel und darf nicht doppelt in die Summe. In Stufe 2 wird die rechte Seite durch die Summe der reellen Kontostände überprüfbar.
 
 ## Zuteilung
 
@@ -77,14 +77,18 @@ Ein Umschlag hat eine Frequenz (`frequency`, unveränderlich wie in ADR-0004; Fr
 
 **Zuteilungen werden gebucht, und zwar lazy.** Eine Zuteilung ist eine `EnvelopeTransfer`-Zeile aus "Zu verteilen" in den Umschlag mit `allocationPeriodStart` = Periodenbeginn und Datum = Periodenbeginn. Sie wird angelegt, sobald ihre Periode begonnen hat und jemand einen Saldo des Haushalts abruft — kein Job. Damit liegen vergangene Zuteilungen fest: Eine geänderte Regel (Mieterhöhung, neuer Wochenbetrag) wirkt ab der nächsten noch nicht gebuchten Periode, ohne Versionen und ohne rückwirkenden Effekt. Einzelne Zuteilungen lassen sich bearbeiten ("diesen Monat nur 200 €"), und der Verlauf eines Umschlags ist seine Buchungsliste.
 
+Bekommt ein Umschlag ohne Zuteilung nachträglich eine Regel, gibt es für seine vergangenen Perioden keine Zeilen. `Envelope.allocationsSince` begrenzt die Regel deshalb auf die nächste Periode, sonst würde sie rückwirkend nachgebucht. Das gilt auch für Sparziele, die aus ihrer alten Sparrate eine Zuteilung machen.
+
 Damit das Ergebnis nicht vom Zeitpunkt des Abrufs abhängt, gelten vier Regeln:
 
-1. **Erst nachbuchen, dann ändern.** Jede Änderung an Zuteilungsregel, Plan, Frequenz oder Schließung bucht zuerst alle fälligen Zuteilungen bis heute nach. Sonst bekäme eine schon begonnene, aber noch nicht gebuchte Periode den neuen Betrag.
+1. **Erst nachbuchen, dann ändern.** Jede Änderung an Zuteilungsregel, Plan, Frequenz, Schließung oder Startpunkt (`ledgerSince`) bucht zuerst alle fälligen Zuteilungen bis heute nach. Sonst bekäme eine schon begonnene, aber noch nicht gebuchte Periode den neuen Betrag.
 2. **Ein Einstieg.** Jeder Saldo-Abruf ruft zuerst `ensureAllocations(householdId, today)`. Der Unique-Index `(toEnvelopeId, allocationPeriodStart)` verhindert Dubletten bei parallelen Requests (`createMany` mit `skipDuplicates`); gewöhnliche Umbuchungen haben `allocationPeriodStart = null` und sind nicht betroffen.
 3. **Auslassen heißt Betrag 0, nicht löschen.** Eine gelöschte Zuteilung würde beim nächsten Abruf neu angelegt; die Zeile bleibt als Merker.
 4. **Keine vorgemerkten Regeländerungen.** "Ab Januar 350 €" wird am 1. Januar geändert. Ein Feld für eine geplante Änderung kommt erst, wenn es gebraucht wird.
 
-Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen.
+Eine Zuteilung wird auf den Periodenbeginn datiert, aber **nicht vor `ledgerSince`**, auch wenn dieser in der Zukunft liegt (Migrationstag): Sonst hinge das Ergebnis davon ab, wann zuerst abgerufen wird. Ein am 15. angelegter Monatsumschlag startet am 1.; läge seine Zuteilung vor dem Stichtag, bekäme er das Geld, ohne dass "Zu verteilen" belastet wird. `allocationPeriodStart` bleibt der Periodenbeginn.
+
+Bleibt die App länger ungeöffnet, entstehen beim nächsten Abruf mehrere Zuteilungen auf einmal; wegen Regel 1 hat sich die Regel dazwischen nicht geändert, das Ergebnis ist also eindeutig. Rückwirkende Korrekturen erfolgen durch Bearbeiten der betroffenen Zuteilungen. Das gilt auch für einen Plan, der in einer schon gebuchten Periode dazukommt: Wiederkehrende Pläne wirken ab der nächsten Periode, ein einmaliger bekommt nur in einer noch nicht gebuchten Periode automatisch Geld. Die App weist beim Speichern darauf hin.
 
 ## Vorgemerkt
 
@@ -100,7 +104,7 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 
 ## Regeln
 
-**Ausgaben und Einnahmen hängen optional an einem Umschlag** (`envelopeId`, ersetzt `ExpenseTransaction.budgetId`; neu an `IncomeTransaction`). Ohne Umschlag treffen sie "Zu verteilen". Eine Einnahme mit Umschlag ist eine Gutschrift auf diesen Umschlag (Verkauf → Kinder) und bleibt eine Einnahme in allen Reports.
+**Ausgaben und Einnahmen hängen optional an einem Umschlag** (`envelopeId`, ersetzt `ExpenseTransaction.budgetId`; neu an `IncomeTransaction`). Ohne Umschlag treffen sie "Zu verteilen". Neue und umdatierte Buchungen und Umbuchungen müssen in `[balanceSince, closedAt)` des Umschlags liegen; davor fielen sie aus dem Saldo, die Gegenseite einer Umbuchung aber nicht. Altbestand vor dem Startpunkt bleibt gültig und korrigierbar. Eine Einnahme mit Umschlag ist eine Gutschrift auf diesen Umschlag (Verkauf → Kinder) und bleibt eine Einnahme in allen Reports.
 
 **Ausgaben aus Sparzielen sind normale Ausgaben.** Der Urlaub wird mit `envelopeId = Urlaub` gebucht; eine zweite Zeile entfällt. [ADR-0001](0001-expense-as-double-booking.md) ist damit abgelöst.
 
@@ -109,18 +113,18 @@ Der Horizont ist bewusst der Kalendermonat. Ein Haushalts-Stichtag ("unser Monat
 **Umbuchung** ist eine eigene Zeile `EnvelopeTransfer` (`fromEnvelopeId`, `toEnvelopeId`, `amount > 0`, `date`, `note`, `userId`). `null` auf einer Seite heißt "Zu verteilen". Umbuchungen tauchen in keinem Einnahmen-/Ausgaben-Report auf. Kein Limit auf den verfügbaren Saldo; das UI warnt höchstens. Umbuchen ist eine Buchung: MEMBER dürfen es.
 
 **Bewertung nach Saldo.** Ein Umschlag gilt als überzogen, wenn sein Saldo negativ ist — nicht, wenn die Ausgaben einer Periode die Zuteilung übersteigen. Für Umschläge mit Zuteilung:
-- *Verfügbar in der Periode* = Saldo zu Periodenbeginn + Zuteilung der Periode. Der Fortschrittsbalken zeigt Ausgaben ÷ Verfügbar; die Lücke bis zum Ende ist der aktuelle Saldo.
-- *rot*: Saldo < 0. *gelb*: Prognose für das Periodenende < 0. *sonst* grün.
+- *Verfügbar in der Periode* = aktueller Saldo + Ausgaben der Periode, also Saldo zu Periodenbeginn plus alle Zuflüsse der Periode (Zuteilung, Gutschriften, Umbuchungen). Der Fortschrittsbalken zeigt Ausgaben ÷ Verfügbar; die Lücke bis zum Ende ist immer genau der aktuelle Saldo.
+- *rot*: Saldo < 0. *gelb*: Nur bei laufenden Ausgaben, wenn prozentual weniger als halb so viel Geld übrig ist wie Zeit (`Saldo ÷ Verfügbar < Rest der Periode × 0,5`). *sonst* grün. Gelb beschreibt den Stand und sagt nichts voraus; der Faktor gibt großen Einzelposten Spielraum, zum Periodenende sinkt die Schwelle von selbst auf null. In den anderen Gruppen sagt der Vergleich nichts aus: Die Miete geht am 1. ab, "Wohnen" wäre sonst den ganzen Monat gelb.
 - "Ausgaben vs. Zuteilung dieser Periode" bleibt als Information sichtbar, aber nicht als Bewertung.
-- Der Forecast ([ADR-0003](0003-forecast-mode.md)) rechnet auf den Saldo am Periodenende hoch statt auf die Periodenausgaben.
+- Eine Prognose gibt es nicht mehr. Aus dem bisherigen Teil einer Periode lässt sich nicht auf den Rest schließen: Haushaltsausgaben kommen in großen Einzelbeträgen, die lineare Hochrechnung meldete nach einem einzigen Einkauf am Monatsanfang tiefe Minusbeträge. [ADR-0003](0003-forecast-mode.md) ist damit abgelöst.
 
 Umschläge mit Sparziel zeigen zusätzlich den Fortschritt `saldo ÷ targetAmount`.
 
-**Schließen** wie in ADR-0004, mit einer Erweiterung: Ziel des Übertrags kann ein anderer Umschlag **oder "Zu verteilen"** sein. Damit lässt sich auch ein erreichtes oder aufgegebenes Sparziel sauber auflösen.
+**Schließen** wie in ADR-0004, mit einer Erweiterung: Ziel des Übertrags kann ein anderer Umschlag **oder "Zu verteilen"** sein. Damit lässt sich auch ein erreichtes oder aufgegebenes Sparziel sauber auflösen. Ein Plan darf nicht über den Stichtag seines Umschlags hinauslaufen: Das Schließen lehnt solche Pläne ab, das Anlegen und Ändern von Plänen ebenso, sonst scheiterte "Als bezahlt markieren" dauerhaft.
 
 **Löschen** wie in ADR-0004: nur ohne Spuren (keine Buchungen, auch soft-gelöschte, keine Umbuchungen, kein Vorgänger), sonst schließen.
 
-**Startpunkt "Zu verteilen".** `Household.ledgerSince` legt fest, ab wann Einnahmen und Ausgaben in "Zu verteilen" zählen; `Household.openingBalance` ist der Bestand zu diesem Zeitpunkt (Default 0). Ohne Startpunkt würden alle historischen Einnahmen und Ausgaben vor Einführung der Umschläge eine Zahl ohne Bedeutung erzeugen. Aussagekräftig ist "Zu verteilen" nur, wenn Einnahmen und Ausgaben — inklusive Fixkosten — vollständig erfasst werden.
+**Startpunkt "Zu verteilen".** `Household.ledgerSince` legt fest, ab wann Einnahmen und Ausgaben in "Zu verteilen" zählen; `Household.openingBalance` ist das **freie Geld** zu diesem Zeitpunkt (Default 0), also zusätzlich zu dem, was dann schon in Umschlägen steckt — nicht der gesamte Bestand. Die Salden, die Umschläge zum Stichtag bereits haben, sind nie aus "Zu verteilen" gekommen; darum zählen Zuteilungen und Umbuchungen vor `ledgerSince` nicht in "Zu verteilen", und die Invariante führt diese Salden auf der rechten Seite. Ohne Startpunkt würden alle historischen Einnahmen und Ausgaben vor Einführung der Umschläge eine Zahl ohne Bedeutung erzeugen. Aussagekräftig ist "Zu verteilen" nur, wenn Einnahmen und Ausgaben — inklusive Fixkosten — vollständig erfasst werden. Eine Ausgabe oder Einnahme ohne Umschlag darf vor `ledgerSince` liegen und zählt dann nur in den Auswertungen, damit sich alte Belege nacherfassen lassen. Eine Umbuchung mit "Zu verteilen" als Seite lehnt der Server dort ab, weil sie den Bestand zum Stichtag verfälschen würde.
 
 **Einnahmen-Pläne** verweisen optional auf einen Umschlag (`IncomePlan.envelopeId`, ersetzt `budgetId`). Eine als erhalten markierte Einnahme aus einem Plan mit Umschlag wird diesem gutgeschrieben (z.B. Kindergeld → Kinder), sonst "Zu verteilen".
 
@@ -137,12 +141,12 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 ## Migration
 
 - `Budget` → Umschlag, Gruppe `RUNNING`; `allocationAmount` = Betrag der aktuell gültigen `BudgetVersion`. Die bisher berechneten Zuteilungen werden einmalig als `EnvelopeTransfer`-Zeilen gebucht, danach entfällt `BudgetVersion`. **IDs bleiben erhalten**, damit Links und Verweise (`carryoverToBudgetId`, Pläne, Ausgaben) gültig bleiben.
-- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
+- `SavingsGoal` → Umschlag, Gruppe `SAVINGS`, mit `targetAmount`; `endDate` wird `targetDate` (derzeit ohne Oberfläche und Wirkung); die SavingsGoal-ID wird zur Umschlag-ID. `monthlyRate` wird **nicht** automatisch zur Zuteilung, sonst entstünden rückwirkend Zuteilungen; der OWNER entscheidet pro Sparziel.
 - `SavingsGoalExecution` mit `sourceBudgetId` → `EnvelopeTransfer` zwischen den beiden Umschlägen (Vorzeichen bestimmt die Richtung).
 - `SavingsGoalExecution` ohne Quelle, positiv → `EnvelopeTransfer` aus "Zu verteilen".
 - `SavingsGoalExecution` ohne Quelle, negativ (Doppelbuchung nach ADR-0001): Gibt es **genau eine** umschlaglose Ausgabe mit gleichem Betrag am selben Tag, bekommt sie `envelopeId` = Sparziel und die Execution entfällt. Sonst → `EnvelopeTransfer` in "Zu verteilen". Beide Wege ergeben dieselben Salden; der erste ist nur sauberer.
 - `FixedCostPlan.budgetId` → `envelopeId` unverändert übernommen. Fixkosten-Umschläge legt der OWNER nach der Migration an und ordnet die Pläne zu.
-- `ledgerSince` = Migrationsdatum, `openingBalance` = 0. Der OWNER kann beides danach setzen.
+- `ledgerSince` = Tag nach der Migration, `openingBalance` = 0: Die am Migrationstag gebuchten Zuteilungen gehören zum Bestand und dürfen nicht von "Zu verteilen" abgehen. Der OWNER kann beides danach setzen.
 
 ## Verworfene Alternativen
 
@@ -161,6 +165,5 @@ Das genaue Wording ist offen; die Struktur folgt den Gruppen:
 
 ## Folgen
 
-- Löst [ADR-0001](0001-expense-as-double-booking.md) ab, erweitert [ADR-0004](0004-budget-as-virtual-account.md) (Saldo-Konzept, Schließen, Löschen bleiben gültig; "Zuteilungen sind keine Buchungen" und `BudgetVersion` werden durch gebuchte Zuteilungen ersetzt, "Periodenansicht bleibt" durch "Bewertung nach Saldo"), ändert die Hochrechnung aus [ADR-0003](0003-forecast-mode.md). [ADR-0002](0002-recurring-plan-coverage.md) bleibt gültig; Pläne bekommen zusätzlich eine Rolle als Zuteilungsquelle.
-- `CONTEXT.md` (Budget, SavingsGoal, Buchungs-Logik, Doppelbuchung, Umbuchung) beschreibt bis zur Umsetzung weiter den Ist-Stand und verweist auf diese ADR; umgeschrieben wird mit der Umsetzung.
+- Löst [ADR-0001](0001-expense-as-double-booking.md) ab, erweitert [ADR-0004](0004-budget-as-virtual-account.md) (Saldo-Konzept, Schließen, Löschen bleiben gültig; "Zuteilungen sind keine Buchungen" und `BudgetVersion` werden durch gebuchte Zuteilungen ersetzt, "Periodenansicht bleibt" durch "Bewertung nach Saldo"), löst [ADR-0003](0003-forecast-mode.md) ab. [ADR-0002](0002-recurring-plan-coverage.md) bleibt gültig; Pläne bekommen zusätzlich eine Rolle als Zuteilungsquelle.
 - API: `/budgets` und `/savings-goals` werden zu `/envelopes`; Gruppen-Ansichten filtern per `group`.

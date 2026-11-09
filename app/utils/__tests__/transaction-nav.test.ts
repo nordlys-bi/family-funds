@@ -48,7 +48,7 @@ describe('transactionSwitchQuery', () => {
       transactionSwitchQuery({
         month: '2026-07',
         unassigned: '1',
-        budgetId: 'b-1',
+        envelopeId: 'b-1',
         from: '2026-09-01',
         to: '2026-09-06',
         new: '1',

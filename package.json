@@ -26,7 +26,6 @@
     "@primevue/nuxt-module": "^4.5.5",
     "@prisma/client": "^6.19.3",
     "@vite-pwa/nuxt": "^1.1.1",
-    "emojilib": "^4.0.3",
     "nuxt": "^4.4.7",
     "primeicons": "^7.0.0",
     "primevue": "^4.5.5",

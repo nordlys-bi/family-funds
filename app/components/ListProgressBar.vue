@@ -5,6 +5,7 @@
   <ListProgressBar :percent="42" />
   <ListProgressBar :percent="85" tone="warning" />
   <ListProgressBar :percent="120" tone="over" />
+  <ListProgressBar :percent="null" tone="over" />  (nichts verfuegbar)
 
   Hinweis: Wir nennen die Komponente bewusst NICHT "ProgressBar", weil
   PrimeVue bereits einen ProgressBar global registriert (p-progressbar).
@@ -12,10 +13,17 @@
   ProgressBar auflösen statt unserer schmalen Listen-Variante.
 -->
 <script setup lang="ts">
-withDefaults(
+import { computed } from 'vue'
+
+const props = withDefaults(
   defineProps<{
-    /** Prozentwert (0-100+). Werte > 100 sind erlaubt fuer Over-Budget. */
-    percent: number
+    /**
+     * Prozentwert (0-100+). Ueber 100 wird der Balken auf den Gesamtwert
+     * skaliert: Bei 155 % endet die normale Fuellung bei 100/155 der Breite,
+     * dort sitzt eine Markierung, dahinter ist der Ueberzug rot — so stimmen
+     * die Proportionen. `null` = im Minus ohne verfuegbares Geld, alles ist Ueberzug.
+     */
+    percent: number | null
     /**
      * Farbabstufung. 'auto' waehlt nach Schwellen: <80 ok, 80-100 warning, >100 over.
      * 'accent' (blau) ist fuer "unterwegs zu einem Ziel" gedacht (Sparziele, issue
@@ -29,6 +37,12 @@ withDefaults(
   }>(),
   { tone: 'auto', width: '100%' },
 )
+
+const fillWidth = computed(() => {
+  if (props.percent === null) return 0
+  return props.percent > 100 ? (100 / props.percent) * 100 : Math.max(0, props.percent)
+})
+const isOver = computed(() => props.percent === null || props.percent > 100)
 </script>
 
 <template>
@@ -37,15 +51,8 @@ withDefaults(
       class="progress__bar"
       :class="`progress__bar--${tone}`"
     >
-      <div
-        class="progress__fill"
-        :style="{ width: `${Math.min(100, percent)}%` }"
-      />
-      <div
-        v-if="percent > 100"
-        class="progress__overflow"
-        :style="{ width: `${Math.min(100, percent - 100)}%` }"
-      />
+      <div class="progress__fill" :style="{ width: `${fillWidth}%` }" />
+      <div v-if="isOver" class="progress__overflow" />
     </div>
     <span v-if="label" class="progress__label">{{ label }}</span>
   </div>
@@ -65,23 +72,19 @@ withDefaults(
   border-radius: 999px;
   overflow: hidden;
   display: flex;
-  position: relative;
 }
 
 .progress__fill {
   height: 100%;
-  border-radius: 999px;
   transition: width 0.18s ease;
 }
 
 .progress__overflow {
-  position: absolute;
-  left: 100%;
-  top: 0;
+  flex: 1;
   height: 100%;
   background: var(--danger, #ef4444);
-  border-radius: 999px;
-  transform: translateX(-100%);
+  /* Markierung: hier endet, was verfuegbar war. */
+  border-left: 2px solid var(--color-text-primary);
 }
 
 .progress__bar--auto .progress__fill {

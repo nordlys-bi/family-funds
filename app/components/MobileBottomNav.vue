@@ -3,13 +3,13 @@
 
   Vier primäre Items (Dashboard, Buchungen, Budgets, Mehr) — Sparziele
   ist im "Mehr"-Bottom-Sheet, an erster Stelle der sekundären Items
-  (Sparziele, Haushalte, Mitglieder, Wiederkehrend, Einstellungen,
+  (Haushalte, Mitglieder, Einstellungen,
   Abmelden). Active-State wird route-basiert über
   `route.path.startsWith` ermittelt — primäre Items können ein eigenes
   `matchPrefix` haben, falls die exakte Route zu eng ist (z. B.
   /transactions soll auch fuer /transactions/expenses active sein).
-  "Budgets" hat bewusst kein `matchPrefix`: es ist nur auf
-  /budgeting/budgets active, sonst leuchtet "Mehr" (siehe #136).
+  "Umschläge" gilt auch fuer die Detailseiten; alles andere unter /budgeting
+  leuchtet als "Mehr" (siehe #136).
 
   Verwendet das Design-System:
   - PrimeIcons via <i class="pi ..."> + Label
@@ -44,9 +44,7 @@ const { logout } = useAppAuth()
 // === Primäre Items ====================================================
 // 4 Slots (3 Items + Mehr). "Buchungen" linkt auf /transactions/expenses
 // als Default-Ziel, markiert aber den ganzen /transactions/-Bereich als
-// active. "Budgets" markiert nur /budgeting/budgets — /budgeting/savings
-// und /budgeting/recurring liegen im "Mehr"-Sheet und aktivieren dort
-// "Mehr" statt "Budgets" (siehe isMoreActive). Wer eine "Buchung
+// active. "Umschläge" markiert auch die Detailseiten. Wer eine "Buchung
 // anlegen" will, nutzt den "Erfassen"-Button im Header (auf allen
 // Viewport-Groessen sichtbar, siehe app/layouts/default.vue).
 type NavItem = {
@@ -68,7 +66,7 @@ const primaryItems: NavItem[] = [
     to: '/transactions/expenses',
     matchPrefix: '/transactions',
   },
-  { key: 'budgets', label: 'Budgets', icon: 'pi pi-wallet', to: '/budgeting/budgets' },
+  { key: 'envelopes', label: 'Umschläge', icon: 'pi pi-wallet', to: '/budgeting/envelopes', matchPrefix: '/budgeting/envelopes' },
 ]
 
 // === Sekundäre Items (Mehr-Bottom-Sheet) ==============================
@@ -92,10 +90,8 @@ const navigateAndClose = (to: string) => {
 }
 
 const secondaryItems: SecondaryItem[] = [
-  { key: 'savings', label: 'Sparziele', icon: 'pi pi-star', to: '/budgeting/savings' },
   { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   { key: 'members', label: 'Mitglieder', icon: 'pi pi-user-plus', to: '/households/members' },
-  { key: 'recurring', label: 'Wiederkehrend', icon: 'pi pi-sync', to: '/budgeting/recurring' },
   { key: 'settings', label: 'Einstellungen', icon: 'pi pi-cog', to: '/households/settings' },
   { key: 'logout', label: 'Abmelden', icon: 'pi pi-power-off', onClick: handleLogout, destructive: true },
 ]

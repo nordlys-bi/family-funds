@@ -20,7 +20,7 @@ const SHOTS = [
   // Fix 2 — Eyebrow versteckt auf Mobile
   { name: 'expenses-mobile-no-eyebrow', path: '/transactions/expenses', viewport: 'mobile' },
   { name: 'households-mobile-no-eyebrow', path: '/households', viewport: 'mobile' },
-  { name: 'recurring-desktop-no-eyebrow', path: '/budgeting/recurring', viewport: 'desktop' },
+  { name: 'recurring-desktop-no-eyebrow', path: '/budgeting/envelopes?group=FIXED', viewport: 'desktop' },
   // Fix 1 — Sandbox-Badge in mock mode noch da
   { name: 'dashboard-with-sandbox-badge', path: '/', viewport: 'desktop' },
   // Fix 3 — Login-Sie→Du
