@@ -54,17 +54,6 @@ export type PeriodAllocation = {
   amount: number
 }
 
-// Mittlere Wochen pro Jahr: Ein Wochenplan kostet uebers Jahr 365,25/7-mal
-// seinen Betrag, nicht 52-mal — sonst fehlte jaehrlich gut ein Tag.
-const WEEKS_PER_YEAR = 365.25 / 7
-
-const PERIODS_PER_YEAR: Record<Exclude<Frequency, 'ONCE'>, number> = {
-  WEEKLY: WEEKS_PER_YEAR,
-  MONTHLY: 12,
-  QUARTERLY: 4,
-  YEARLY: 1,
-}
-
 /**
  * Perioden mit Start in `[from, to)`, begrenzt auf `[balanceSince, closedAt)`
  * und `allocationsSince`.
@@ -93,40 +82,51 @@ function listPeriodStarts(envelope: AllocationEnvelope, fromKey: number, toKey: 
 }
 
 /**
- * Beitrag eines Plans zur Periode `[periodStart, periodEnd)`.
- *
- * Wiederkehrende Plaene werden auf die Frequenz des Umschlags umgelegt (600 €
- * jaehrlich → 50 € je Monat), damit das Geld bei Faelligkeit angespart ist.
- * Gerundet wird kumulativ ueber die aktiven Perioden des Plans: Beitrag der
- * k-ten Periode = round(k · exakt) − round((k − 1) · exakt). So summiert sich
- * ein Jahr auf den Cent genau, statt 12 × 33,33 € fuer 400 € zuzuteilen.
- *
- * Aktiv ist ein Plan in jeder Periode, die sein Intervall
- * `[startDate, endDate]` beruehrt; gezaehlt wird ab der ersten solchen Periode
- * des Umschlags (nicht vor `balanceSince`).
+ * Faelligkeit `index` eines wiederkehrenden Plans (0 = `startDate`). Monats-
+ * basierte Plaene behalten ihren Tag; gibt es ihn im Zielmonat nicht (31. im
+ * Februar), faellt die Faelligkeit auf den Monatsletzten.
  */
-function planContribution(
-  plan: AllocationPlan,
-  envelope: AllocationEnvelope & { frequency: Exclude<Frequency, 'ONCE'> },
-  periodStart: Date,
-  periodEnd: Date,
-): number {
+function planDueDate(plan: AllocationPlan, index: number): Date {
+  const start = new Date(dayKey(plan.startDate))
+  if (plan.frequency === 'WEEKLY') {
+    start.setDate(start.getDate() + 7 * index)
+    return start
+  }
+  const months = plan.frequency === 'MONTHLY' ? 1 : plan.frequency === 'QUARTERLY' ? 3 : 12
+  const target = new Date(start.getFullYear(), start.getMonth() + months * index, 1, 12)
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0, 12).getDate()
+  target.setDate(Math.min(start.getDate(), lastDay))
+  return target
+}
+
+/**
+ * Beitrag eines Plans zur Periode `[periodStart, periodEnd)`: sein voller
+ * Betrag fuer jede Faelligkeit, die in die Periode faellt.
+ *
+ * Zugeteilt wird bei Faelligkeit, nicht angespart: Eine Jahresversicherung
+ * ueber 600 € bekommt im Monat ihrer Abbuchung 600 €, in den anderen nichts.
+ * Ansparen setzte ein Polster voraus, das es beim Einstieg nicht gibt — jeder
+ * erste Durchlauf liefe ins Minus. So entspricht die Zuteilung dem, was im
+ * Monat tatsaechlich abgeht. Faellig ist ein Plan ab `startDate` bis
+ * einschliesslich `endDate`.
+ */
+function planContribution(plan: AllocationPlan, periodStart: Date, periodEnd: Date): number {
   const planStartKey = dayKey(plan.startDate)
   const planEndKey = plan.endDate ? dayKey(plan.endDate) : Number.POSITIVE_INFINITY
   const startKey = periodStart.getTime()
   const endKey = periodEnd.getTime()
 
-  // ONCE: voller Betrag in der Periode, in die sein Datum faellt.
   if (plan.frequency === 'ONCE') {
     return planStartKey >= startKey && planStartKey < endKey ? plan.amount : 0
   }
 
-  if (planStartKey >= endKey || planEndKey < startKey) return 0
-
-  const exact = (plan.amount * PERIODS_PER_YEAR[plan.frequency]) / PERIODS_PER_YEAR[envelope.frequency]
-  const firstActive = Math.max(dayKey(startOfPeriod(plan.startDate, envelope.frequency)), dayKey(envelope.balanceSince))
-  const index = listPeriodStarts(envelope, firstActive, endKey).length
-  return Math.round(index * exact) - Math.round((index - 1) * exact)
+  let total = 0
+  for (let index = 0; ; index++) {
+    const dueKey = planDueDate(plan, index).getTime()
+    if (dueKey >= endKey || dueKey > planEndKey) break
+    if (dueKey >= startKey) total += plan.amount
+  }
+  return total
 }
 
 /**
@@ -139,13 +139,12 @@ export function computeAllocationAmount(envelope: AllocationEnvelope, periodStar
   if (rule.kind === 'none') return 0
   if (rule.kind === 'fixed') return rule.amount
 
-  // Ein ONCE-Umschlag hat kein Raster, auf das sich wiederkehrende Plaene
-  // umlegen liessen; aus Plaenen zuteilen koennen nur periodische Umschlaege.
+  // Ein ONCE-Umschlag hat kein Raster, in dessen Perioden Faelligkeiten
+  // fallen koennten; aus Plaenen zuteilen koennen nur periodische Umschlaege.
   if (envelope.frequency === 'ONCE') return 0
-  const periodic = envelope as AllocationEnvelope & { frequency: Exclude<Frequency, 'ONCE'> }
   const start = new Date(dayKey(periodStart))
-  const end = addPeriod(start, periodic.frequency)
-  return rule.plans.reduce((total, plan) => total + planContribution(plan, periodic, start, end), 0)
+  const end = addPeriod(start, envelope.frequency)
+  return rule.plans.reduce((total, plan) => total + planContribution(plan, start, end), 0)
 }
 
 /**

@@ -45,28 +45,16 @@ describe('computeAllocationAmount', () => {
     expect(computeAllocationAmount(envelope, day(2026, 11, 1))).toBe(0)
   })
 
-  it('spreads a yearly plan evenly over a monthly envelope', () => {
+  it('allocates a yearly plan in full in the month it is due', () => {
     const envelope = makeEnvelope({
       frequency: 'MONTHLY',
       balanceSince: day(2026, 1, 1),
       rule: { kind: 'plans', plans: [plan(60000, 'YEARLY', day(2025, 3, 15))] },
     })
-    expect(monthlyAmounts(envelope)).toEqual(Array(12).fill(5000))
+    expect(monthlyAmounts(envelope)).toEqual([0, 0, 60000, 0, 0, 0, 0, 0, 0, 0, 0, 0])
   })
 
-  it('rounds cumulatively so a year adds up to the cent', () => {
-    // 400 € / 12 = 33,333… € — 12 × 33,33 € ergäbe 399,96 €
-    const envelope = makeEnvelope({
-      frequency: 'MONTHLY',
-      balanceSince: day(2026, 1, 1),
-      rule: { kind: 'plans', plans: [plan(40000, 'YEARLY', day(2026, 1, 1))] },
-    })
-    const amounts = monthlyAmounts(envelope)
-    expect(amounts.reduce((sum, amount) => sum + amount, 0)).toBe(40000)
-    expect(new Set(amounts)).toEqual(new Set([3333, 3334]))
-  })
-
-  it('splits a quarterly plan into thirds and a monthly plan unchanged', () => {
+  it('allocates a quarterly plan in its due months and a monthly plan every month', () => {
     const envelope = makeEnvelope({
       frequency: 'MONTHLY',
       balanceSince: day(2026, 1, 1),
@@ -75,52 +63,63 @@ describe('computeAllocationAmount', () => {
         plans: [plan(30000, 'QUARTERLY', day(2026, 1, 1)), plan(95000, 'MONTHLY', day(2026, 1, 1))],
       },
     })
-    expect(monthlyAmounts(envelope)).toEqual(Array(12).fill(10000 + 95000))
+    const quarter = 30000 + 95000
+    expect(monthlyAmounts(envelope)).toEqual([quarter, 95000, 95000, quarter, 95000, 95000, quarter, 95000, 95000, quarter, 95000, 95000])
   })
 
-  it('converts a weekly plan by the mean number of weeks per year', () => {
+  it('moves a due date to the last day of a shorter month', () => {
+    // Faellig am 30.: im Februar am 28., danach wieder am 30.
+    const envelope = makeEnvelope({
+      frequency: 'MONTHLY',
+      balanceSince: day(2026, 1, 1),
+      rule: { kind: 'plans', plans: [plan(10000, 'QUARTERLY', day(2025, 11, 30))] },
+    })
+    expect(monthlyAmounts(envelope)).toEqual([0, 10000, 0, 0, 10000, 0, 0, 10000, 0, 0, 10000, 0])
+  })
+
+  it('allocates a weekly plan once per due date in a monthly envelope', () => {
     const envelope = makeEnvelope({
       frequency: 'MONTHLY',
       balanceSince: day(2026, 1, 1),
       rule: { kind: 'plans', plans: [plan(700, 'WEEKLY', day(2026, 1, 1))] },
     })
-    // 7 € × 365,25/7 Wochen = 365,25 € pro Jahr
-    expect(monthlyAmounts(envelope).reduce((sum, amount) => sum + amount, 0)).toBe(36525)
+    const amounts = monthlyAmounts(envelope)
+    // 2026 beginnt an einem Donnerstag: 53 Donnerstage, fuenf davon im Januar
+    expect(amounts[0]).toBe(3500)
+    expect(amounts.reduce((sum, amount) => sum + amount, 0)).toBe(53 * 700)
   })
 
-  it('scales a monthly plan down for a weekly envelope', () => {
+  it('allocates a monthly plan in the week it is due', () => {
     const envelope = makeEnvelope({
       frequency: 'WEEKLY',
       balanceSince: day(2026, 1, 5),
       rule: { kind: 'plans', plans: [plan(1000, 'MONTHLY', day(2026, 1, 1))] },
     })
-    // 10 € × 12 / (365,25/7) ≈ 2,30 € pro Woche
-    expect(computeAllocationAmount(envelope, day(2026, 1, 5))).toBe(230)
+    expect(computeAllocationAmount(envelope, day(2026, 1, 5))).toBe(0)
+    // 1.2.2026 ist ein Sonntag und gehoert zur Woche ab Montag, 26.1.
+    expect(computeAllocationAmount(envelope, day(2026, 1, 26))).toBe(1000)
   })
 
-  it('only allocates for plans active in the period', () => {
+  it('only allocates due dates between start and end of the plan', () => {
     const envelope = makeEnvelope({
       frequency: 'MONTHLY',
       balanceSince: day(2026, 1, 1),
       rule: {
         kind: 'plans',
-        // Startet mitten im März, endet mitten im Juni: März bis Juni beruehrt
+        // Faellig am 15., letzte Faelligkeit am Enddatum selbst
         plans: [plan(1200, 'MONTHLY', day(2026, 3, 15), day(2026, 6, 15))],
       },
     })
     expect(monthlyAmounts(envelope)).toEqual([0, 0, 1200, 1200, 1200, 1200, 0, 0, 0, 0, 0, 0])
   })
 
-  it('starts counting a plan at balanceSince, not at its own start', () => {
-    // Plan seit 2025 aktiv, Umschlag erst seit Juli 2026 — die Rundung
-    // beginnt mit der ersten Umschlag-Periode und summiert ab dort genau.
+  it('skips a due date after the end of the plan', () => {
     const envelope = makeEnvelope({
       frequency: 'MONTHLY',
-      balanceSince: day(2026, 7, 1),
-      rule: { kind: 'plans', plans: [plan(40000, 'YEARLY', day(2025, 1, 1))] },
+      balanceSince: day(2026, 1, 1),
+      rule: { kind: 'plans', plans: [plan(5000, 'QUARTERLY', day(2026, 1, 15), day(2026, 7, 14))] },
     })
-    const firstSix = [7, 8, 9, 10, 11, 12].map((month) => computeAllocationAmount(envelope, day(2026, month, 1)))
-    expect(firstSix.reduce((sum, amount) => sum + amount, 0)).toBe(20000)
+    expect(monthlyAmounts(envelope)).toEqual([5000, 0, 0, 5000, 0, 0, 0, 0, 0, 0, 0, 0])
   })
 
   it('allocates a ONCE plan in full in the period of its date', () => {
@@ -141,7 +140,8 @@ describe('computeAllocationAmount', () => {
         plans: [plan(95000, 'MONTHLY', day(2026, 1, 1)), plan(1299, 'MONTHLY', day(2026, 1, 1)), plan(60000, 'YEARLY', day(2026, 1, 1))],
       },
     })
-    expect(computeAllocationAmount(envelope, day(2026, 4, 1))).toBe(95000 + 1299 + 5000)
+    expect(computeAllocationAmount(envelope, day(2026, 1, 1))).toBe(95000 + 1299 + 60000)
+    expect(computeAllocationAmount(envelope, day(2026, 4, 1))).toBe(95000 + 1299)
   })
 
   it('does not derive allocations from plans for a ONCE envelope', () => {
@@ -231,14 +231,14 @@ describe('allocationsSince', () => {
     expect(listReservedAllocations(weekly, day(2026, 11, 3)).map((item) => item.periodStart)).toEqual([day(2026, 11, 16), day(2026, 11, 23), day(2026, 11, 30)])
   })
 
-  it('counts a plan from the bound, so the first period has its full share', () => {
+  it('allocates a plan due in the first period from the bound in full', () => {
     const plans = makeEnvelope({
       frequency: 'MONTHLY',
       balanceSince: day(2025, 1, 1),
       allocationsSince: day(2026, 12, 1),
-      rule: { kind: 'plans', plans: [plan(120000, 'YEARLY', day(2025, 1, 1))] },
+      rule: { kind: 'plans', plans: [plan(120000, 'YEARLY', day(2025, 12, 10))] },
     })
-    expect(listDueAllocations(plans, day(2026, 12, 2), []).map((due) => due.amount)).toEqual([10000])
+    expect(listDueAllocations(plans, day(2026, 12, 2), []).map((due) => due.amount)).toEqual([120000])
   })
 })
 

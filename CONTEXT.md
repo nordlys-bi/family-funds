@@ -201,7 +201,7 @@ Wiederkehrende Fixkosten.
 Virtuelles Konto mit Saldo: ein Teil des Haushaltsgelds für einen Zweck, kein Ort, an dem Geld liegt. Siehe [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md).
 
 * **Gruppe:** Laufende Ausgaben, Fixkosten, Rücklagen, Sparziele oder Persönlich. Sie steuert Darstellung und Vorgaben beim Anlegen, verbietet aber keine Eigenschaft.
-* **Zuteilung** (optional): ein fester Betrag je Periode oder die Summe der verknüpften Fixkosten-Pläne, auf die Frequenz des Umschlags umgelegt. Die Frequenz ist unveränderlich; ein Wechsel heißt: neuer Umschlag, alten hinein schließen.
+* **Zuteilung** (optional): ein fester Betrag je Periode oder die Summe der verknüpften Fixkosten-Pläne, die in der Periode fällig werden, jeweils mit vollem Betrag (kein Ansparen). Die Frequenz ist unveränderlich; ein Wechsel heißt: neuer Umschlag, alten hinein schließen.
 * **Sparziel** (optional): ein Zielbetrag.
 * **Saldo:** wird nie gespeichert, sondern aus Buchungen summiert. Er bleibt über Perioden stehen, verfällt nie und darf negativ werden. Überzogen ist ein Umschlag erst mit negativem Saldo.
 * **Gelb:** nur bei laufenden Ausgaben, wenn prozentual weniger als halb so viel Geld übrig ist wie Zeit in der Periode.

@@ -111,12 +111,13 @@ describe('ensureAllocations', () => {
       allocationAmount: null,
       fixedCostPlans: [
         { amount: 95000, frequency: 'MONTHLY', startDate: day(2026, 1, 1), endDate: null },
-        { amount: 60000, frequency: 'YEARLY', startDate: day(2026, 1, 1), endDate: null },
+        // Jahresplan faellig im November: voller Betrag in dieser Periode
+        { amount: 60000, frequency: 'YEARLY', startDate: day(2025, 11, 20), endDate: null },
       ],
     }
     const { db, createMany } = makeDb({ envelopes: [housing] })
     await ensureAllocations('h1', day(2026, 11, 3), db)
-    expect(createMany.mock.calls[0]?.[0].data).toEqual([expect.objectContaining({ toEnvelopeId: 'housing', amount: 100000 })])
+    expect(createMany.mock.calls[0]?.[0].data).toEqual([expect.objectContaining({ toEnvelopeId: 'housing', amount: 155000 })])
   })
 })
 
