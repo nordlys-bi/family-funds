@@ -1,11 +1,9 @@
 import { defineEventHandler, createError, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
-import { assertTransactionKind } from '../../../utils/transactions'
+import { assertTransactionKind, createTransaction } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
 
 type TransactionCreateBody = {
   kind: string
@@ -22,6 +20,8 @@ type TransactionCreateBody = {
   fixedCostPlanId?: string | null
   incomePlanId?: string | null
 }
+
+// Regeln (Umschlag vom Plan, Stichtag, Startpunkt): server/utils/transactions.ts
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
@@ -44,99 +44,14 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const amount = parseMoneyToCents(body.amount, 'Amount')
-  const date = parseDateInput(body.date, 'Date')
-  const description = body.description?.trim() || null
+  const planId = kind === 'expense' ? body.fixedCostPlanId : body.incomePlanId
 
-  if (kind === 'expense') {
-    const fixedCostPlanId = body.fixedCostPlanId?.trim() || null
-    let envelopeId = body.envelopeId?.trim() || null
-
-    if (fixedCostPlanId) {
-      const plan = await prisma.fixedCostPlan.findFirst({
-        where: {
-          id: fixedCostPlanId,
-          householdId,
-        },
-        select: { id: true, envelopeId: true },
-      })
-
-      if (!plan) {
-        throw createError({
-          statusCode: 404,
-          statusMessage: 'Fixed cost plan not found.',
-        })
-      }
-
-      // Issue #59 polish (Option c, hart gekoppelt): wenn der Plan
-      // einen Umschlag hat, erbt die Transaktion diesen Umschlag, auch
-      // wenn der Body einen anderen nennt. Wer das nachtraeglich aendern
-      // will, nutzt den Transaction-Row-Editor.
-      if (plan.envelopeId) {
-        envelopeId = plan.envelopeId
-      }
-    }
-
-    // ADR-0005: keine Buchungen ab dem Stichtag eines geschlossenen Umschlags.
-    await assertBookingEnvelope(householdId, envelopeId, date)
-
-    const item = await prisma.expenseTransaction.create({
-      data: {
-        householdId,
-        userId: user.id,
-        amount,
-        description,
-        date,
-        envelopeId,
-        fixedCostPlanId,
-      },
-    })
-
-    return defineApiResponse({ kind, item })
-  }
-
-  // kind === 'income'
-  //
-  // ADR-0005: Eine Einnahme kann einem Umschlag gutgeschrieben werden
-  // (Verkauf → Kinder), sonst geht sie nach "Zu verteilen".
-  const incomePlanId = body.incomePlanId?.trim() || null
-  let envelopeId = body.envelopeId?.trim() || null
-
-  if (incomePlanId) {
-    const plan = await prisma.incomePlan.findFirst({
-      where: {
-        id: incomePlanId,
-        householdId,
-      },
-      select: { id: true, envelopeId: true },
-    })
-
-    if (!plan) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Income plan not found.',
-      })
-    }
-
-    // Wie bei Fixkosten: Eine Einnahme aus einem Plan mit Umschlag wird
-    // diesem gutgeschrieben (Kindergeld → Kinder).
-    if (plan.envelopeId) {
-      envelopeId = plan.envelopeId
-    }
-  }
-
-  await assertBookingEnvelope(householdId, envelopeId, date)
-
-  const item = await prisma.incomeTransaction.create({
-    data: {
-      householdId,
-      userId: user.id,
-      amount,
-      description,
-      date,
-      incomePlanId,
-      envelopeId,
-    },
+  const item = await createTransaction(householdId, user.id, kind, {
+    amount: parseMoneyToCents(body.amount, 'Amount'),
+    date: parseDateInput(body.date, 'Date'),
+    description: body.description?.trim() || null,
+    envelopeId: body.envelopeId?.trim() || null,
+    planId: planId?.trim() || null,
   })
 
   return defineApiResponse({ kind, item })
