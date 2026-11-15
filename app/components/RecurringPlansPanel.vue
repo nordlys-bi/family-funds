@@ -79,11 +79,27 @@ async function afterChange(text: string | (() => string)) {
   emit('changed')
 }
 
-// Plaene ohne Faelligkeit in diesem Monat sind per Default ausgeblendet.
-const showAll = ref(false)
-const isNonDue = (plan: PlanItem) => plan.coverage.due === 0
-const visiblePlans = computed(() => (showAll.value ? plans.value : plans.value.filter((plan) => !isNonDue(plan))))
-const nonDueCount = computed(() => plans.value.filter(isNonDue).length)
+// Filter (issue #184): "Offen" zum schnellen Finden des noch zu zahlenden
+// Plans, "Faellig" bleibt Default wie bisher (Plaene ohne Faelligkeit in
+// diesem Monat ausgeblendet). "Offen" ist dieselbe Bedingung wie fuer den
+// Markieren-Button, damit genau die Plaene mit Aktion uebrig bleiben.
+type PlanFilter = 'open' | 'due' | 'all'
+const filter = ref<PlanFilter>('due')
+const isDue = (plan: PlanItem) => plan.coverage.due > 0
+const isOpen = (plan: PlanItem) => isDue(plan) && plan.coverage.percent < 100
+const filterOptions = computed(() => [
+  { value: 'open' as const, label: `Offen (${plans.value.filter(isOpen).length})` },
+  { value: 'due' as const, label: `Fällig (${plans.value.filter(isDue).length})` },
+  { value: 'all' as const, label: `Alle (${plans.value.length})` },
+])
+const visiblePlans = computed(() => {
+  if (filter.value === 'open') return plans.value.filter(isOpen)
+  if (filter.value === 'due') return plans.value.filter(isDue)
+  return plans.value
+})
+const filteredEmptyText = computed(() => (filter.value === 'open'
+  ? `Diesen Monat ist nichts mehr offen – alles ${copy.value.markedVerb}.`
+  : 'Diesen Monat ist kein Plan fällig.'))
 
 function severityForPercent(percent: number): 'success' | 'warning' | 'danger' {
   if (percent >= 100) return 'success'
@@ -261,13 +277,24 @@ async function submitMark() {
   <ListPanel
     :title="copy.title"
     compact
-    :badge="`${visiblePlans.length} fällig${nonDueCount > 0 && !showAll ? ` · ${nonDueCount} diesen Monat nicht fällig` : ''}`"
   >
     <template v-if="canManageHousehold" #actions>
       <Button :label="copy.plan" icon="pi pi-plus" size="small" severity="secondary" outlined @click="openCreate" />
     </template>
 
     <Message v-if="notice" :severity="notice.severity" variant="simple">{{ notice.text }}</Message>
+
+    <div v-if="plans.length > 0" class="plan-filter">
+      <SelectButton
+        v-model="filter"
+        :options="filterOptions"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+        size="small"
+        :aria-label="`${copy.title} filtern`"
+      />
+    </div>
 
     <SwipeableListItem
       v-for="plan in visiblePlans"
@@ -331,11 +358,7 @@ async function submitMark() {
     </SwipeableListItem>
 
     <div v-if="plans.length === 0" class="empty-list">{{ copy.empty }}</div>
-
-    <button v-if="nonDueCount > 0" type="button" class="recurring-showall" @click="showAll = !showAll">
-      <i :class="['pi', showAll ? 'pi-eye-slash' : 'pi-eye', 'recurring-showall__icon']" aria-hidden="true" />
-      {{ showAll ? 'Nur fällige Pläne anzeigen' : `${nonDueCount} diesen Monat nicht fällige Pläne anzeigen` }}
-    </button>
+    <div v-else-if="visiblePlans.length === 0" class="empty-list">{{ filteredEmptyText }}</div>
 
     <FormDialog
       v-model:visible="planDialogOpen"
@@ -461,34 +484,19 @@ async function submitMark() {
   font-size: 0.85rem;
 }
 
-/* Issue #59: Toggle-Button am Listenende, um Non-Due-Plaene ein-/
-   auszublenden. Bewusst unaufdringlich gestaltet (kein gefuellter
-   Button), weil das nicht der primaere Use-Case ist. */
-.recurring-showall {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 0.75rem;
-  padding: 6px 12px;
-  background: transparent;
-  color: var(--color-text-muted, #94a3b8);
-  font-size: 0.82rem;
-  font-weight: 500;
-  border: 1px dashed var(--color-border-default);
-  border-radius: 8px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+/* Issue #184: Filter ersetzt den frueheren "nicht faellige anzeigen"-Toggle
+   am Listenende (#59). Mobil scrollbar statt umbrechen. */
+.plan-filter {
+  margin-bottom: 0.5rem;
+  overflow-x: auto;
 }
 
-.recurring-showall:hover {
-  background: rgba(148, 163, 184, 0.06);
-  border-color: rgba(96, 165, 250, 0.42);
-  color: var(--color-text-primary, #f1f5f9);
-}
-
-.recurring-showall__icon {
-  font-size: 0.85rem;
+/* Mobil laeuft der Panel-Body randlos (ListPanel, #130/#131); die Zeilen
+   bringen ihren Einzug selbst mit, der Filter braucht ihn hier. */
+@media (max-width: 639px) {
+  .plan-filter {
+    padding: 0.6rem 1rem 0.1rem;
+  }
 }
 
 /* Issue #59: Kontext-Text oben im Mark-Dialog, plus Error-Spacing. */
