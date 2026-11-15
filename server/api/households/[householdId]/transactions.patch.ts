@@ -1,12 +1,9 @@
 import { defineEventHandler, createError, readBody } from 'h3'
-import { prisma } from '../../../utils/prisma'
 import { requireHouseholdMembership } from '../../../utils/household-access'
 import { parseDateInput, parseMoneyToCents } from '../../../utils/planning'
-import { assertTransactionKind } from '../../../utils/transactions'
+import { assertTransactionKind, updateTransaction } from '../../../utils/transactions'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
-import { assertBookingEnvelope } from '../../../utils/envelope-transfer'
-import { dayKey } from '../../../utils/period'
 
 type TransactionUpdateBody = {
   kind: string
@@ -18,30 +15,19 @@ type TransactionUpdateBody = {
   envelopeId?: string | null
 }
 
-/**
- * Umschlag und Datum nur pruefen, wenn sich eines davon aendert: Altbestand
- * vor dem Startpunkt eines Umschlags muss sich weiter korrigieren lassen
- * (Betrag, Beschreibung), und das Formular schickt das Datum immer mit.
- */
-function changesBooking(
-  existing: { envelopeId: string | null; date: Date },
-  envelopeId: string | null | undefined,
-  date: Date | undefined,
-) {
-  return (envelopeId !== undefined && envelopeId !== existing.envelopeId)
-    || (date !== undefined && dayKey(date) !== dayKey(existing.date))
-}
-
 /** `undefined` = nicht geaendert, `null` = "Zu verteilen". */
 function parseEnvelopeChange(value: string | null | undefined): string | null | undefined {
   if (value === undefined) return undefined
   return value?.trim() || null
 }
 
+// Regeln (nur aktive Zeilen, Pruefung nur bei Aenderung von Umschlag oder
+// Datum): server/utils/transactions.ts
+
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
 
-  const { user } = await requireHouseholdMembership(event, householdId)
+  await requireHouseholdMembership(event, householdId)
   const body = await readBody<TransactionUpdateBody>(event)
   const kind = assertTransactionKind(body.kind)
 
@@ -52,82 +38,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const amount = body.amount !== undefined ? parseMoneyToCents(body.amount, 'Amount') : undefined
-  const date = body.date ? parseDateInput(body.date, 'Date') : undefined
-  const description = body.description === undefined ? undefined : body.description?.trim() || null
-
-  if (kind === 'expense') {
-    // Soft-Delete (issue #58): PATCH wirkt nur auf das aktive Set. Soft-
-    // deletete Buchungen sind ueber den expliziten POST /restore zu
-    // reaktivieren — PATCH ist hier bewusst 404, damit das UI nicht
-    // versehentlich eine "geloeschte" Buchung mit anderen Werten
-    // ueberschreibt.
-    const existing = await prisma.expenseTransaction.findFirst({
-      where: {
-        id: body.id,
-        householdId,
-        deletedAt: null,
-      },
-    })
-
-    if (!existing) {
-      throw createError({
-        statusCode: 404,
-        statusMessage: 'Expense transaction not found.',
-      })
-    }
-
-    const envelopeId = parseEnvelopeChange(body.envelopeId)
-
-    // ADR-0005: Gegen den resultierenden Umschlag und das Datum pruefen —
-    // auch ein reines Datums-Update darf eine Ausgabe nicht hinter den
-    // Stichtag eines geschlossenen Umschlags schieben.
-    if (changesBooking(existing, envelopeId, date)) {
-      await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
-    }
-
-    const item = await prisma.expenseTransaction.update({
-      where: { id: body.id },
-      data: {
-        ...(amount !== undefined ? { amount } : {}),
-        ...(description !== undefined ? { description } : {}),
-        ...(date ? { date } : {}),
-        ...(envelopeId !== undefined ? { envelopeId } : {}),
-      },
-    })
-
-    return defineApiResponse({ kind, item })
-  }
-
-  // Income-Pfad: gleiche Soft-Delete-Semantik.
-  const existing = await prisma.incomeTransaction.findFirst({
-    where: {
-      id: body.id,
-      householdId,
-      deletedAt: null,
-    },
-  })
-
-  if (!existing) {
-    throw createError({
-      statusCode: 404,
-      statusMessage: 'Income transaction not found.',
-    })
-  }
-
-  const envelopeId = parseEnvelopeChange(body.envelopeId)
-  if (changesBooking(existing, envelopeId, date)) {
-    await assertBookingEnvelope(householdId, envelopeId === undefined ? existing.envelopeId : envelopeId, date ?? existing.date)
-  }
-
-  const item = await prisma.incomeTransaction.update({
-    where: { id: body.id },
-    data: {
-      ...(amount !== undefined ? { amount } : {}),
-      ...(description !== undefined ? { description } : {}),
-      ...(date ? { date } : {}),
-      ...(envelopeId !== undefined ? { envelopeId } : {}),
-    },
+  const item = await updateTransaction(householdId, kind, body.id, {
+    amount: body.amount !== undefined ? parseMoneyToCents(body.amount, 'Amount') : undefined,
+    date: body.date ? parseDateInput(body.date, 'Date') : undefined,
+    description: body.description === undefined ? undefined : body.description?.trim() || null,
+    envelopeId: parseEnvelopeChange(body.envelopeId),
   })
 
   return defineApiResponse({ kind, item })

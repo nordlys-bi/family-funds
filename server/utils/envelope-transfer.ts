@@ -51,16 +51,3 @@ export async function assertTransferSides(householdId: string, sides: TransferSi
     assertEnvelopeAcceptsBooking(envelope, date)
   }
 }
-
-/**
- * Prueft den Umschlag einer Ausgabe oder Einnahme: gehoert zum Haushalt und
- * nimmt am Buchungstag Buchungen an. `null` = "Zu verteilen", immer erlaubt:
- * Vor `ledgerSince` zaehlt so eine Buchung nur in den Auswertungen (ADR-0005),
- * das Nacherfassen alter Belege bleibt damit moeglich.
- */
-export async function assertBookingEnvelope(householdId: string, envelopeId: string | null, date: Date) {
-  if (!envelopeId) return
-  const envelope = await prisma.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { closedAt: true, balanceSince: true } })
-  if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
-  assertEnvelopeAcceptsBooking(envelope, date)
-}
