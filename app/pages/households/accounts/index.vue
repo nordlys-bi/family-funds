@@ -273,6 +273,11 @@ onMounted(async () => {
   await load()
 })
 watch(activeHouseholdId, load)
+
+// Kontouebertrag (issue #191) ueber den globalen Erfassen-Dialog; nach dem
+// Speichern dort die Salden hier neu laden.
+const quickCapture = useQuickCapture()
+watch(quickCapture.savedTick, load)
 </script>
 
 <template>
@@ -282,6 +287,14 @@ watch(activeHouseholdId, load)
     </template>
 
     <template #toolbar>
+      <Button
+        v-if="accounts.length > 1"
+        label="Übertrag"
+        icon="pi pi-arrow-right-arrow-left"
+        severity="secondary"
+        outlined
+        @click="quickCapture.open('accountTransfer')"
+      />
       <Button
         v-if="accounts.length"
         label="Konto anlegen"
@@ -323,7 +336,7 @@ watch(activeHouseholdId, load)
           <td class="name">
             <span class="account-cell">
               <i :class="accountTypeIcon(account.type)" aria-hidden="true"></i>
-              <span>{{ account.name }}</span>
+              <NuxtLink :to="`/households/accounts/${account.id}`" class="account-link">{{ account.name }}</NuxtLink>
             </span>
             <span v-if="account.closedAt" class="sub">geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
           </td>
@@ -358,7 +371,7 @@ watch(activeHouseholdId, load)
             <div class="data-table__card-line">
               <span class="data-table__card-name account-cell">
                 <i :class="accountTypeIcon(account.type)" aria-hidden="true"></i>
-                {{ account.name }}
+                <NuxtLink :to="`/households/accounts/${account.id}`" class="account-link">{{ account.name }}</NuxtLink>
               </span>
               <span :class="{ 'account-negative': account.balance < 0 }">{{ money(account.balance) }}</span>
             </div>
@@ -397,6 +410,7 @@ watch(activeHouseholdId, load)
           option-label="label"
           option-value="value"
           :loading="defaultSaving"
+          placeholder="Keins"
           aria-label="Mein Standardkonto"
           class="default-account__select"
           @update:model-value="saveDefault"
@@ -561,6 +575,16 @@ watch(activeHouseholdId, load)
 .default-account__hint {
   color: var(--color-text-muted);
   font-size: 0.8rem;
+}
+
+.account-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.account-link:hover,
+.account-link:focus-visible {
+  text-decoration: underline;
 }
 
 .account-cell {

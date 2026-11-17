@@ -24,7 +24,9 @@
 import { computed } from 'vue'
 import { useState } from '#app'
 
-export type QuickCaptureKind = 'expense' | 'income' | 'transfer'
+// 'transfer' = Umbuchung zwischen Umschlaegen, 'accountTransfer' = Geld
+// zwischen Konten (ADR-0006, issue #191).
+export type QuickCaptureKind = 'expense' | 'income' | 'transfer' | 'accountTransfer'
 
 type QuickCaptureState = {
   open: boolean
@@ -34,6 +36,8 @@ type QuickCaptureState = {
    * einer Karte auf dem Dashboard).
    */
   envelopeId: string | null
+  /** Vorausgewaehltes Von-Konto eines Kontouebertrags (Kontoseite). */
+  accountId: string | null
 }
 
 export function useQuickCapture() {
@@ -41,6 +45,7 @@ export function useQuickCapture() {
     open: false,
     kind: 'expense',
     envelopeId: null,
+    accountId: null,
   }))
 
   // Monoton steigender Zaehler, den <QuickCaptureRoot> nach jedem
@@ -51,14 +56,15 @@ export function useQuickCapture() {
   const isOpen = computed(() => state.value.open)
   const kind = computed(() => state.value.kind)
   const envelopeId = computed(() => state.value.envelopeId)
+  const accountId = computed(() => state.value.accountId)
 
   /**
    * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `envelopeId`
    * (optional) fuellt das Umschlag-Feld vor — z. B. beim Klick auf die
    * "+"-Aktion einer Dashboard-Karte.
    */
-  function open(nextKind: QuickCaptureKind = 'expense', options?: { envelopeId?: string | null }) {
-    state.value = { open: true, kind: nextKind, envelopeId: options?.envelopeId ?? null }
+  function open(nextKind: QuickCaptureKind = 'expense', options?: { envelopeId?: string | null; accountId?: string | null }) {
+    state.value = { open: true, kind: nextKind, envelopeId: options?.envelopeId ?? null, accountId: options?.accountId ?? null }
   }
 
   function close() {
@@ -75,5 +81,5 @@ export function useQuickCapture() {
     savedTick.value += 1
   }
 
-  return { isOpen, kind, envelopeId, savedTick, open, close, setKind, markSaved }
+  return { isOpen, kind, envelopeId, accountId, savedTick, open, close, setKind, markSaved }
 }

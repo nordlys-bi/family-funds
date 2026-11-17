@@ -51,6 +51,7 @@ model User {
   expenses                 ExpenseTransaction[]
   incomes                  IncomeTransaction[]
   envelopeTransfers        EnvelopeTransfer[]
+  accountTransfers         AccountTransfer[]
   // Onboarding-Tour-State (issue #16). Per-User, nicht per-Household,
   // weil ein User mehrere Haushalte haben kann und der Onboarding-Flow
   // sich auf den User bezieht, nicht auf den Haushalt-Kontext.
@@ -77,6 +78,7 @@ model Household {
   envelopes          Envelope[]
   envelopeTransfers  EnvelopeTransfer[]
   accounts           Account[]
+  accountTransfers   AccountTransfer[]
   // ADR-0005: Ab hier zaehlen Einnahmen, Ausgaben und Umbuchungen in
   // "Zu verteilen"; openingBalance ist das freie Geld zu diesem Zeitpunkt,
   // zusaetzlich zu dem, was dann schon in Umschlaegen steckt.
@@ -480,8 +482,36 @@ model Account {
   defaultForMembers   HouseholdMember[]
   expenses            ExpenseTransaction[]
   incomes             IncomeTransaction[]
+  transfersOut        AccountTransfer[]    @relation("AccountTransferFrom")
+  transfersIn         AccountTransfer[]    @relation("AccountTransferTo")
 
   @@index([householdId])
+}
+
+// ADR-0006: Geld wechselt den Ort, nicht den Zweck (Geld abheben, Sparrate
+// aufs Tagesgeld). Beruehrt keinen Umschlag und zaehlt in keiner Auswertung.
+// NoAction auf die Konten wie bei Buchungen: Ein Konto mit Uebertraegen wird
+// geschlossen, nicht geloescht.
+model AccountTransfer {
+  id            String   @id @default(uuid())
+  householdId   String
+  fromAccountId String
+  toAccountId   String
+  amount        Int // Cent value, > 0
+  date          DateTime
+  note          String?
+  userId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  household   Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromAccount Account   @relation("AccountTransferFrom", fields: [fromAccountId], references: [id], onDelete: NoAction)
+  toAccount   Account   @relation("AccountTransferTo", fields: [toAccountId], references: [id], onDelete: NoAction)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, date])
+  @@index([fromAccountId, date])
+  @@index([toAccountId, date])
 }
 
 // ADR-0006: Kontoart ist ein echter Typ und darf Verhalten steuern.
