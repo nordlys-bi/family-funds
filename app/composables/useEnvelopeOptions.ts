@@ -8,11 +8,15 @@
  */
 import { ref } from 'vue'
 import { sortEnvelopes, type AllocationSource, type EnvelopeOption } from '~/utils/envelope-options'
+import type { AccountBinding } from '~/utils/account-options'
 
 export type BookableEnvelope = EnvelopeOption & {
   balance: { balance: number }
   allocationSource: AllocationSource
   currentPeriod: { start: string; end: string } | null
+  /** ADR-0006: Kontobindung, Eingabefilter fuer "Bezahlt mit". */
+  accountIds: string[]
+  primaryAccountId: string | null
 }
 
 export function useEnvelopeOptions() {
@@ -47,5 +51,11 @@ export function useEnvelopeOptions() {
     }
   }
 
-  return { envelopes, unassignedFree, ledgerSince, loaded, failed, load }
+  /** Bindung des Umschlags `id`; "Zu verteilen" ('' / null) hat keine. */
+  function bindingOf(id: string | null | undefined): AccountBinding | null {
+    const envelope = id ? envelopes.value.find((item) => item.id === id) : undefined
+    return envelope ? { accountIds: envelope.accountIds ?? [], primaryAccountId: envelope.primaryAccountId ?? null } : null
+  }
+
+  return { envelopes, unassignedFree, ledgerSince, loaded, failed, load, bindingOf }
 }

@@ -22,7 +22,15 @@ import { parseSignedMoney } from './envelope-lifecycle'
 
 type AccountsDb = Pick<
   PrismaClient,
-  'account' | 'household' | 'envelope' | 'envelopeTransfer' | 'expenseTransaction' | 'incomeTransaction' | '$transaction'
+  | 'account'
+  | 'envelopeAccount'
+  | 'householdMember'
+  | 'household'
+  | 'envelope'
+  | 'envelopeTransfer'
+  | 'expenseTransaction'
+  | 'incomeTransaction'
+  | '$transaction'
 >
 
 export type AccountsContext = {
@@ -49,6 +57,23 @@ export function parseAccountValues(body: unknown): AccountValues {
       ? 0
       : parseSignedMoney(raw.openingBalance, 'Opening balance'),
   }
+}
+
+/**
+ * `accountIds`/`primaryAccountId` aus dem Body eines Umschlags; `undefined`,
+ * wenn der Body die Bindung nicht anfasst.
+ */
+export function parseEnvelopeAccounts(body: unknown): { accountIds: string[]; primaryAccountId: string | null } | undefined {
+  const raw = (body ?? {}) as { accountIds?: unknown; primaryAccountId?: unknown }
+  if (raw.accountIds === undefined) return undefined
+  if (!Array.isArray(raw.accountIds) || raw.accountIds.some((id) => typeof id !== 'string' || !id)) {
+    throw createError({ statusCode: 400, statusMessage: 'accountIds must be a list of account ids.' })
+  }
+  const primary = raw.primaryAccountId
+  if (primary !== undefined && primary !== null && typeof primary !== 'string') {
+    throw createError({ statusCode: 400, statusMessage: 'primaryAccountId must be an account id.' })
+  }
+  return { accountIds: raw.accountIds as string[], primaryAccountId: primary || null }
 }
 
 export type AccountValues = {
@@ -264,6 +289,74 @@ export async function updateAccount(householdId: string, id: string, changes: Ac
       ...(changes.closedAt !== undefined ? { closedAt: changes.closedAt } : {}),
     },
   })
+}
+
+/**
+ * Prueft eine Bindung, ohne zu schreiben. Die Endpoints rufen das vor dem
+ * Anlegen oder Aendern des Umschlags auf, damit eine ungueltige Bindung nicht
+ * einen halb gespeicherten Umschlag hinterlaesst.
+ */
+export async function checkEnvelopeAccounts(
+  householdId: string,
+  accountIds: string[],
+  primaryAccountId: string | null,
+  { db = prisma }: AccountsContext = {},
+) {
+  const ids = [...new Set(accountIds)]
+  const known = ids.length === 0 ? 0 : await db.account.count({ where: { householdId, id: { in: ids } } })
+  if (known !== ids.length) throw createError({ statusCode: 404, statusMessage: 'Account not found.' })
+  if (primaryAccountId !== null && !ids.includes(primaryAccountId)) {
+    throw createError({ statusCode: 400, statusMessage: 'The primary account must be bound.', data: { reason: 'primary-not-bound' } })
+  }
+  return { ids, primary: primaryAccountId ?? ids[0] ?? null }
+}
+
+/**
+ * Bindet einen Umschlag an Konten (ADR-0006, issue #190). Die Bindung ist nur
+ * ein Eingabefilter: Sie entscheidet, was "Bezahlt mit" anbietet, nicht was
+ * gebucht werden darf. Darum duerfen auch geschlossene Konten gebunden
+ * bleiben; die Erfassung blendet sie ohnehin aus.
+ *
+ * Leere Liste = keine Bindung. Ohne Hauptkonto wird das erste Konto der
+ * Liste eines, denn vorausgewaehlt wird immer genau eins.
+ */
+export async function setEnvelopeAccounts(
+  householdId: string,
+  envelopeId: string,
+  accountIds: string[],
+  primaryAccountId: string | null,
+  { db = prisma }: AccountsContext = {},
+) {
+  const envelope = await db.envelope.findFirst({ where: { id: envelopeId, householdId }, select: { id: true } })
+  if (!envelope) throw createError({ statusCode: 404, statusMessage: 'Envelope not found.' })
+  const { ids, primary } = await checkEnvelopeAccounts(householdId, accountIds, primaryAccountId, { db })
+
+  return db.$transaction(async (tx) => {
+    await tx.envelopeAccount.deleteMany({ where: { envelopeId } })
+    if (ids.length > 0) await tx.envelopeAccount.createMany({ data: ids.map((accountId) => ({ envelopeId, accountId })) })
+    await tx.envelope.update({ where: { id: envelopeId }, data: { primaryAccountId: primary } })
+    return { accountIds: ids, primaryAccountId: primary }
+  })
+}
+
+/**
+ * Standardkonto eines Mitglieds (ADR-0006): vorausgewaehlt bei Umschlaegen
+ * ohne Bindung. Jeder stellt nur sein eigenes ein; `null` = keins.
+ */
+export async function setDefaultAccount(
+  householdId: string,
+  userId: string,
+  accountId: string | null,
+  { db = prisma, today = new Date() }: AccountsContext = {},
+) {
+  if (accountId !== null) {
+    const account = await findAccount(db, householdId, accountId)
+    if (account.closedAt && dayKey(account.closedAt) <= dayKey(today)) {
+      throw createError({ statusCode: 400, statusMessage: 'The account is closed.', data: { reason: 'closed' } })
+    }
+  }
+  await db.householdMember.updateMany({ where: { householdId, userId }, data: { defaultAccountId: accountId } })
+  return { defaultAccountId: accountId }
 }
 
 /**

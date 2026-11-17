@@ -47,7 +47,11 @@ const blankForm = (group: EnvelopeGroup) => ({
   targetAmount: null as number | null,
   frequency: 'MONTHLY' as Frequency,
   validFrom: getPeriodStartDate(new Date(), 'MONTHLY'),
+  accountIds: [] as string[],
+  primaryAccountId: null as string | null,
 })
+// ADR-0006: Kontobindung im Formular, sobald der Haushalt Konten hat.
+const { accounts, load: loadAccounts } = useAccountOptions()
 const envelopeForm = ref(blankForm('RUNNING'))
 
 function defaultAllocationOf(group: EnvelopeGroup) {
@@ -57,6 +61,7 @@ function defaultAllocationOf(group: EnvelopeGroup) {
 function openCreate(group: EnvelopeGroup = 'RUNNING') {
   envelopeEditId.value = null
   envelopeForm.value = blankForm(group)
+  loadAccounts(props.householdId)
   envelopeDialogOpen.value = true
 }
 
@@ -70,7 +75,10 @@ function openEdit(envelope: EnvelopeItem) {
     targetAmount: envelope.targetAmount === null ? null : envelope.targetAmount / 100,
     frequency: envelope.frequency,
     validFrom: new Date(envelope.balanceSince),
+    accountIds: [...(envelope.accountIds ?? [])],
+    primaryAccountId: envelope.primaryAccountId ?? null,
   }
+  loadAccounts(props.householdId)
   envelopeDialogOpen.value = true
 }
 
@@ -104,6 +112,10 @@ async function saveEnvelope() {
       allocationSource: envelopeForm.value.allocationSource,
       allocationAmount: envelopeForm.value.allocationSource === 'FIXED' ? envelopeForm.value.amount : null,
       targetAmount: envelopeForm.value.targetAmount || null,
+      // Ohne Konten nicht mitschicken: Die Bindung bleibt dann, wie sie ist.
+      ...(accounts.value.length > 0
+        ? { accountIds: envelopeForm.value.accountIds, primaryAccountId: envelopeForm.value.primaryAccountId }
+        : {}),
     }
     if (envelopeEditId.value) {
       await $fetch(`/api/households/${props.householdId}/envelopes/${envelopeEditId.value}`, { method: 'PATCH', body: rule })
@@ -337,7 +349,7 @@ defineExpose({ openCreate, openEdit, openClose, openTransfer, remove, deletingId
     @save="saveEnvelope"
     @cancel="envelopeDialogOpen = false"
   >
-    <EnvelopeForm v-model="envelopeForm" :currency="currency" :frequency-locked="Boolean(envelopeEditId)" />
+    <EnvelopeForm v-model="envelopeForm" :currency="currency" :frequency-locked="Boolean(envelopeEditId)" :accounts="accounts" />
   </FormDialog>
 
   <!-- ADR-0004: Umschlag schließen — Saldo fließt per Verweis ins Ziel. -->

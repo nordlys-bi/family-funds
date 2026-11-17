@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Menu from 'primevue/menu'
 import { isFirstRun } from '~/utils/household-age'
-import { todayDateHelperText } from '~/utils/form-helpers'
+import { accountErrorText } from '~/utils/account-options'
+import type { TransactionEditPayload } from '~/components/TransactionRowEditor.vue'
 
 definePageMeta({ layout: 'default' })
 
@@ -36,8 +37,6 @@ const router = useRouter()
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const notice = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 const editingTransactionId = ref<string | null>(null)
-const transactionDialogOpen = ref(false)
-const transactionLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
 
 // Der mobile FAB ueberlappt bei kurzen Listen die rechtsbuendigen
@@ -77,6 +76,7 @@ const tx = useTransactionList({
   // Default-URL sauber bleibt (kein "?userId=" in der Adressleiste).
   initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
   initialEnvelopeIdFilter: envelopeIdFromQuery(),
+  initialAccountIdFilter: typeof route.query.accountId === 'string' && route.query.accountId.length > 0 ? route.query.accountId : null,
   // Klick auf eine Dashboard-Budget-Karte verlinkt hierher mit
   // ?from=<periodStart>&to=<periodEnd> (ISO) statt ?month — die exakte
   // Budget-Periode passt bei WEEKLY/QUARTERLY/YEARLY/ONCE nicht auf
@@ -89,6 +89,7 @@ const range = tx.range
 const unassignedOnly = tx.unassignedOnly
 const userIdFilter = tx.userIdFilter
 const envelopeIdFilter = tx.envelopeIdFilter
+const accountIdFilter = tx.accountIdFilter
 const hasLocalFilters = tx.hasLocalFilters
 const monthLabel = tx.monthLabel
 const summary = tx.summary
@@ -98,6 +99,7 @@ const setMonth = tx.setMonth
 const setUnassignedOnly = tx.setUnassignedOnly
 const setUserIdFilter = tx.setUserIdFilter
 const setEnvelopeIdFilter = tx.setEnvelopeIdFilter
+const setAccountIdFilter = tx.setAccountIdFilter
 const setRange = tx.setRange
 const clearRange = tx.clearRange
 const clearLocalFilters = tx.clearLocalFilters
@@ -151,10 +153,23 @@ const showFirstTimeEmpty = computed(
   () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
 )
 
-const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
+const { envelopes: envelopeOptions, load: loadEnvelopes, bindingOf } = useEnvelopeOptions()
+// ADR-0006 (issue #190): Konto in Liste, Filter und Inline-Editor, sobald der
+// Haushalt Konten hat.
+const { accounts, load: loadAccounts } = useAccountOptions()
+const hasAccounts = computed(() => accounts.value.length > 0)
+const accountFilterOptions = computed(() => [
+  { label: 'Alle Konten', value: null as string | null },
+  ...accounts.value.map((account) => ({ label: account.name, value: account.id as string | null })),
+])
+// Das Konto steht als zweite Zeile unter der Beschreibung statt in einer
+// eigenen Spalte: Mit einer siebten Spalte schneidet die Tabelle bei 1024 px
+// den Betrag ab.
+const nameSubLine = (transaction: { envelopeId?: string | null; accountName?: string | null }) =>
+  [isUnassigned(transaction) ? 'ohne Umschlag' : null, transaction.accountName ?? null].filter(Boolean).join(' · ')
 
 // Issue #55: Option-Listen fuer die Filter-Selects in der Toolbar.
-// Bewusst getrennt von `envelopeSelectOptions` (Dialog), weil:
+// Bewusst getrennt von den Optionen des Erfassen-Dialogs, weil:
 //  - Filter-Select hat "Alle …" als Default-Option (value null)
 //  - Dialog-Select hat "Zu verteilen" (value '') als Default-Option
 // value: null ist noetig, damit PrimeVue-Select sauber zwischen "kein
@@ -179,27 +194,9 @@ const envelopeFilterOptions = computed(() => [
 const envelopeLabel = (transaction: { envelopeName?: string | null }) => transaction.envelopeName ?? 'Zu verteilen'
 const isUnassigned = (transaction: { envelopeId?: string | null }) => !transaction.envelopeId
 
-const transactionForm = ref({
-  amount: null as number | null,
-  description: '',
-  date: new Date(),
-  envelopeId: '',
-})
-
 // ADR-0004: Das Anlege-Dialog-Select bietet nur am Buchungsdatum offene
 // Budgets an. Der Inline-Editor bekommt alle Budgets samt `closedAt` und
 // filtert selbst nach seinem Entwurfs-Datum.
-const envelopeSelectOptions = computed(() => [
-  { label: 'Zu verteilen', value: '' },
-  ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
-])
-watch(envelopeSelectOptions, (options) => {
-  if (!envelopesLoaded.value) return
-  if (transactionForm.value.envelopeId && !options.some((option) => option.value === transactionForm.value.envelopeId)) {
-    transactionForm.value.envelopeId = ''
-  }
-})
 const rowEditorEnvelopeOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
   ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
@@ -256,6 +253,7 @@ function buildRouteQuery(options: { monthOverride?: string } = {}): Record<strin
   if (unassignedOnly.value) query.unassigned = '1'
   if (userIdFilter.value) query.userId = userIdFilter.value
   if (envelopeIdFilter.value) query.envelopeId = envelopeIdFilter.value
+  if (accountIdFilter.value) query.accountId = accountIdFilter.value
   return query
 }
 
@@ -289,6 +287,13 @@ async function onEnvelopeIdFilterChange(value: string | null) {
   await router.replace({ query: buildRouteQuery() })
 }
 
+// Issue #190: Konto-Filter, gleiches Pattern.
+async function onAccountIdFilterChange(value: string | null) {
+  setAccountIdFilter(value)
+  await loadTransactions(activeHouseholdId.value)
+  await router.replace({ query: buildRouteQuery() })
+}
+
 // Issue #55: Beide Filter (Person + Budget) auf einmal leeren.
 // Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
 async function clearAllLocalFilters() {
@@ -309,6 +314,7 @@ const activeFilterCount = computed(
   () =>
     (userIdFilter.value ? 1 : 0) +
     (envelopeIdFilter.value ? 1 : 0) +
+    (accountIdFilter.value ? 1 : 0) +
     (unassignedOnly.value ? 1 : 0),
 )
 
@@ -339,6 +345,10 @@ const activeFilterLabel = computed(() => {
   if (envelopeIdFilter.value) {
     const envelope = envelopeOptions.value.find((item) => item.id === envelopeIdFilter.value)
     parts.push(envelope ? `in ${envelope.name}` : 'in diesem Umschlag')
+  }
+  if (accountIdFilter.value) {
+    const account = accounts.value.find((item) => item.id === accountIdFilter.value)
+    parts.push(account ? `mit ${account.name}` : 'mit diesem Konto')
   }
   return parts.join(' ')
 })
@@ -371,6 +381,15 @@ const activeFilterChips = computed<FilterChip[]>(() => {
       label: envelope?.name ?? 'Umschlag',
       icon: 'pi pi-wallet',
       onRemove: () => onEnvelopeIdFilterChange(null),
+    })
+  }
+  if (accountIdFilter.value) {
+    const account = accounts.value.find((item) => item.id === accountIdFilter.value)
+    chips.push({
+      key: 'account',
+      label: account?.name ?? 'Konto',
+      icon: 'pi pi-credit-card',
+      onRemove: () => onAccountIdFilterChange(null),
     })
   }
   if (unassignedOnly.value) {
@@ -416,6 +435,17 @@ watch(
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
     if (next !== envelopeIdFilter.value) {
       setEnvelopeIdFilter(next)
+      await loadTransactions(activeHouseholdId.value)
+    }
+  },
+)
+
+watch(
+  () => route.query.accountId,
+  async (newValue) => {
+    const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
+    if (next !== accountIdFilter.value) {
+      setAccountIdFilter(next)
       await loadTransactions(activeHouseholdId.value)
     }
   },
@@ -468,18 +498,19 @@ async function loadAll() {
   await Promise.all([
     loadCurrentHousehold(),
     loadEnvelopes(activeHouseholdId.value),
+    loadAccounts(activeHouseholdId.value),
     loadTransactions(activeHouseholdId.value),
   ])
 }
 
-const resetForm = () => {
-  transactionForm.value = { amount: null, description: '', date: new Date(), envelopeId: '' }
+// issue #190: Anlegen laeuft ueber den globalen Erfassen-Dialog, damit
+// "Bezahlt mit" und die Umschlag-Logik nur an einer Stelle leben. Ein aktiver
+// Umschlag-Filter fuellt das Feld vor.
+const quickCapture = useQuickCapture()
+const openCreateTransactionDialog = () => {
   editingTransactionId.value = null
+  quickCapture.open('expense', { envelopeId: envelopeIdFilter.value })
 }
-
-const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
-
-const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
 
 // === FAB Quick-Add (issue #29) ====================================
 // Wenn der FAB mit ?new=1 hierher navigiert, soll der Create-Dialog
@@ -500,7 +531,7 @@ const inlineEditError = ref<string | null>(null)
 
 async function saveInlineEdit(
   transactionId: string,
-  payload: { amount: number | null; description: string; date: string; envelopeId: string | null },
+  payload: TransactionEditPayload,
 ) {
   if (!activeHouseholdId.value) return
   if (payload.amount == null || payload.amount <= 0) {
@@ -521,6 +552,7 @@ async function saveInlineEdit(
     description: payload.description,
     date: payload.date,
     envelopeId: payload.envelopeId,
+    ...(payload.accountId !== undefined ? { accountId: payload.accountId } : {}),
   })
   if (!original) {
     actionLoadingKey.value = null
@@ -537,6 +569,7 @@ async function saveInlineEdit(
         description: payload.description,
         date: payload.date,
         envelopeId: payload.envelopeId,
+        ...(payload.accountId !== undefined ? { accountId: payload.accountId } : {}),
       },
     })
     editingTransactionId.value = null
@@ -549,37 +582,9 @@ async function saveInlineEdit(
   } catch (error: any) {
     // Rollback auf den Original-Wert (issue #15 Acceptance Criteria).
     restoreTransactionLocal(transactionId, original)
-    inlineEditError.value = error?.statusMessage || error?.message || 'Speichern fehlgeschlagen.'
+    inlineEditError.value = accountErrorText(error)
   } finally {
     actionLoadingKey.value = null
-  }
-}
-
-const saveTransaction = async () => {
-  if (!activeHouseholdId.value) return
-  transactionLoading.value = true
-  notice.value = null
-  try {
-    const isEdit = Boolean(editingTransactionId.value)
-    const payload = {
-      kind: 'expense' as const,
-      ...(editingTransactionId.value ? { id: editingTransactionId.value } : {}),
-      amount: transactionForm.value.amount ?? undefined,
-      description: transactionForm.value.description,
-      date: transactionForm.value.date ? formatDateToInputString(transactionForm.value.date) : undefined,
-      envelopeId: transactionForm.value.envelopeId || null,
-    }
-    await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
-      method: editingTransactionId.value ? 'PATCH' : 'POST',
-      body: payload,
-    })
-    await loadAll()
-    closeTransactionDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Ausgabe wurde aktualisiert.' : 'Ausgabe wurde angelegt.' }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Ausgabe konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
-  } finally {
-    transactionLoading.value = false
   }
 }
 
@@ -761,7 +766,7 @@ watch(activeHouseholdId, async () => { await loadAll() })
 // Issue #91: der globale Erfassen-Dialog kann von hier aus (oder von
 // jeder anderen Seite) eine Ausgabe anlegen. savedTick steigt nach
 // jedem erfolgreichen POST — dann die sichtbare Liste neu laden.
-const { savedTick: quickCaptureSavedTick } = useQuickCapture()
+const quickCaptureSavedTick = quickCapture.savedTick
 watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
@@ -847,6 +852,19 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         aria-label="Buchungen nach Umschlag filtern"
         class="toolbar-filter"
         @update:model-value="onEnvelopeIdFilterChange"
+      />
+      <!-- Issue #190: Konto-Filter, erst mit Konten. -->
+      <Select
+        v-if="hasAccounts"
+        :model-value="accountIdFilter"
+        :options="accountFilterOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Alle Konten"
+        :loading="txLoading"
+        aria-label="Buchungen nach Konto filtern"
+        class="toolbar-filter"
+        @update:model-value="onAccountIdFilterChange"
       />
       <!-- Issue #52: Toggle fuer den ?unassigned=1-Filter. -->
       <Button
@@ -945,6 +963,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                 <TransactionRowEditor
                   :transaction="transaction"
                   :envelope-options="rowEditorEnvelopeOptions"
+                  :accounts="accounts"
+                  :binding-of="bindingOf"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `expense:${transaction.id}`"
                   :error="inlineEditError"
@@ -957,7 +977,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
               <td class="muted">{{ formatDate(transaction.date) }}</td>
               <td class="name">
                 {{ transaction.description || 'Ausgabe' }}
-                <span v-if="isUnassigned(transaction)" class="sub">ohne Umschlag</span>
+                <span v-if="nameSubLine(transaction)" class="sub">{{ nameSubLine(transaction) }}</span>
               </td>
               <td>
                 <span :class="['envelope-pill', isUnassigned(transaction) ? 'envelope-pill--muted' : '']">
@@ -1014,6 +1034,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
                   :envelope-options="rowEditorEnvelopeOptions"
+                  :accounts="accounts"
+                  :binding-of="bindingOf"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `expense:${transaction.id}`"
                   :error="inlineEditError"
@@ -1051,6 +1073,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                       {{ envelopeLabel(transaction) }}
                     </span>
                     <span class="data-table__card-user">
+                      <template v-if="transaction.accountName">{{ transaction.accountName }} · </template>
                       {{ transaction.user.displayName || transaction.user.email }}
                       <i class="pi pi-ellipsis-v data-table__card-hint" aria-hidden="true" />
                     </span>
@@ -1070,50 +1093,6 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
          am Klickpunkt/Trigger-Element). Zusaetzlich per Swipe erreichbar
          (siehe SwipeableListItem oben: rechts = Bearbeiten, links = Loeschen). -->
     <Menu ref="cardMenu" :model="cardMenuItems" popup />
-
-    <FormDialog
-      v-model:visible="transactionDialogOpen"
-      :header="editingTransactionId ? 'Ausgabe bearbeiten' : 'Neue Ausgabe'"
-      :submit-label="editingTransactionId ? 'Ausgabe aktualisieren' : 'Ausgabe anlegen'"
-      :saving="transactionLoading"
-      @save="saveTransaction"
-      @cancel="closeTransactionDialog"
-    >
-      <FormFieldRow label="Betrag" html-for="transaction-amount">
-        <InputNumber
-          id="transaction-amount"
-          v-model="transactionForm.amount"
-          mode="currency"
-          :currency="currencyCode"
-          locale="de-DE"
-          inputClass="w-full"
-          :minFractionDigits="2"
-          :maxFractionDigits="2"
-          placeholder="0,00"
-        />
-      </FormFieldRow>
-      <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
-        <EnvelopeSelect
-          id="transaction-envelope"
-          v-model="transactionForm.envelopeId"
-          :options="envelopeSelectOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Zu verteilen"
-        />
-      </FormFieldRow>
-      <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
-        <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Einkauf bei Rewe" />
-      </FormFieldRow>
-      <!-- Datum (issue #32): visuell sekundaer, weil im Default-Flow
-           immer "heute" — der User aendert es nur, wenn die Buchung
-           nicht am aktuellen Tag stattfand. Reihenfolge folgt der
-           Capture-Prioritaet: Betrag > Budget > Kontext > Datum. -->
-      <FormFieldRow label="Datum" html-for="transaction-date" subtle>
-        <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
-        <small class="form-field-helper">{{ todayDateHelperText }}</small>
-      </FormFieldRow>
-    </FormDialog>
 
     <!-- Undo-Snackbar (issue #58): erscheint nach Soft-Delete am unteren
          Bildschirmrand, bietet "Rueckgaengig"-Button. Verschwindet nach

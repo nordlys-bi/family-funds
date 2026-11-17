@@ -31,6 +31,9 @@ export type TransactionItem = {
   updatedAt?: string
   envelopeId?: string | null
   envelopeName?: string | null
+  /** ADR-0006: womit bezahlt wurde; null vor den Konten. */
+  accountId?: string | null
+  accountName?: string | null
   user: { id: string; displayName: string | null; email: string }
 }
 
@@ -71,6 +74,8 @@ export type UseTransactionListOptions = {
    * Default null = kein Filter. Der Server wendet ihn auch auf Einnahmen an.
    */
   initialEnvelopeIdFilter?: string | null
+  /** Initialer Konto-Filter (issue #190), als `?accountId=` an den Server. */
+  initialAccountIdFilter?: string | null
   /**
    * Expliziter Zeitraum (ISO-8601-Strings), z. B. von einem Klick auf
    * eine Dashboard-Karte (periodStart/periodEnd). Hat Vorrang vor
@@ -98,6 +103,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   // braucht deshalb ein `load()` durch den Caller (wie bei unassignedOnly).
   const userIdFilter = ref<string | null>(options.initialUserIdFilter ?? null)
   const envelopeIdFilter = ref<string | null>(options.initialEnvelopeIdFilter ?? null)
+  const accountIdFilter = ref<string | null>(options.initialAccountIdFilter ?? null)
   // Expliziter Zeitraum statt Monat (siehe UseTransactionListOptions.initialFrom).
   // `null` = normaler Monats-Modus.
   const range = ref<{ from: string; to: string | null } | null>(
@@ -170,6 +176,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
       if (unassignedOnly.value) params.unassigned = '1'
       if (userIdFilter.value) params.userId = userIdFilter.value
       if (envelopeIdFilter.value) params.envelopeId = envelopeIdFilter.value
+      if (accountIdFilter.value) params.accountId = accountIdFilter.value
       const response = await $fetch<{
         transactions: TransactionItem[]
         summary: TransactionSummary
@@ -260,6 +267,11 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     envelopeIdFilter.value = value && value.length > 0 ? value : null
   }
 
+  /** Konto-Filter (issue #190), gleiches Pattern: Caller laedt neu. */
+  function setAccountIdFilter(value: string | null) {
+    accountIdFilter.value = value && value.length > 0 ? value : null
+  }
+
   /**
    * Leert ALLE issue-#55-Filter (Person + Umschlag) auf einmal.
    * Praktisch fuer "Alle anzeigen"-Buttons in der Empty-State.
@@ -273,6 +285,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
   function clearLocalFilters() {
     userIdFilter.value = null
     envelopeIdFilter.value = null
+    accountIdFilter.value = null
   }
 
   /**
@@ -280,7 +293,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
    * Praktisch fuer Empty-State-Text-Varianten.
    */
   const hasLocalFilters = computed(
-    () => userIdFilter.value !== null || envelopeIdFilter.value !== null,
+    () => userIdFilter.value !== null || envelopeIdFilter.value !== null || accountIdFilter.value !== null,
   )
 
   /**
@@ -374,6 +387,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     unassignedOnly,
     userIdFilter,
     envelopeIdFilter,
+    accountIdFilter,
     hasLocalFilters,
     monthOptions,
     monthLabel,
@@ -390,6 +404,7 @@ export function useTransactionList(options: UseTransactionListOptions = {}) {
     setUnassignedOnly,
     setUserIdFilter,
     setEnvelopeIdFilter,
+    setAccountIdFilter,
     clearLocalFilters,
     transactionsByKind,
     updateTransactionLocal,

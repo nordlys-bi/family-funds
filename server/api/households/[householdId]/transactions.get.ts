@@ -52,6 +52,9 @@ const MONTH_REGEX = /^\d{4}-\d{2}$/
  *                          Gilt auch fuer Einnahmen (ADR-0005).
  *                          Keine UUID -> 400. Zusammen mit `?unassigned=1`
  *                          (schliesst sich aus) ergibt sich die leere Menge.
+ *   - `?accountId=UUID`   Nur Buchungen dieses Kontos (ADR-0006, issue #190),
+ *                          Ausgaben und Einnahmen, Listen und Aggregate.
+ *                          Keine UUID -> 400.
  *
  * Summary (issue #134): Die Aggregate (`expenseTotal`, `incomeTotal`,
  * `unassignedExpenseTotal`) spiegeln dieselben Filter wie die Listen
@@ -183,7 +186,10 @@ export default defineEventHandler(async (event) => {
   // sichtbaren Liste passt (siehe Doc-Kommentar oben).
   const userIdParam = parseOptionalUuidQuery(query, 'userId')
   const envelopeIdParam = parseOptionalUuidQuery(query, 'envelopeId')
-  const userFilter = userIdParam ? { userId: userIdParam } : {}
+  const accountIdParam = parseOptionalUuidQuery(query, 'accountId')
+  // Wirkt wie `userId` auf alle Reads; in einem Objekt, damit kein Aggregat
+  // ihn vergisst.
+  const userFilter = { ...(userIdParam ? { userId: userIdParam } : {}), ...(accountIdParam ? { accountId: accountIdParam } : {}) }
 
   // Unassigned-Only-Filter (issue #52): Dashboard-Card "ohne Umschlag"
   // verlinkt auf ?unassigned=1. Setzt envelopeId + fixedCostPlanId: null auf dem Expense-Read UND
@@ -260,6 +266,8 @@ export default defineEventHandler(async (event) => {
             name: true,
           },
         },
+        accountId: true,
+        account: { select: { name: true } },
         user: {
           select: {
             id: true,
@@ -284,6 +292,8 @@ export default defineEventHandler(async (event) => {
         updatedAt: true,
         envelopeId: true,
         envelope: { select: { name: true } },
+        accountId: true,
+        account: { select: { name: true } },
         user: {
           select: {
             id: true,
@@ -332,6 +342,8 @@ export default defineEventHandler(async (event) => {
       updatedAt: transaction.updatedAt,
       envelopeId: transaction.envelopeId,
       envelopeName: transaction.envelope?.name ?? null,
+      accountId: transaction.accountId,
+      accountName: transaction.account?.name ?? null,
       user: transaction.user,
     })),
     ...incomes.map((transaction) => ({
@@ -344,6 +356,8 @@ export default defineEventHandler(async (event) => {
       updatedAt: transaction.updatedAt,
       envelopeId: transaction.envelopeId,
       envelopeName: transaction.envelope?.name ?? null,
+      accountId: transaction.accountId,
+      accountName: transaction.account?.name ?? null,
       user: transaction.user,
     })),
   ]

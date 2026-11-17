@@ -10,7 +10,7 @@ import { computeEnvelopeBalances, computeUnassignedBalance, sumEnvelopeBalances 
 
 vi.mock('../prisma', () => ({ prisma: {} }))
 
-const { createAccount, deleteAccount, introduceAccounts, listAccounts, previewIntroduction, updateAccount } = await import('../accounts')
+const { createAccount, deleteAccount, introduceAccounts, listAccounts, previewIntroduction, setDefaultAccount, setEnvelopeAccounts, updateAccount } = await import('../accounts')
 
 /** Lokales Datum, 12:00 — wie `parseDateInput`. */
 function day(year: number, month: number, date: number) {
@@ -260,5 +260,72 @@ describe('listAccounts', () => {
       { name: 'Girokonto', balance: 400000 - 5000, hasBookings: true },
       { name: 'Geldbeutel', balance: 5000, hasBookings: true },
     ])
+  })
+})
+
+/*
+ * Bindung und Standardkonto (issue #190): nur Eingabefilter, darum genuegt
+ * es zu pruefen, was gespeichert wird.
+ */
+describe('setEnvelopeAccounts', () => {
+  const accounts = [
+    { id: 'giro', householdId: HH, name: 'Girokonto', startDate: LEDGER, closedAt: null },
+    { id: 'cash', householdId: HH, name: 'Geldbeutel', startDate: LEDGER, closedAt: null },
+  ]
+
+  it('replaces the binding and makes the first account primary by default', async () => {
+    const { tables, ctx } = setup({ account: accounts, envelopeAccount: [{ envelopeId: 'kids', accountId: 'cash' }] })
+
+    await expect(setEnvelopeAccounts(HH, 'kids', ['giro', 'cash'], null, ctx)).resolves.toEqual({ accountIds: ['giro', 'cash'], primaryAccountId: 'giro' })
+    expect(tables.envelopeAccount).toEqual([{ id: expect.any(String), envelopeId: 'kids', accountId: 'giro' }, { id: expect.any(String), envelopeId: 'kids', accountId: 'cash' }])
+    expect(tables.envelope[0]).toMatchObject({ primaryAccountId: 'giro' })
+  })
+
+  it('keeps the chosen primary account and clears everything with an empty list', async () => {
+    const { tables, ctx } = setup({ account: accounts })
+
+    await setEnvelopeAccounts(HH, 'kids', ['giro', 'cash'], 'cash', ctx)
+    expect(tables.envelope[0]).toMatchObject({ primaryAccountId: 'cash' })
+
+    await setEnvelopeAccounts(HH, 'kids', [], null, ctx)
+    expect(tables.envelopeAccount).toEqual([])
+    expect(tables.envelope[0]).toMatchObject({ primaryAccountId: null })
+  })
+
+  it('rejects a primary account outside the binding and foreign accounts', async () => {
+    const { tables, ctx } = setup({ account: [...accounts, { id: 'other', householdId: 'h2', name: 'Fremd', startDate: LEDGER, closedAt: null }] })
+
+    await expect(setEnvelopeAccounts(HH, 'kids', ['giro'], 'cash', ctx)).rejects.toMatchObject({ statusCode: 400, data: { reason: 'primary-not-bound' } })
+    await expect(setEnvelopeAccounts(HH, 'kids', ['other'], null, ctx)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(setEnvelopeAccounts(HH, 'nope', ['giro'], null, ctx)).rejects.toMatchObject({ statusCode: 404 })
+    expect(tables.envelopeAccount).toEqual([])
+  })
+})
+
+describe('setDefaultAccount', () => {
+  const members = [
+    { id: 'm1', householdId: HH, userId: 'jan', defaultAccountId: null },
+    { id: 'm2', householdId: HH, userId: 'sarah', defaultAccountId: null },
+  ]
+  const accounts = [
+    { id: 'cash', householdId: HH, name: 'Geldbeutel', startDate: LEDGER, closedAt: null },
+    { id: 'old', householdId: HH, name: 'Altes Konto', startDate: LEDGER, closedAt: day(2026, 11, 15) },
+  ]
+
+  it('sets only the own default account and clears it with null', async () => {
+    const { tables, ctx } = setup({ account: accounts, householdMember: members })
+
+    await setDefaultAccount(HH, 'sarah', 'cash', ctx)
+    expect(tables.householdMember.map((member) => member.defaultAccountId)).toEqual([null, 'cash'])
+
+    await setDefaultAccount(HH, 'sarah', null, ctx)
+    expect(tables.householdMember.map((member) => member.defaultAccountId)).toEqual([null, null])
+  })
+
+  it('rejects closed and unknown accounts', async () => {
+    const { ctx } = setup({ account: accounts, householdMember: members })
+
+    await expect(setDefaultAccount(HH, 'sarah', 'old', ctx)).rejects.toMatchObject({ statusCode: 400, data: { reason: 'closed' } })
+    await expect(setDefaultAccount(HH, 'sarah', 'nope', ctx)).rejects.toMatchObject({ statusCode: 404 })
   })
 })

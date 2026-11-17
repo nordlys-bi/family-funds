@@ -36,6 +36,9 @@ export type EnvelopeItem = {
   balanceSince: string
   closedAt: string | null
   carryoverToEnvelopeId: string | null
+  /** ADR-0006: gebundene Konten (Eingabefilter fuer "Bezahlt mit"); leer = alle. */
+  accountIds: string[]
+  primaryAccountId: string | null
   /** Buchungen, Umbuchungen oder Vorgaenger vorhanden — dann nur Schliessen, kein Loeschen. */
   hasBookings: boolean
   balance: { balance: number }

@@ -6,7 +6,8 @@
  * ist ein neuer Umschlag, in den der alte geschlossen wird.
  *
  * Body (alle Felder optional): {
- *   name, group, allocationSource, allocationAmount, targetAmount, targetDate
+ *   name, group, allocationSource, allocationAmount, targetAmount, targetDate,
+ *   accountIds, primaryAccountId (Kontobindung, ADR-0006)
  * }
  *
  * Auth: `requireHouseholdOwner` — Aendern ist Planung.
@@ -22,6 +23,7 @@ import {
   parseEnvelopeGroup,
   parseMoneyToCentsAllowZero,
 } from '../../../../utils/envelope-lifecycle'
+import { checkEnvelopeAccounts, parseEnvelopeAccounts, setEnvelopeAccounts } from '../../../../utils/accounts'
 
 type UpdateEnvelopeBody = {
   name?: string
@@ -30,6 +32,8 @@ type UpdateEnvelopeBody = {
   allocationAmount?: string | number | null
   targetAmount?: string | number | null
   targetDate?: string | null
+  accountIds?: string[]
+  primaryAccountId?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -55,6 +59,10 @@ export default defineEventHandler(async (event) => {
     changes.allocationAmount = body.allocationAmount === null || body.allocationAmount === '' ? null : parseMoneyToCentsAllowZero(body.allocationAmount, 'Allocation amount')
   }
 
+  const binding = parseEnvelopeAccounts(body)
+  if (binding) await checkEnvelopeAccounts(householdId, binding.accountIds, binding.primaryAccountId)
+
   const item = await updateEnvelope(householdId, envelopeId, changes)
+  if (binding) await setEnvelopeAccounts(householdId, envelopeId, binding.accountIds, binding.primaryAccountId)
   return defineApiResponse({ kind: 'envelope', item })
 })

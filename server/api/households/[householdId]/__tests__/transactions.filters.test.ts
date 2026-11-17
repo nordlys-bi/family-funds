@@ -181,6 +181,24 @@ describe('GET /transactions — ?envelopeId= (Umschlag-Filter)', () => {
   })
 })
 
+describe('GET /transactions — ?accountId= (Konto-Filter, issue #190)', () => {
+  const ACCOUNT_ID = '2b3c4d5e-6f70-4819-8a2b-3c4d5e6f7a8c'
+
+  it('applies accountId to both lists and every aggregate', async () => {
+    await handler(makeEvent({ month: '2026-05', accountId: ACCOUNT_ID }))
+
+    expect(expenseFindWhere().accountId).toBe(ACCOUNT_ID)
+    expect(incomeFindWhere().accountId).toBe(ACCOUNT_ID)
+    expect(expenseTotalWhere().accountId).toBe(ACCOUNT_ID)
+    expect(incomeAggregateWhere().accountId).toBe(ACCOUNT_ID)
+    expect(unassignedTotalWhere().accountId).toBe(ACCOUNT_ID)
+  })
+
+  it('rejects an accountId that is not a UUID with 400', async () => {
+    await expect(handler(makeEvent({ accountId: 'giro' }))).rejects.toMatchObject({ statusCode: 400 })
+  })
+})
+
 describe('GET /transactions — ?unassigned=1 im Aggregate (issue #134)', () => {
   it('applies envelopeId: null to the expenseTotal aggregate, not only to the list', async () => {
     await handler(makeEvent({ month: '2026-05', unassigned: '1' }))

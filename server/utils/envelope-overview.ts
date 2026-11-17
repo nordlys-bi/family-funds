@@ -44,6 +44,10 @@ export type EnvelopeOverviewItem = {
   closedAt: Date | null
   carryoverToEnvelopeId: string | null
   fixedCostPlanIds: string[]
+  /** ADR-0006: gebundene Konten (Eingabefilter fuer "Bezahlt mit"); leer = alle. */
+  accountIds: string[]
+  /** Vorausgewaehlt bei der Erfassung; null ohne Bindung. */
+  primaryAccountId: string | null
   /**
    * Spuren, an denen `DELETE .../envelopes/:id` scheitert (Buchungen inkl.
    * soft-geloeschter, Umbuchungen ausser Zuteilungen, Vorgaenger).
@@ -102,6 +106,8 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
         allocationsSince: true,
         closedAt: true,
         carryoverToEnvelopeId: true,
+        primaryAccountId: true,
+        accounts: { select: { accountId: true } },
         createdAt: true,
         updatedAt: true,
         fixedCostPlans: { select: { id: true, amount: true, frequency: true, startDate: true, endDate: true } },
@@ -177,6 +183,8 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
       closedAt: envelope.closedAt,
       carryoverToEnvelopeId: envelope.carryoverToEnvelopeId,
       fixedCostPlanIds: envelope.fixedCostPlans.map((plan) => plan.id),
+      accountIds: envelope.accounts.map((binding) => binding.accountId),
+      primaryAccountId: envelope.primaryAccountId,
       hasBookings: counts.expenses > 0 || counts.incomes > 0 || counts.predecessors > 0 || counts.transfersOut > 0 || counts.transfersIn > 0,
       balance,
       // Ein geschlossener Umschlag ist nie "ueberzogen": Sein Endsaldo steckt

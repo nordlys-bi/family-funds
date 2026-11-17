@@ -2,7 +2,8 @@
  * GET /api/households/:householdId/accounts
  *
  * Konten mit Saldo von heute (ADR-0006). Leer, solange der Haushalt keine
- * Konten eingefuehrt hat.
+ * Konten eingefuehrt hat. Dazu das Standardkonto des anfragenden Mitglieds
+ * (issue #190), vorausgewaehlt bei Umschlaegen ohne Bindung.
  *
  * Auth: `requireHouseholdMembership` — lesen duerfen alle Mitglieder.
  */
@@ -14,11 +15,11 @@ import { listAccounts } from '../../../utils/accounts'
 
 export default defineEventHandler(async (event) => {
   const householdId = parseUuidParam(event, 'householdId')
-  await requireHouseholdMembership(event, householdId)
+  const { membership } = await requireHouseholdMembership(event, householdId)
 
   const [accounts, household] = await Promise.all([
     listAccounts(householdId),
     prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true } }),
   ])
-  return { accounts, ledgerSince: household.ledgerSince }
+  return { accounts, ledgerSince: household.ledgerSince, defaultAccountId: membership.defaultAccountId }
 })
