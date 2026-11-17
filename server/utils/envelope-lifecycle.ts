@@ -46,6 +46,16 @@ export function parseMoneyToCentsAllowZero(value: unknown, fieldName: string): n
 }
 
 /**
+ * Geldbetrag in Cent mit Vorzeichen: Anfangsbestaende duerfen negativ sein
+ * (mehr verteilt als frei, Konto im Dispo).
+ */
+export function parseSignedMoney(value: unknown, fieldName: string): number {
+  if (typeof value === 'number') return value < 0 ? -parseMoneyToCentsAllowZero(-value, fieldName) : parseMoneyToCentsAllowZero(value, fieldName)
+  if (typeof value === 'string' && value.trim().startsWith('-')) return -parseMoneyToCentsAllowZero(value.trim().slice(1), fieldName)
+  return parseMoneyToCentsAllowZero(value, fieldName)
+}
+
+/**
  * Zuteilungsquelle und -betrag gemeinsam pruefen: FIXED braucht einen
  * Betrag, PLANS geht nur mit periodischer Frequenz (ein ONCE-Umschlag hat
  * kein Raster, auf das sich Plaene umlegen liessen).

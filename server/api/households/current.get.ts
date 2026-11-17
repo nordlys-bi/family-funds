@@ -45,6 +45,8 @@ export default defineEventHandler(async (event) => {
       currency: true,
       ledgerSince: true,
       openingBalance: true,
+      // ADR-0006: Mit Konten blendet die Einstellungsseite den Anfangsbestand aus.
+      _count: { select: { accounts: true } },
       members: {
         orderBy: {
           createdAt: 'asc',

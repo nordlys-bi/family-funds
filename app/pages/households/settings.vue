@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useTheme, type ThemePreference } from '~/composables/useTheme'
 
 definePageMeta({ layout: 'default' })
@@ -22,6 +22,8 @@ type HouseholdDetail = {
   currency: string
   ledgerSince: string
   openingBalance: number
+  // ADR-0006: Mit Konten ist der Startwert abgeleitet, nicht eingegeben.
+  _count: { accounts: number }
   members: HouseholdMember[]
   invitations: { id: string }[]
 }
@@ -31,6 +33,7 @@ const onboarding = useOnboarding()
 const { preference: themePreference, setPreference: setThemePreference } = useTheme()
 
 const currentHousehold = ref<HouseholdDetail | null>(null)
+const hasAccounts = computed(() => (currentHousehold.value?._count.accounts ?? 0) > 0)
 const currentLoading = ref(false)
 const saveHouseholdLoading = ref(false)
 const editDialogOpen = ref(false)
@@ -193,7 +196,12 @@ const restartOnboarding = async () => {
 
     <article v-if="!currentLoading && currentHousehold" class="settings-card settings-card--help">
       <h3 class="settings-help-title">Zu verteilen</h3>
-      <p class="settings-help-text">
+      <p v-if="hasAccounts" class="settings-help-text">
+        Der Startwert ergibt sich aus den Konten: das Geld auf allen Konten am
+        Stichtag, abzüglich dessen, was schon in Umschlägen lag.
+        <NuxtLink to="/households/accounts">Zu den Konten</NuxtLink>
+      </p>
+      <p v-else class="settings-help-text">
         Der Anfangsbestand ist das freie Geld zu Beginn, zusätzlich zu dem, was
         schon in Umschlägen liegt. Er kann auch negativ sein.
       </p>
@@ -201,11 +209,11 @@ const restartOnboarding = async () => {
         <span class="settings-label">Zählt ab</span>
         <span class="settings-value">{{ formatPlanningDate(currentHousehold.ledgerSince) }}</span>
       </div>
-      <div class="settings-row">
+      <div v-if="!hasAccounts" class="settings-row">
         <span class="settings-label">Anfangsbestand</span>
         <span class="settings-value">{{ formatMoneyFromCents(currentHousehold.openingBalance, currentHousehold.currency) }}</span>
       </div>
-      <div v-if="canManageHousehold">
+      <div v-if="canManageHousehold && !hasAccounts">
         <Button
           label="Anfangsbestand ändern"
           icon="pi pi-pen-to-square"

@@ -16,18 +16,12 @@ import { requireHouseholdOwner } from '../../../utils/household-access'
 import { defineApiResponse } from '../../../utils/api-response'
 import { parseUuidParam } from '../../../utils/validation'
 import { parseDateInput } from '../../../utils/planning'
-import { parseMoneyToCentsAllowZero } from '../../../utils/envelope-lifecycle'
+import { parseSignedMoney } from '../../../utils/envelope-lifecycle'
 import { setLedgerStart } from '../../../utils/envelope-planning'
 
 type UpdateUnassignedBody = {
   ledgerSince?: string
   openingBalance?: string | number
-}
-
-function parseSignedMoney(value: unknown): number {
-  if (typeof value === 'number') return value < 0 ? -parseMoneyToCentsAllowZero(-value, 'Opening balance') : parseMoneyToCentsAllowZero(value, 'Opening balance')
-  if (typeof value === 'string' && value.trim().startsWith('-')) return -parseMoneyToCentsAllowZero(value.trim().slice(1), 'Opening balance')
-  return parseMoneyToCentsAllowZero(value, 'Opening balance')
 }
 
 export default defineEventHandler(async (event) => {
@@ -40,7 +34,7 @@ export default defineEventHandler(async (event) => {
   }
   const item = await setLedgerStart(householdId, {
     ...(body.ledgerSince !== undefined ? { ledgerSince: parseDateInput(body.ledgerSince, 'ledgerSince') } : {}),
-    ...(body.openingBalance !== undefined ? { openingBalance: parseSignedMoney(body.openingBalance) } : {}),
+    ...(body.openingBalance !== undefined ? { openingBalance: parseSignedMoney(body.openingBalance, 'Opening balance') } : {}),
   })
   return defineApiResponse({ kind: 'unassigned', item })
 })

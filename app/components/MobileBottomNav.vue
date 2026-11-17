@@ -92,6 +92,7 @@ const navigateAndClose = (to: string) => {
 const secondaryItems: SecondaryItem[] = [
   { key: 'households', label: 'Haushalte', icon: 'pi pi-users', to: '/households' },
   { key: 'members', label: 'Mitglieder', icon: 'pi pi-user-plus', to: '/households/members' },
+  { key: 'accounts', label: 'Konten', icon: 'pi pi-credit-card', to: '/households/accounts' },
   { key: 'settings', label: 'Einstellungen', icon: 'pi pi-cog', to: '/households/settings' },
   { key: 'logout', label: 'Abmelden', icon: 'pi pi-power-off', onClick: handleLogout, destructive: true },
 ]
