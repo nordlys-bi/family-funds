@@ -33,6 +33,8 @@ type Account = {
   closedAt: string | null
   balance: number
   hasBookings: boolean
+  /** Letzter Abgleich (#192), auch ohne Differenz. */
+  lastReconciledAt: string | null
 }
 
 type Preview = IntroductionPreview & { ledgerSince: string; bookingsWithoutAccount: number }
@@ -339,6 +341,7 @@ watch(quickCapture.savedTick, load)
               <NuxtLink :to="`/households/accounts/${account.id}`" class="account-link">{{ account.name }}</NuxtLink>
             </span>
             <span v-if="account.closedAt" class="sub">geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
+            <span v-else-if="account.lastReconciledAt" class="sub">abgeglichen am {{ formatPlanningDate(account.lastReconciledAt) }}</span>
           </td>
           <td class="muted">{{ accountTypeLabel(account.type) }}</td>
           <td class="muted account-date">{{ formatPlanningDate(account.startDate) }}</td>
@@ -382,6 +385,10 @@ watch(quickCapture.savedTick, load)
               <template v-if="account.closedAt">
                 <span>·</span>
                 <span>geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
+              </template>
+              <template v-else-if="account.lastReconciledAt">
+                <span>·</span>
+                <span>abgeglichen am {{ formatPlanningDate(account.lastReconciledAt) }}</span>
               </template>
             </div>
             <div v-if="canManageHousehold" class="data-table__card-actions">

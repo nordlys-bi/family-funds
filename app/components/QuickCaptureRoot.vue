@@ -144,7 +144,12 @@ watch(isOpen, (open) => {
     // Vorausgewaehlter Umschlag (z. B. von einer Dashboard-Karte) NACH dem
     // Reset setzen, sonst wird er sofort wieder auf '' geleert.
     if (prefillEnvelopeId.value) form.value.envelopeId = prefillEnvelopeId.value
-    if (prefillAccountId.value) form.value.fromAccountId = prefillAccountId.value
+    // Vom Konto aus (Kontoseite, Abgleich): Von-Konto eines Uebertrags bzw.
+    // "Bezahlt mit" einer nacherfassten Buchung.
+    if (prefillAccountId.value) {
+      form.value.fromAccountId = prefillAccountId.value
+      form.value.accountId = prefillAccountId.value
+    }
     loadEnvelopes(activeHouseholdId.value)
     loadAccounts(activeHouseholdId.value)
   }
@@ -365,7 +370,7 @@ async function save() {
         :date="form.date"
         :binding="binding"
         :member-default-id="memberDefaultId"
-        auto-default
+        :auto-default="!prefillAccountId"
       />
     </FormFieldRow>
 

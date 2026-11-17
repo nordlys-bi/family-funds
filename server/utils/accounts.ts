@@ -24,6 +24,7 @@ type AccountsDb = Pick<
   PrismaClient,
   | 'account'
   | 'accountTransfer'
+  | 'accountAdjustment'
   | 'envelopeAccount'
   | 'householdMember'
   | 'household'
@@ -142,22 +143,34 @@ export async function listAccounts(householdId: string, { db = prisma, today = n
   // Der Fremdschluessel haelt sie fest, Loeschen ginge sonst schief.
   const select = { accountId: true, amount: true, date: true, deletedAt: true } as const
   const where = { householdId, accountId: { not: null }, date: { gte: from } }
-  const [expenses, incomes, transfers] = await Promise.all([
+  const [expenses, incomes, transfers, adjustments] = await Promise.all([
     db.expenseTransaction.findMany({ where, select }),
     db.incomeTransaction.findMany({ where, select }),
     db.accountTransfer.findMany({ where: { householdId }, select: { fromAccountId: true, toAccountId: true, amount: true, date: true } }),
+    db.accountAdjustment.findMany({ where: { householdId }, select: { accountId: true, amount: true, date: true } }),
   ])
   const active = <T extends { deletedAt: Date | null }>(rows: T[]) => rows.filter((row) => row.deletedAt === null)
-  const balances = computeAccountBalances(accounts, { expenses: active(expenses), incomes: active(incomes), accountTransfers: transfers }, today)
+  const balances = computeAccountBalances(
+    accounts,
+    { expenses: active(expenses), incomes: active(incomes), accountTransfers: transfers, adjustments },
+    today,
+  )
   const withBookings = new Set([
-    ...[...expenses, ...incomes].map((row) => row.accountId),
+    ...[...expenses, ...incomes, ...adjustments].map((row) => row.accountId),
     ...transfers.flatMap((transfer) => [transfer.fromAccountId, transfer.toAccountId]),
   ])
+  // Letzter Abgleich (#192), auch einer ohne Differenz: bis dahin stimmt das Konto.
+  const lastReconciled = new Map<string, Date>()
+  for (const adjustment of adjustments) {
+    const known = lastReconciled.get(adjustment.accountId)
+    if (!known || adjustment.date > known) lastReconciled.set(adjustment.accountId, adjustment.date)
+  }
 
   return accounts.map((account) => ({
     ...account,
     balance: balances.get(account.id) ?? 0,
     hasBookings: withBookings.has(account.id),
+    lastReconciledAt: lastReconciled.get(account.id) ?? null,
   }))
 }
 
@@ -284,6 +297,7 @@ export async function updateAccount(householdId: string, id: string, changes: Ac
     const later = (await db.expenseTransaction.count({ where }))
       + (await db.incomeTransaction.count({ where }))
       + (await db.accountTransfer.count({ where: { householdId, OR: [{ fromAccountId: id }, { toAccountId: id }], date: since } }))
+      + (await db.accountAdjustment.count({ where: { householdId, accountId: id, date: since } }))
     if (later > 0) {
       throw createError({ statusCode: 409, statusMessage: 'The account has bookings from this date on.', data: { reason: 'bookings-after-close', count: later } })
     }
@@ -368,7 +382,7 @@ export async function setDefaultAccount(
 }
 
 export type AccountHistoryEntry = {
-  type: 'opening' | 'income' | 'expense' | 'transfer'
+  type: 'opening' | 'income' | 'expense' | 'transfer' | 'adjustment'
   /** Buchung oder Uebertrag; null beim Anfangsbestand. */
   id: string | null
   date: Date
@@ -381,6 +395,8 @@ export type AccountHistoryEntry = {
   counterpartId: string | null
   counterpartName: string | null
   userName: string | null
+  /** Abgleich: der eingegebene Kontostand. */
+  statedBalance: number | null
   /** Saldo nach dieser Bewegung. */
   balance: number
 }
@@ -389,10 +405,11 @@ type PersonRef = { displayName: string | null; email: string } | null | undefine
 const personName = (user: PersonRef) => (user ? user.displayName || user.email : null)
 
 /**
- * Kontoverlauf (issue #191): Anfangsbestand, Einnahmen, Ausgaben und
- * Uebertraege mit dem Saldo danach, neueste zuerst. Gleiche Regeln wie
- * `computeAccountBalances`: nur aktive Buchungen ab dem Start des Kontos.
- * Am selben Tag zaehlt die Reihenfolge der Erfassung.
+ * Kontoverlauf (issue #191): Anfangsbestand, Einnahmen, Ausgaben,
+ * Uebertraege und Abgleiche (#192) mit dem Saldo danach, neueste zuerst.
+ * Gleiche Regeln wie `computeAccountBalances`: nur aktive Buchungen ab dem
+ * Start des Kontos. Am selben Tag zaehlt die Reihenfolge der Erfassung,
+ * Abgleiche kommen zuletzt.
  */
 export async function loadAccountHistory(householdId: string, accountId: string, { db = prisma, today = new Date() }: AccountsContext = {}) {
   const account = await findAccount(db, householdId, accountId)
@@ -403,7 +420,7 @@ export async function loadAccountHistory(householdId: string, accountId: string,
     user: { select: { displayName: true, email: true } },
   } as const
   const bookingWhere = { householdId, accountId, deletedAt: null, date: { gte: from } }
-  const [expenses, incomes, transfers] = await Promise.all([
+  const [expenses, incomes, transfers, adjustments] = await Promise.all([
     db.expenseTransaction.findMany({ where: bookingWhere, select: bookingSelect }),
     db.incomeTransaction.findMany({ where: bookingWhere, select: bookingSelect }),
     db.accountTransfer.findMany({
@@ -414,13 +431,17 @@ export async function loadAccountHistory(householdId: string, accountId: string,
         user: { select: { displayName: true, email: true } },
       },
     }),
+    db.accountAdjustment.findMany({
+      where: { householdId, accountId, date: { gte: from } },
+      include: { user: { select: { displayName: true, email: true } } },
+    }),
   ])
 
   type Movement = Omit<AccountHistoryEntry, 'balance'> & { createdAt: Date }
   const booking = (type: 'income' | 'expense', sign: 1 | -1) => (row: (typeof expenses)[number]): Movement => ({
     type, id: row.id, date: row.date, amount: sign * row.amount, text: row.description,
     envelopeName: row.envelope?.name ?? null, counterpartId: null, counterpartName: null,
-    userName: personName(row.user), createdAt: row.createdAt,
+    userName: personName(row.user), statedBalance: null, createdAt: row.createdAt,
   })
   const movements: Movement[] = [
     ...incomes.map(booking('income', 1)),
@@ -432,15 +453,25 @@ export async function loadAccountHistory(householdId: string, accountId: string,
         envelopeName: null,
         counterpartId: outgoing ? row.toAccountId : row.fromAccountId,
         counterpartName: (outgoing ? row.toAccount?.name : row.fromAccount?.name) ?? null,
-        userName: personName(row.user), createdAt: row.createdAt,
+        userName: personName(row.user), statedBalance: null, createdAt: row.createdAt,
       }
     }),
-  ].sort((left, right) => dayKey(left.date) - dayKey(right.date) || left.createdAt.getTime() - right.createdAt.getTime())
+    ...adjustments.map((row): Movement => ({
+      type: 'adjustment', id: row.id, date: row.date, amount: row.amount, text: row.note,
+      envelopeName: null, counterpartId: null, counterpartName: null,
+      userName: personName(row.user), statedBalance: row.statedBalance, createdAt: row.createdAt,
+    })),
+    // Ein Abgleich gilt fuer das Ende seines Tages: am selben Tag nach allen
+    // Buchungen, auch nach spaeter nacherfassten.
+  ].sort((left, right) =>
+    dayKey(left.date) - dayKey(right.date)
+    || Number(left.type === 'adjustment') - Number(right.type === 'adjustment')
+    || left.createdAt.getTime() - right.createdAt.getTime())
 
   let balance = account.openingBalance
   const entries: AccountHistoryEntry[] = [{
     type: 'opening', id: null, date: account.startDate, amount: account.openingBalance, text: null,
-    envelopeName: null, counterpartId: null, counterpartName: null, userName: null, balance,
+    envelopeName: null, counterpartId: null, counterpartName: null, userName: null, statedBalance: null, balance,
   }]
   for (const { createdAt: _createdAt, ...movement } of movements) {
     balance += movement.amount
@@ -462,6 +493,7 @@ export async function deleteAccount(householdId: string, id: string, { db = pris
   const bookings = (await db.expenseTransaction.count({ where }))
     + (await db.incomeTransaction.count({ where }))
     + (await db.accountTransfer.count({ where: { householdId, OR: [{ fromAccountId: id }, { toAccountId: id }] } }))
+    + (await db.accountAdjustment.count({ where }))
   if (bookings > 0) {
     throw createError({ statusCode: 409, statusMessage: 'The account has bookings.', data: { reason: 'has-bookings' } })
   }

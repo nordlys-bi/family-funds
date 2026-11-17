@@ -84,6 +84,11 @@ export type LedgerStart = {
   openingBalance: number
   /** ADR-0006: alle Konten des Haushalts, auch geschlossene. */
   accounts?: LedgerAccount[]
+  /**
+   * ADR-0006 (#192): Korrekturen aus dem Abgleich. Sie treffen ein Konto
+   * und "Zu verteilen" um denselben Betrag, nie einen Umschlag.
+   */
+  adjustments?: Array<{ amount: number; date: Date }>
 }
 
 function emptyBalance(): EnvelopeBalance {
@@ -278,6 +283,9 @@ export function computeUnassignedBalance(
     if (!inWindow(transfer.date)) continue
     if (transfer.toEnvelopeId === null) balance += transfer.amount
     if (transfer.fromEnvelopeId === null) balance -= transfer.amount
+  }
+  for (const adjustment of ledger.adjustments ?? []) {
+    if (inWindow(adjustment.date)) balance += adjustment.amount
   }
   for (const envelope of envelopes) {
     if (!envelope.closedAt || envelope.carryoverToEnvelopeId !== null) continue

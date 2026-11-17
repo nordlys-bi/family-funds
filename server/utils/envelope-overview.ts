@@ -87,9 +87,10 @@ const TREND_WEEKS = 13
 export async function loadEnvelopeOverview(householdId: string, now: Date = new Date()): Promise<EnvelopeOverview> {
   await ensureAllocations(householdId, now)
 
-  const [household, accounts, envelopes] = await Promise.all([
+  const [household, accounts, adjustments, envelopes] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true, openingBalance: true } }),
     prisma.account.findMany({ where: { householdId }, select: { openingBalance: true, startDate: true } }),
+    prisma.accountAdjustment.findMany({ where: { householdId }, select: { amount: true, date: true } }),
     prisma.envelope.findMany({
       where: { householdId },
       orderBy: { createdAt: 'asc' },
@@ -126,7 +127,7 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
 
   const inputs = await loadEnvelopeBalanceInputs(householdId, envelopes, household.ledgerSince)
   const balances = computeEnvelopeBalances(envelopes, inputs, now)
-  const ledger = { ...household, accounts }
+  const ledger = { ...household, accounts, adjustments }
   const unassignedBalance = computeUnassignedBalance(ledger, envelopes, balances, inputs, now)
 
   const trendDates = Array.from({ length: TREND_WEEKS + 1 }, (_, index) => {
