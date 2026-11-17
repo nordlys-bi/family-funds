@@ -148,6 +148,8 @@ export function accountErrorText(error: any): string {
       return 'Das Hauptkonto muss zu den gebundenen Konten gehören.'
     case 'closed':
       return 'Das Konto ist geschlossen.'
+    case 'future':
+      return 'Der Tag liegt in der Zukunft.'
     case 'same-account':
       return 'Von- und Nach-Konto müssen sich unterscheiden.'
     case 'account-closed':

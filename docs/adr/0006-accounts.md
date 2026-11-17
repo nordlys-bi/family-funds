@@ -1,6 +1,6 @@
 # Konten: wo das Geld tatsächlich liegt
 
-Status: accepted (noch nicht umgesetzt)
+Status: accepted (umgesetzt in #188–#192)
 
 Stufe 2 des Geldmodells, erweitert [ADR-0005](0005-envelopes-as-unified-virtual-accounts.md). Umschläge sagen, **wofür** Geld da ist; ein **Konto** (`Account`) ist der reelle Ort, an dem es liegt (Girokonto, Geldbeutel, Sparkonto, Sparschwein). Mit Konten wird die Rechnung aus Stufe 1 prüfbar:
 

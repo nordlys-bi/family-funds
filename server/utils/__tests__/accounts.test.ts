@@ -12,6 +12,7 @@ vi.mock('../prisma', () => ({ prisma: {} }))
 
 const { createAccount, deleteAccount, introduceAccounts, listAccounts, loadAccountHistory, previewIntroduction, setDefaultAccount, setEnvelopeAccounts, updateAccount } = await import('../accounts')
 const { createAccountTransfer, deleteAccountTransfer, updateAccountTransfer } = await import('../account-transfers')
+const { computedAccountBalance, deleteAdjustment, reconcileAccount } = await import('../account-reconciliation')
 
 /** Lokales Datum, 12:00 — wie `parseDateInput`. */
 function day(year: number, month: number, date: number) {
@@ -58,10 +59,10 @@ function sides(tables: InMemoryTables, at: Date) {
   const active = (rows: InMemoryTables['expenseTransaction']) => rows.filter((row) => row.deletedAt === null)
   const inputs = { expenses: active(tables.expenseTransaction), incomes: active(tables.incomeTransaction), transfers: tables.envelopeTransfer } as never
   const household = tables.household[0]!
-  const ledger = { ledgerSince: household.ledgerSince, openingBalance: household.openingBalance, accounts: tables.account as never }
+  const ledger = { ledgerSince: household.ledgerSince, openingBalance: household.openingBalance, accounts: tables.account as never, adjustments: tables.accountAdjustment as never }
   const balances = computeEnvelopeBalances(tables.envelope as never, inputs, at)
   const unassigned = computeUnassignedBalance(ledger, tables.envelope as never, balances, inputs, at)
-  const accountInputs = { expenses: active(tables.expenseTransaction), incomes: active(tables.incomeTransaction), accountTransfers: tables.accountTransfer } as never
+  const accountInputs = { expenses: active(tables.expenseTransaction), incomes: active(tables.incomeTransaction), accountTransfers: tables.accountTransfer, adjustments: tables.accountAdjustment } as never
   const accounts = [...computeAccountBalances(tables.account as never, accountInputs, at).values()].reduce((sum, value) => sum + value, 0)
   return { envelopes: sumEnvelopeBalances(tables.envelope as never, balances, household.ledgerSince, at), unassigned, accounts }
 }
@@ -415,5 +416,79 @@ describe('loadAccountHistory', () => {
     ])
     const giroHistory = await loadAccountHistory(HH, giroId!, { ...ctx, today: day(2026, 11, 22) })
     expect(giroHistory.entries[0]).toMatchObject({ type: 'transfer', amount: -10000, balance: 390000, counterpartId: cashId })
+  })
+})
+
+/*
+ * Abgleich (issue #192): Nach dem Ausbuchen stimmt das Konto mit dem
+ * eingegebenen Stand, "Zu verteilen" hat sich um die Differenz geaendert,
+ * kein Umschlag.
+ */
+describe('reconcileAccount', () => {
+  const NOV_22 = day(2026, 11, 22)
+  async function introduced() {
+    const { tables, ctx } = setup()
+    await introduceAccounts(HH, NOV_20, [giro, cash], null, ctx)
+    const [giroId, cashId] = tables.account.map((row) => row.id as string)
+    // 20 € Bargeld fuer "Kinder" ausgegeben: Geldbeutel rechnerisch 30 €.
+    tables.expenseTransaction.push({ id: 'ice', householdId: HH, envelopeId: 'kids', accountId: cashId, amount: 2000, date: day(2026, 11, 21), deletedAt: null, createdAt: day(2026, 11, 21) })
+    return { tables, ctx: { ...ctx, today: NOV_22 }, giroId: giroId!, cashId: cashId! }
+  }
+
+  it('books the difference so the account matches and "Zu verteilen" moves by it', async () => {
+    const { tables, ctx, cashId } = await introduced()
+    const before = sides(tables, NOV_22)
+    await expect(computedAccountBalance(HH, cashId, NOV_22, ctx)).resolves.toMatchObject({ balance: 3000 })
+
+    // Im Geldbeutel sind nur 22,50 €: 7,50 € fehlen, irgendwo nicht erfasst.
+    const adjustment = await reconcileAccount(HH, cashId, 'jan', { date: NOV_22, statedBalance: 2250, note: null }, ctx)
+
+    expect(adjustment).toMatchObject({ amount: -750, statedBalance: 2250 })
+    await expect(computedAccountBalance(HH, cashId, NOV_22, ctx)).resolves.toMatchObject({ balance: 2250 })
+    const after = sides(tables, NOV_22)
+    expect(after).toEqual({ envelopes: before.envelopes, unassigned: before.unassigned - 750, accounts: before.accounts - 750 })
+    expect(after.envelopes + after.unassigned).toBe(after.accounts)
+  })
+
+  it('stores a reconciliation without difference and reports the last one per account', async () => {
+    const { tables, ctx, giroId, cashId } = await introduced()
+
+    await reconcileAccount(HH, cashId, 'jan', { date: day(2026, 11, 21), statedBalance: 3000, note: null }, ctx)
+    await reconcileAccount(HH, cashId, 'jan', { date: NOV_22, statedBalance: 3000, note: 'passt' }, ctx)
+
+    expect(tables.accountAdjustment.map((row) => row.amount)).toEqual([0, 0])
+    const listed = await listAccounts(HH, ctx)
+    expect(listed.find((account) => account.id === cashId)).toMatchObject({ lastReconciledAt: NOV_22, hasBookings: true })
+    expect(listed.find((account) => account.id === giroId)).toMatchObject({ lastReconciledAt: null })
+  })
+
+  it('rejects days outside the account and in the future', async () => {
+    const { tables, ctx, cashId } = await introduced()
+    const reconcile = (date: Date) => reconcileAccount(HH, cashId, 'jan', { date, statedBalance: 0, note: null }, ctx)
+
+    await expect(reconcile(day(2026, 11, 23))).rejects.toMatchObject({ data: { reason: 'future' } })
+    await expect(reconcile(day(2026, 11, 19))).rejects.toMatchObject({ data: { reason: 'before-account-start' } })
+    await expect(reconcileAccount(HH, 'nope', 'jan', { date: NOV_22, statedBalance: 0, note: null }, ctx)).rejects.toMatchObject({ statusCode: 404 })
+    expect(tables.accountAdjustment).toEqual([])
+  })
+
+  it('shows the adjustment last on its day in the history, and deleting undoes it', async () => {
+    const { tables, ctx, cashId } = await introduced()
+    const adjustment = await reconcileAccount(HH, cashId, 'jan', { date: day(2026, 11, 21), statedBalance: 2500, note: null }, ctx)
+    // Danach fuer denselben Tag nacherfasst: zaehlt trotzdem vor dem Abgleich.
+    tables.expenseTransaction.push({ id: 'late', householdId: HH, envelopeId: null, accountId: cashId, amount: 500, date: day(2026, 11, 21), deletedAt: null, createdAt: NOV_22 })
+
+    const { entries } = await loadAccountHistory(HH, cashId, ctx)
+    expect(entries.map((entry) => [entry.type, entry.amount, entry.balance, entry.statedBalance])).toEqual([
+      ['adjustment', -500, 2000, 2500],
+      ['expense', -500, 2500, null],
+      ['expense', -2000, 3000, null],
+      ['opening', 5000, 5000, null],
+    ])
+
+    await expect(deleteAccount(HH, cashId, ctx)).rejects.toMatchObject({ data: { reason: 'has-bookings' } })
+    await deleteAdjustment(HH, adjustment.id, ctx)
+    await expect(computedAccountBalance(HH, cashId, NOV_22, ctx)).resolves.toMatchObject({ balance: 2500 })
+    await expect(deleteAdjustment(HH, adjustment.id, ctx)).rejects.toMatchObject({ statusCode: 404 })
   })
 })

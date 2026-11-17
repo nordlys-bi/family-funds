@@ -49,7 +49,7 @@ A user can belong to multiple households; every domain entity hangs off a `house
 
 ### Envelopes: planned vs. actual
 
-Money lives in **envelopes** (`Envelope`, UI: "Umschlag"), virtual accounts with a running balance. See [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md), the reference for everything below. "Konto" is reserved for real accounts (a later stage). All money fields are integer cents.
+Money lives in **envelopes** (`Envelope`, UI: "Umschlag"), virtual accounts with a running balance. See [ADR-0005](docs/adr/0005-envelopes-as-unified-virtual-accounts.md), the reference for everything below. "Konto" means a real account (`Account`, [ADR-0006](docs/adr/0006-accounts.md)), see below. All money fields are integer cents.
 
 - An envelope has one **group** (`RUNNING`, `FIXED`, `RESERVE`, `SAVINGS`, `PERSONAL`). It controls display and creation defaults but forbids nothing: allocation rule and savings target (`targetAmount`) are independent optional properties.
 - **"Zu verteilen"** is the implicit per-household pot for unassigned money: `envelopeId: null` on a booking, `null` on one side of a transfer. It counts from `Household.ledgerSince`; `openingBalance` is the free money at that point.
@@ -58,6 +58,7 @@ Money lives in **envelopes** (`Envelope`, UI: "Umschlag"), virtual accounts with
 - **Rating is by balance** (`classifyEnvelopeSeverity`): red only when the balance is negative. Yellow only for running expenses, when less than half as much money as time is left in the period. There is no forecast.
 - `FixedCostPlan`/`IncomePlan` link to their transactions via an explicit FK (`fixedCostPlanId`/`incomePlanId`, `onDelete: SetNull`) rather than heuristic matching, so "coverage" is a per-request aggregation over real rows. See [ADR-0002](docs/adr/0002-recurring-plan-coverage.md). A plan's `envelopeId` is inherited by bookings created from it, and an envelope with `allocationSource: PLANS` derives its allocation from its plans. Period bucketing lives in `server/utils/period.ts` and `recurring-periods.ts`.
 - Expense/income transactions are soft-deleted (`deletedAt`, restorable via `POST .../restore`); nearly every query must filter `deletedAt: null`.
+- **Accounts** (ADR-0006) say where money lies; envelopes say what it is for. Invariant: Σ envelopes + "Zu verteilen" = Σ accounts. Once a household has accounts, every expense/income from `ledgerSince` on needs an `accountId`, and the start of "Zu verteilen" is derived from the accounts' opening balances (`server/utils/accounts.ts`). `AccountTransfer` moves money between accounts without touching envelopes; `AccountAdjustment` (reconciliation) hits one account and "Zu verteilen". Neither counts as income or expense in reports. Account balances are computed like envelope balances (`server/utils/account-balance.ts`).
 - `Budget`, `BudgetVersion`, `SavingsGoal`, `SavingsGoalExecution` and `budgetId` are legacy, kept only until the production cutover so `scripts/verify-envelope-migration.ts` can compare against them. Never write to them.
 
 ### API conventions

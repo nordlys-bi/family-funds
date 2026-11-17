@@ -5,7 +5,13 @@
   zuerst, jeweils mit dem Saldo danach: Anfangsbestand, Ausgaben, Einnahmen
   und Kontouebertraege. Uebertraege lassen sich hier aendern (Betrag, Datum,
   Notiz) und loeschen; Ausgaben und Einnahmen bearbeitet man in der
-  Buchungsliste. Der Abgleich (#192) dockt spaeter hier an.
+  Buchungsliste.
+
+  Abgleich (#192): echten Stand zu einem Tag eingeben, die Differenz zum
+  berechneten Stand sehen, fehlende Buchungen nacherfassen und den Rest als
+  Korrektur ausbuchen. Die Korrektur trifft das Konto und "Zu verteilen",
+  nie einen Umschlag. Auch ein Abgleich ohne Differenz bleibt als
+  "Abgeglichen" im Verlauf.
 -->
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
@@ -14,7 +20,7 @@ import { accountErrorText, accountTypeIcon, accountTypeLabel, type AccountType }
 definePageMeta({ layout: 'default' })
 
 type HistoryEntry = {
-  type: 'opening' | 'income' | 'expense' | 'transfer'
+  type: 'opening' | 'income' | 'expense' | 'transfer' | 'adjustment'
   id: string | null
   date: string
   amount: number
@@ -23,6 +29,7 @@ type HistoryEntry = {
   counterpartId: string | null
   counterpartName: string | null
   userName: string | null
+  statedBalance: number | null
   balance: number
 }
 
@@ -87,6 +94,7 @@ watch(quickCapture.savedTick, load)
 function title(entry: HistoryEntry) {
   if (entry.type === 'opening') return 'Anfangsbestand'
   if (entry.type === 'transfer') return entry.text || 'Übertrag'
+  if (entry.type === 'adjustment') return entry.amount === 0 ? 'Abgeglichen' : 'Korrektur'
   return entry.text || (entry.type === 'income' ? 'Einnahme' : 'Ausgabe')
 }
 
@@ -99,6 +107,9 @@ function where(entry: HistoryEntry) {
 /** Zweite Zeile: wohin bzw. woher und wer gebucht hat. */
 function detail(entry: HistoryEntry) {
   if (entry.type === 'opening') return null
+  if (entry.type === 'adjustment') {
+    return [`Stand laut Abgleich ${money(entry.statedBalance ?? 0)}`, entry.text, entry.userName].filter(Boolean).join(' · ')
+  }
   return [where(entry), entry.userName].filter(Boolean).join(' · ')
 }
 
@@ -143,6 +154,102 @@ async function saveEdit() {
     editError.value = accountErrorText(error)
   } finally {
     editSaving.value = false
+  }
+}
+
+// === Abgleich =================================================================
+const reconcile = ref<{ date: Date; stated: number | null; note: string } | null>(null)
+const reconcileComputed = ref<number | null>(null)
+const reconcileSaving = ref(false)
+const reconcileError = ref<string | null>(null)
+const reconcileOpen = computed({
+  get: () => reconcile.value !== null,
+  set: (open) => { if (!open) reconcile.value = null },
+})
+const today = () => {
+  const value = new Date()
+  value.setHours(12, 0, 0, 0)
+  return value
+}
+const reconcileMinDate = computed(() => (account.value ? new Date(account.value.startDate) : undefined))
+/** Differenz in Cent: was ausgebucht wird; null, solange etwas fehlt. */
+const reconcileDifference = computed(() => {
+  if (!reconcile.value || reconcile.value.stated == null || reconcileComputed.value == null) return null
+  return Math.round(reconcile.value.stated * 100) - reconcileComputed.value
+})
+
+function openReconcile() {
+  reconcileError.value = null
+  reconcile.value = { date: today(), stated: null, note: '' }
+}
+
+async function loadReconcileComputed() {
+  if (!reconcile.value || !activeHouseholdId.value) return
+  reconcileComputed.value = null
+  try {
+    const data = await $fetch<{ computedBalance: number }>(
+      `/api/households/${activeHouseholdId.value}/accounts/${accountId.value}/reconciliation`,
+      { params: { date: formatDateToInputString(reconcile.value.date) } },
+    )
+    reconcileComputed.value = data.computedBalance
+  } catch (error: any) {
+    reconcileError.value = accountErrorText(error)
+  }
+}
+// Neu rechnen bei anderem Tag und nach jeder Buchung, die von hier aus
+// nacherfasst wurde.
+watch(() => reconcile.value?.date?.getTime(), loadReconcileComputed)
+watch(quickCapture.savedTick, loadReconcileComputed)
+
+/** Fehlende Buchung nacherfassen; der Dialog bleibt offen und rechnet neu. */
+function captureMissing(kind: 'expense' | 'income') {
+  quickCapture.open(kind, { accountId: accountId.value })
+}
+
+async function saveReconcile() {
+  if (!reconcile.value || !activeHouseholdId.value) return
+  if (reconcile.value.stated == null) {
+    reconcileError.value = 'Bitte den echten Kontostand eingeben.'
+    return
+  }
+  reconcileSaving.value = true
+  reconcileError.value = null
+  const difference = reconcileDifference.value
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/accounts/${accountId.value}/reconciliation`, {
+      method: 'POST',
+      body: { date: formatDateToInputString(reconcile.value.date), statedBalance: reconcile.value.stated, note: reconcile.value.note },
+    })
+    reconcile.value = null
+    message.value = {
+      severity: 'success',
+      text: difference ? `Differenz von ${signedMoney(difference)} als Korrektur ausgebucht.` : 'Konto als abgeglichen gespeichert.',
+    }
+    await load()
+  } catch (error: any) {
+    reconcileError.value = accountErrorText(error)
+  } finally {
+    reconcileSaving.value = false
+  }
+}
+
+async function removeAdjustment(entry: HistoryEntry) {
+  if (entry.type !== 'adjustment' || !entry.id || !activeHouseholdId.value) return
+  const ok = await confirm.ask({
+    title: entry.amount === 0 ? 'Abgleich löschen?' : 'Korrektur löschen?',
+    message: entry.amount === 0
+      ? `Der Abgleich vom ${formatPlanningDate(entry.date)} wird entfernt. Beträge ändern sich nicht.`
+      : `${signedMoney(entry.amount)} vom ${formatPlanningDate(entry.date)}. Konto und „Zu verteilen“ ändern sich zurück.`,
+    confirmLabel: 'Löschen',
+    tone: 'danger',
+  })
+  if (!ok) return
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/account-adjustments/${entry.id}`, { method: 'DELETE' })
+    message.value = { severity: 'success', text: 'Abgleich wurde gelöscht.' }
+    await load()
+  } catch (error: any) {
+    message.value = { severity: 'error', text: 'Abgleich konnte nicht gelöscht werden: ' + accountErrorText(error) }
   }
 }
 
@@ -196,6 +303,14 @@ async function removeTransfer(entry: HistoryEntry) {
         </span>
         <Button
           v-if="!account.closedAt"
+          label="Abgleichen"
+          icon="pi pi-check-square"
+          severity="secondary"
+          outlined
+          @click="openReconcile"
+        />
+        <Button
+          v-if="!account.closedAt"
           label="Übertrag"
           icon="pi pi-arrow-right-arrow-left"
           severity="secondary"
@@ -221,6 +336,7 @@ async function removeTransfer(entry: HistoryEntry) {
             <td class="name">
               <span class="entry-title">
                 <i v-if="entry.type === 'transfer'" class="pi pi-arrow-right-arrow-left" aria-hidden="true" />
+                <i v-else-if="entry.type === 'adjustment'" class="pi pi-check-square" aria-hidden="true" />
                 {{ title(entry) }}
               </span>
               <span v-if="detail(entry)" class="sub">{{ detail(entry) }}</span>
@@ -234,6 +350,15 @@ async function removeTransfer(entry: HistoryEntry) {
                 <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Übertrag ändern" @click="openEdit(entry)" />
                 <Button icon="pi pi-trash" severity="danger" text size="small" aria-label="Übertrag löschen" @click="removeTransfer(entry)" />
               </template>
+              <Button
+                v-else-if="entry.type === 'adjustment'"
+                icon="pi pi-trash"
+                severity="danger"
+                text
+                size="small"
+                aria-label="Abgleich löschen"
+                @click="removeAdjustment(entry)"
+              />
             </td>
           </tr>
 
@@ -253,11 +378,69 @@ async function removeTransfer(entry: HistoryEntry) {
                 <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Übertrag ändern" @click="openEdit(entry)" />
                 <Button icon="pi pi-trash" severity="danger" text size="small" aria-label="Übertrag löschen" @click="removeTransfer(entry)" />
               </div>
+              <div v-else-if="entry.type === 'adjustment'" class="data-table__card-actions">
+                <Button icon="pi pi-trash" severity="danger" text size="small" aria-label="Abgleich löschen" @click="removeAdjustment(entry)" />
+              </div>
             </div>
           </template>
         </ListTable>
       </ListPanel>
     </ListPageShell>
+
+    <FormDialog
+      v-model:visible="reconcileOpen"
+      header="Konto abgleichen"
+      :submit-label="reconcileDifference ? 'Differenz ausbuchen' : 'Als abgeglichen speichern'"
+      :saving="reconcileSaving"
+      width="min(38rem, 94vw)"
+      @save="saveReconcile"
+      @cancel="reconcile = null"
+    >
+      <template v-if="reconcile">
+        <Message v-if="reconcileError" severity="error" variant="simple">{{ reconcileError }}</Message>
+        <FormFieldRow label="Stand am Ende von" html-for="reconcile-date">
+          <DatePicker
+            id="reconcile-date"
+            v-model="reconcile.date"
+            date-format="dd.mm.yy"
+            show-icon
+            :min-date="reconcileMinDate"
+            :max-date="today()"
+          />
+        </FormFieldRow>
+        <FormFieldRow label="Echter Kontostand" html-for="reconcile-stated">
+          <MoneyInput id="reconcile-stated" v-model="reconcile.stated" :currency="currency" placeholder="laut Auszug oder Zählung" />
+        </FormFieldRow>
+
+        <dl class="reconcile-summary">
+          <div>
+            <dt>Berechnet</dt>
+            <dd>{{ reconcileComputed == null ? '…' : money(reconcileComputed) }}</dd>
+          </div>
+          <div>
+            <dt>Differenz</dt>
+            <dd :class="{ 'reconcile-summary__off': reconcileDifference }">
+              {{ reconcileDifference == null ? '–' : signedMoney(reconcileDifference) }}
+            </dd>
+          </div>
+        </dl>
+
+        <template v-if="reconcileDifference">
+          <p class="reconcile-hint">
+            Fehlt eine Buchung? Erfasse sie nach, die Differenz rechnet sich neu. Was dann noch offen ist, geht als
+            Korrektur nach „Zu verteilen“ und zählt nicht als Ausgabe oder Einnahme.
+          </p>
+          <div class="reconcile-actions">
+            <Button label="Ausgabe nacherfassen" icon="pi pi-minus" severity="secondary" outlined size="small" @click="captureMissing('expense')" />
+            <Button label="Einnahme nacherfassen" icon="pi pi-plus" severity="secondary" outlined size="small" @click="captureMissing('income')" />
+          </div>
+        </template>
+
+        <FormFieldRow label="Notiz (optional)" html-for="reconcile-note" wide>
+          <InputText id="reconcile-note" v-model="reconcile.note" placeholder="z. B. Kontoauszug November" />
+        </FormFieldRow>
+      </template>
+    </FormDialog>
 
     <FormDialog
       v-model:visible="editOpen"
@@ -315,6 +498,48 @@ async function removeTransfer(entry: HistoryEntry) {
   margin-right: auto;
   color: var(--color-text-muted);
   font-size: 0.85rem;
+}
+
+.reconcile-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+}
+
+.reconcile-summary div {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 10px;
+}
+
+.reconcile-summary dt {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.reconcile-summary dd {
+  margin: 0.15rem 0 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.reconcile-summary__off {
+  color: var(--color-accent-danger-text);
+}
+
+.reconcile-hint {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.reconcile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
 }
 
 .entry-date {

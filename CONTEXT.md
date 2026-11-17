@@ -210,9 +210,19 @@ Virtuelles Konto mit Saldo: ein Teil des Haushaltsgelds für einen Zweck, kein O
 
 ### Zu verteilen
 
-Das nicht verteilte Geld des Haushalts, genau einmal pro Haushalt, kein eigener Datensatz: `envelopeId = null` an einer Buchung, `null` auf einer Seite einer Umbuchung. Es zählt ab `Household.ledgerSince`; `openingBalance` ist das freie Geld zu diesem Zeitpunkt, zusätzlich zu dem, was dann schon in Umschlägen steckt.
+Das nicht verteilte Geld des Haushalts, genau einmal pro Haushalt, kein eigener Datensatz: `envelopeId = null` an einer Buchung, `null` auf einer Seite einer Umbuchung. Es zählt ab `Household.ledgerSince`; `openingBalance` ist das freie Geld zu diesem Zeitpunkt, zusätzlich zu dem, was dann schon in Umschlägen steckt. Mit Konten wird dieser Startwert nicht eingegeben, sondern aus den Anfangsbeständen abgeleitet.
 
-Es gilt: Summe der Umschläge + Zu verteilen = Umschläge zum Stichtag + Anfangsbestand + Einnahmen − Ausgaben. Geschlossene Umschläge zählen nicht doppelt, ihr Saldo steckt im Ziel.
+Es gilt: Summe der Umschläge + Zu verteilen = Umschläge zum Stichtag + Anfangsbestand + Einnahmen − Ausgaben. Geschlossene Umschläge zählen nicht doppelt, ihr Saldo steckt im Ziel. Mit Konten zusätzlich: Summe der Umschläge + Zu verteilen = Summe der Konten.
+
+### Konto (`Account`)
+
+Der reelle Ort, an dem Geld liegt: Girokonto, Bargeld, Sparkonto. Umschläge sagen, wofür Geld da ist, Konten, wo es liegt; beides sind unabhängige Achsen. Siehe [ADR-0006](docs/adr/0006-accounts.md).
+
+* **Einführung:** ein neuer Stichtag. Alle ersten Konten starten dort mit ihrem echten Stand (**Anfangsbestand**), „Zu verteilen“ startet dort neu. Ein später angelegtes Konto bringt seinen Anfangsbestand als freies Geld mit.
+* **Bezahlt mit:** Jede Ausgabe und Einnahme ab dem Stichtag nennt ein Konto, davor bleibt das Feld leer.
+* **Bindung:** Ein Umschlag kann an Konten gebunden sein, eines davon ist das **Hauptkonto**. Die Bindung filtert nur die Erfassung; über „Anderes Konto…“ bleibt jedes Konto wählbar. Ohne Bindung ist das **Standardkonto** des Mitglieds vorausgewählt.
+* **Saldo:** wird wie bei Umschlägen nie gespeichert. Vor seinem Start und ab dem Schließtag nimmt ein Konto keine Buchungen an.
+* **Abgleich:** den echten Stand am Ende eines Tages eingeben und mit dem berechneten vergleichen. Auch ein Abgleich ohne Differenz bleibt als „abgeglichen“ stehen.
 
 ### Zuteilung und Vormerkung
 
@@ -245,6 +255,8 @@ Geplante Werte und tatsächliche Buchungen werden getrennt gespeichert.
 * ExpenseTransaction
 * IncomeTransaction
 * EnvelopeTransfer
+* AccountTransfer
+* AccountAdjustment
 
 Dadurch bleiben Auswertungen und spätere Erweiterungen möglich.
 
@@ -272,6 +284,14 @@ Kanonische Quelle für Reports ("Was haben wir diesen Monat ausgegeben?").
 ### Umbuchungen (`EnvelopeTransfer`)
 
 Geld von einem Umschlag in einen anderen, `null` auf einer Seite heißt „Zu verteilen“. Es fließt kein Geld aus dem Haushalt ab, Umbuchungen erscheinen deshalb in keinem Report. Keine Beschränkung auf den verfügbaren Saldo, das UI warnt höchstens. Alle Mitglieder dürfen umbuchen; gebuchte Zuteilungen (`allocationPeriodStart`) ändert nur der OWNER.
+
+### Kontoüberträge (`AccountTransfer`)
+
+Geld von einem Konto auf ein anderes (Geld abheben, Sparrate aufs Tagesgeld). Der Ort ändert sich, der Zweck nicht: Kein Umschlag ist betroffen, und Kontoüberträge erscheinen in keinem Report. Beide Konten müssen am Tag laufen. Gebühren sind eine gewöhnliche Ausgabe.
+
+### Korrekturen (`AccountAdjustment`)
+
+Was beim Abgleich nach dem Nacherfassen als Differenz übrig bleibt. Eine Korrektur trifft das Konto und „Zu verteilen“ um denselben Betrag, nie einen Umschlag. Sie ist kein Geldfluss, sondern das Eingeständnis, dass etwas nicht erfasst wurde, und zählt deshalb nicht als Einnahme oder Ausgabe.
 
 ---
 

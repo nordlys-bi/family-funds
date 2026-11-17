@@ -36,7 +36,10 @@ type QuickCaptureState = {
    * einer Karte auf dem Dashboard).
    */
   envelopeId: string | null
-  /** Vorausgewaehltes Von-Konto eines Kontouebertrags (Kontoseite). */
+  /**
+   * Vorausgewaehltes Konto (Kontoseite): Von-Konto eines Uebertrags bzw.
+   * "Bezahlt mit" einer Buchung, ohne Vorauswahl aus dem Umschlag.
+   */
   accountId: string | null
 }
 

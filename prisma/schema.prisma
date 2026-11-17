@@ -52,6 +52,7 @@ model User {
   incomes                  IncomeTransaction[]
   envelopeTransfers        EnvelopeTransfer[]
   accountTransfers         AccountTransfer[]
+  accountAdjustments       AccountAdjustment[]
   // Onboarding-Tour-State (issue #16). Per-User, nicht per-Household,
   // weil ein User mehrere Haushalte haben kann und der Onboarding-Flow
   // sich auf den User bezieht, nicht auf den Haushalt-Kontext.
@@ -79,6 +80,7 @@ model Household {
   envelopeTransfers  EnvelopeTransfer[]
   accounts           Account[]
   accountTransfers   AccountTransfer[]
+  accountAdjustments AccountAdjustment[]
   // ADR-0005: Ab hier zaehlen Einnahmen, Ausgaben und Umbuchungen in
   // "Zu verteilen"; openingBalance ist das freie Geld zu diesem Zeitpunkt,
   // zusaetzlich zu dem, was dann schon in Umschlaegen steckt.
@@ -484,6 +486,7 @@ model Account {
   incomes             IncomeTransaction[]
   transfersOut        AccountTransfer[]    @relation("AccountTransferFrom")
   transfersIn         AccountTransfer[]    @relation("AccountTransferTo")
+  adjustments         AccountAdjustment[]
 
   @@index([householdId])
 }
@@ -530,4 +533,30 @@ model EnvelopeAccount {
 
   @@id([envelopeId, accountId])
   @@index([accountId])
+}
+
+// ADR-0006 (issue #192): Abgleich mit dem echten Kontostand. Die Differenz
+// zum berechneten Stand trifft das Konto und "Zu verteilen", nie einen
+// Umschlag, und zaehlt in keiner Auswertung. amount 0 = abgeglichen, der
+// Stand stimmte. statedBalance haelt fest, was eingegeben wurde: Spaeter
+// nacherfasste Buchungen vor dem Tag verschieben den berechneten Stand,
+// die Korrektur selbst bleibt fest.
+model AccountAdjustment {
+  id            String   @id @default(uuid())
+  householdId   String
+  accountId     String
+  date          DateTime
+  amount        Int // Cent, Wirkung auf Konto und "Zu verteilen"; 0 = stimmte
+  statedBalance Int // Cent, eingegebener Kontostand am Ende von date
+  note          String?
+  userId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  account   Account   @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  user      User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([householdId, date])
+  @@index([accountId, date])
 }

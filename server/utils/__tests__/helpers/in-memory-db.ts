@@ -16,6 +16,7 @@ export type InMemoryTables = {
   envelopeTransfer: Row[]
   account: Row[]
   accountTransfer: Row[]
+  accountAdjustment: Row[]
   envelopeAccount: Row[]
   householdMember: Row[]
   fixedCostPlan: Row[]
@@ -77,6 +78,7 @@ export function createInMemoryDb(seed: Partial<InMemoryTables> = {}) {
     envelopeTransfer: copyRows(seed.envelopeTransfer),
     account: copyRows(seed.account),
     accountTransfer: copyRows(seed.accountTransfer),
+    accountAdjustment: copyRows(seed.accountAdjustment),
     envelopeAccount: copyRows(seed.envelopeAccount),
     householdMember: copyRows(seed.householdMember),
     fixedCostPlan: copyRows(seed.fixedCostPlan),
@@ -148,6 +150,7 @@ export function createInMemoryDb(seed: Partial<InMemoryTables> = {}) {
     envelopeTransfer: model('envelopeTransfer'),
     account: model('account'),
     accountTransfer: model('accountTransfer'),
+    accountAdjustment: model('accountAdjustment'),
     envelopeAccount: model('envelopeAccount'),
     householdMember: model('householdMember'),
     fixedCostPlan: model('fixedCostPlan'),
