@@ -22,7 +22,7 @@ import type { PlanningKind } from './planning'
 
 type PlanningDb = Pick<
   PrismaClient,
-  'envelope' | 'envelopeTransfer' | 'expenseTransaction' | 'incomeTransaction' | 'fixedCostPlan' | 'incomePlan' | 'household' | '$transaction'
+  'envelope' | 'envelopeTransfer' | 'expenseTransaction' | 'incomeTransaction' | 'fixedCostPlan' | 'incomePlan' | 'household' | 'account' | '$transaction'
 >
 
 export type PlanningContext = {
@@ -250,6 +250,12 @@ export async function closeEnvelope(
  * nach. Sonst hinge "Zu verteilen" davon ab, ob vorher jemand abgerufen hat.
  */
 export async function setLedgerStart(householdId: string, changes: LedgerStartChanges, { db = prisma, today = new Date() }: PlanningContext = {}) {
+  // ADR-0006: Mit Konten ist der Startwert abgeleitet, und der Stichtag ist
+  // auch der Start der Konten. Ihn allein zu verschieben, liesse Konten vor
+  // ihm beginnen; beides aendert nur die Einfuehrung der Konten (#189).
+  if (await db.account.count({ where: { householdId } }) > 0) {
+    throw createError({ statusCode: 409, statusMessage: 'The ledger start is derived from the accounts.', data: { reason: 'accounts' } })
+  }
   if (changes.ledgerSince !== undefined) await ensureAllocations(householdId, today, db)
   return db.household.update({
     where: { id: householdId },

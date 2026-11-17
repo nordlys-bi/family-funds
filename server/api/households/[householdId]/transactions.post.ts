@@ -13,6 +13,8 @@ type TransactionCreateBody = {
   // ADR-0005: Umschlag der Buchung, null = "Zu verteilen". Auch fuer
   // Einnahmen (Gutschrift auf einen Umschlag).
   envelopeId?: string | null
+  // ADR-0006: "Bezahlt mit"; Pflicht ab ledgerSince, sobald es Konten gibt.
+  accountId?: string | null
   // Issue #59: optionaler FK auf einen Recurring-Plan, gesetzt wenn
   // der User die Transaktion ueber den "Als bezahlt markieren"-Flow
   // angelegt hat. Wird nur fuer die jeweilige Kind-Seite ausgewertet
@@ -52,6 +54,7 @@ export default defineEventHandler(async (event) => {
     description: body.description?.trim() || null,
     envelopeId: body.envelopeId?.trim() || null,
     planId: planId?.trim() || null,
+    accountId: body.accountId?.trim() || null,
   })
 
   return defineApiResponse({ kind, item })

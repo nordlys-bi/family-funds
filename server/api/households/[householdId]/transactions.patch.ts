@@ -13,10 +13,12 @@ type TransactionUpdateBody = {
   date?: string
   // ADR-0005: Umschlag, null = "Zu verteilen". Fuer Ausgaben und Einnahmen.
   envelopeId?: string | null
+  // ADR-0006: "Bezahlt mit".
+  accountId?: string | null
 }
 
-/** `undefined` = nicht geaendert, `null` = "Zu verteilen". */
-function parseEnvelopeChange(value: string | null | undefined): string | null | undefined {
+/** `undefined` = nicht geaendert, `null` = kein Umschlag bzw. kein Konto. */
+function parseIdChange(value: string | null | undefined): string | null | undefined {
   if (value === undefined) return undefined
   return value?.trim() || null
 }
@@ -42,7 +44,8 @@ export default defineEventHandler(async (event) => {
     amount: body.amount !== undefined ? parseMoneyToCents(body.amount, 'Amount') : undefined,
     date: body.date ? parseDateInput(body.date, 'Date') : undefined,
     description: body.description === undefined ? undefined : body.description?.trim() || null,
-    envelopeId: parseEnvelopeChange(body.envelopeId),
+    envelopeId: parseIdChange(body.envelopeId),
+    accountId: parseIdChange(body.accountId),
   })
 
   return defineApiResponse({ kind, item })

@@ -366,6 +366,13 @@ describe('setLedgerStart', () => {
     expect(withoutRead.tables.household[0]).toMatchObject({ ledgerSince: LATER })
   })
 
+  it('rejects changes once the household has accounts (ADR-0006: derived)', async () => {
+    const { tables, ctx } = setup({ account: [{ id: 'giro', householdId: HH, openingBalance: 0, startDate: day(2026, 11, 1), closedAt: null }] })
+    await expect(setLedgerStart(HH, { openingBalance: 5000 }, ctx)).rejects.toMatchObject({ statusCode: 409 })
+    await expect(setLedgerStart(HH, { ledgerSince: day(2026, 11, 15) }, ctx)).rejects.toMatchObject({ statusCode: 409 })
+    expect(tables.household[0]).toMatchObject({ openingBalance: household.openingBalance, ledgerSince: household.ledgerSince })
+  })
+
   it('stores the opening balance', async () => {
     const { tables, ctx } = setup()
     await expect(setLedgerStart(HH, { openingBalance: 5000 }, ctx)).resolves.toMatchObject({ openingBalance: 5000 })

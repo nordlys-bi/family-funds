@@ -1,6 +1,6 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -40,32 +40,32 @@ enum Frequency {
 }
 
 model User {
-  id           String            @id @default(uuid())
-  oidcSubject  String            @unique // ID from Clerk
-  email        String
-  displayName  String?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  memberships  HouseholdMember[]
-  householdInvitations HouseholdInvitation[] @relation("UserHouseholdInvitations")
-  expenses     ExpenseTransaction[]
-  incomes      IncomeTransaction[]
-  envelopeTransfers EnvelopeTransfer[]
+  id                       String                @id @default(uuid())
+  oidcSubject              String                @unique // ID from Clerk
+  email                    String
+  displayName              String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  memberships              HouseholdMember[]
+  householdInvitations     HouseholdInvitation[] @relation("UserHouseholdInvitations")
+  expenses                 ExpenseTransaction[]
+  incomes                  IncomeTransaction[]
+  envelopeTransfers        EnvelopeTransfer[]
   // Onboarding-Tour-State (issue #16). Per-User, nicht per-Household,
   // weil ein User mehrere Haushalte haben kann und der Onboarding-Flow
   // sich auf den User bezieht, nicht auf den Haushalt-Kontext.
   // completedSteps: Array von Step-IDs ('household' | 'invite' | 'budget' | 'transaction').
   // skipped: User hat explizit "Setup später" gewählt → kein Auto-Trigger mehr.
-  onboardingCompletedSteps String[] @default([])
-  onboardingSkipped        Boolean  @default(false)
+  onboardingCompletedSteps String[]              @default([])
+  onboardingSkipped        Boolean               @default(false)
 }
 
 model Household {
-  id                 String               @id @default(uuid())
+  id                 String                @id @default(uuid())
   name               String
-  currency           String               @default("EUR") // default currency, e.g. "EUR", "USD", "CHF"
-  createdAt          DateTime             @default(now())
-  updatedAt          DateTime             @updatedAt
+  currency           String                @default("EUR") // default currency, e.g. "EUR", "USD", "CHF"
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
   members            HouseholdMember[]
   invitations        HouseholdInvitation[]
   budgets            Budget[]
@@ -76,41 +76,48 @@ model Household {
   savingsGoals       SavingsGoal[]
   envelopes          Envelope[]
   envelopeTransfers  EnvelopeTransfer[]
+  accounts           Account[]
   // ADR-0005: Ab hier zaehlen Einnahmen, Ausgaben und Umbuchungen in
   // "Zu verteilen"; openingBalance ist das freie Geld zu diesem Zeitpunkt,
   // zusaetzlich zu dem, was dann schon in Umschlaegen steckt.
-  ledgerSince        DateTime             @default(now())
-  openingBalance     Int                  @default(0)
+  // ADR-0006: Sobald der Haushalt Konten hat, ist ledgerSince auch ihr
+  // gemeinsamer Start, und openingBalance wird nicht mehr gelesen: Der
+  // Startwert von "Zu verteilen" ergibt sich aus den Kontoanfangsbestaenden.
+  ledgerSince        DateTime              @default(now())
+  openingBalance     Int                   @default(0)
 }
 
 model HouseholdInvitation {
-  id                String      @id @default(uuid())
+  id                String    @id @default(uuid())
   householdId       String
   email             String
-  role              Role        @default(MEMBER)
+  role              Role      @default(MEMBER)
   invitedByUserId   String
-  clerkInvitationId String?     @unique
+  clerkInvitationId String?   @unique
   acceptedAt        DateTime?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
-  household       Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  invitedBy       User        @relation("UserHouseholdInvitations", fields: [invitedByUserId], references: [id], onDelete: Cascade)
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  invitedBy User      @relation("UserHouseholdInvitations", fields: [invitedByUserId], references: [id], onDelete: Cascade)
 
   @@unique([householdId, email])
   @@index([email])
 }
 
 model HouseholdMember {
-  id           String            @id @default(uuid())
-  userId       String
-  householdId  String
-  role         Role              @default(MEMBER)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id               String   @id @default(uuid())
+  userId           String
+  householdId      String
+  role             Role     @default(MEMBER)
+  // ADR-0006: vorausgewaehlt bei Umschlaegen ohne Kontobindung.
+  defaultAccountId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  household      Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  defaultAccount Account?  @relation(fields: [defaultAccountId], references: [id], onDelete: SetNull)
 
   @@unique([userId, householdId])
 }
@@ -119,42 +126,48 @@ model HouseholdMember {
 // SavingsGoal ab; beide bleiben bis nach dem Umstieg als Altbestand im Schema
 // (das Pruefscript vergleicht gegen sie), werden aber nicht mehr beschrieben.
 model Envelope {
-  id               String            @id @default(uuid())
-  householdId      String
-  name             String
-  group            EnvelopeGroup
+  id                    String           @id @default(uuid())
+  householdId           String
+  name                  String
+  group                 EnvelopeGroup
   // Unveraenderlich wie bei Budget (ADR-0004); ein Wechsel ist ein neuer
   // Umschlag. Auch ohne Zuteilung gesetzt, damit das Periodenraster fuer
   // Ansichten definiert ist.
-  frequency        Frequency         @default(MONTHLY)
-  allocationSource AllocationSource  @default(NONE)
+  frequency             Frequency        @default(MONTHLY)
+  allocationSource      AllocationSource @default(NONE)
   // Nur bei allocationSource = FIXED. Keine Versionen: Vergangene Perioden
   // sind gebucht (EnvelopeTransfer mit allocationPeriodStart), eine
   // Aenderung wirkt ab der naechsten noch nicht gebuchten.
-  allocationAmount Int?              // Cent value
-  targetAmount     Int?              // Cent value, Sparziel
+  allocationAmount      Int? // Cent value
+  targetAmount          Int? // Cent value, Sparziel
   // Aus SavingsGoal.endDate uebernommen, derzeit ohne Oberflaeche und Wirkung.
-  targetDate       DateTime?
-  balanceSince     DateTime
+  targetDate            DateTime?
+  balanceSince          DateTime
   // Gesetzt, wenn ein Umschlag ohne Zuteilung eine Regel bekommt: Perioden
   // davor bekommen nichts, sonst wuerde die Regel rueckwirkend nachgebucht.
-  allocationsSince DateTime?
-  closedAt         DateTime?
+  allocationsSince      DateTime?
+  closedAt              DateTime?
   // Nur bei closedAt: Ziel des Endsaldos. null = "Zu verteilen".
   // NoAction statt Restrict, siehe Budget.carryoverToBudgetId.
   carryoverToEnvelopeId String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
-  household        Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  carryoverTo      Envelope?         @relation("EnvelopeCarryover", fields: [carryoverToEnvelopeId], references: [id], onDelete: NoAction)
-  predecessors     Envelope[]        @relation("EnvelopeCarryover")
+  household        Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  carryoverTo      Envelope?            @relation("EnvelopeCarryover", fields: [carryoverToEnvelopeId], references: [id], onDelete: NoAction)
+  predecessors     Envelope[]           @relation("EnvelopeCarryover")
   expenses         ExpenseTransaction[]
   incomes          IncomeTransaction[]
-  transfersOut     EnvelopeTransfer[] @relation("EnvelopeTransferFrom")
-  transfersIn      EnvelopeTransfer[] @relation("EnvelopeTransferTo")
+  transfersOut     EnvelopeTransfer[]   @relation("EnvelopeTransferFrom")
+  transfersIn      EnvelopeTransfer[]   @relation("EnvelopeTransferTo")
   fixedCostPlans   FixedCostPlan[]
   incomePlans      IncomePlan[]
+  // ADR-0006: Bindung an Konten, nur ein Eingabefilter. Das Hauptkonto ist
+  // bei der Erfassung vorausgewaehlt und muss eines der gebundenen sein
+  // (prueft der Server, nicht die Datenbank).
+  accounts         EnvelopeAccount[]
+  primaryAccountId String?
+  primaryAccount   Account?             @relation("EnvelopePrimaryAccount", fields: [primaryAccountId], references: [id], onDelete: SetNull)
 
   @@index([householdId])
 }
@@ -169,7 +182,7 @@ model EnvelopeTransfer {
   householdId           String
   fromEnvelopeId        String?
   toEnvelopeId          String?
-  amount                Int       // Cent value, >= 0 (0 = ausgelassene Zuteilung)
+  amount                Int // Cent value, >= 0 (0 = ausgelassene Zuteilung)
   date                  DateTime
   note                  String?
   // null bei Zuteilungen und migrierten Topf-Bewegungen.
@@ -178,10 +191,10 @@ model EnvelopeTransfer {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  household             Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  fromEnvelope          Envelope? @relation("EnvelopeTransferFrom", fields: [fromEnvelopeId], references: [id], onDelete: Cascade)
-  toEnvelope            Envelope? @relation("EnvelopeTransferTo", fields: [toEnvelopeId], references: [id], onDelete: Cascade)
-  user                  User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  household    Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  fromEnvelope Envelope? @relation("EnvelopeTransferFrom", fields: [fromEnvelopeId], references: [id], onDelete: Cascade)
+  toEnvelope   Envelope? @relation("EnvelopeTransferTo", fields: [toEnvelopeId], references: [id], onDelete: Cascade)
+  user         User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@unique([toEnvelopeId, allocationPeriodStart])
   @@index([householdId, date])
@@ -190,21 +203,21 @@ model EnvelopeTransfer {
 }
 
 model Budget {
-  id           String            @id @default(uuid())
-  householdId  String
-  key          String
-  name         String
+  id                  String    @id @default(uuid())
+  householdId         String
+  key                 String
+  name                String
   // ADR-0004: Die Frequenz gehoert fest zum Budget (nicht zur Version) und
   // ist nach dem Anlegen unveraenderlich — ein Frequenzwechsel ist ein
   // neues Budget, in das das alte geschlossen wird. So ist ueber die
   // budgetId jeder Buchung eindeutig, gegen welches Periodenraster sie zaehlt.
-  frequency    Frequency
+  frequency           Frequency
   // ADR-0004: Ab hier zaehlen Zuteilungen und Buchungen in den Saldo.
   // Immer ein Periodenbeginn der Frequenz.
-  balanceSince DateTime
+  balanceSince        DateTime
   // ADR-0004: Stichtag (exklusiv, Periodenbeginn) — ab hier keine
   // Zuteilungen und keine Buchungen mehr. null = offen.
-  closedAt     DateTime?
+  closedAt            DateTime?
   // ADR-0004: Pflicht-Ziel beim Schliessen. Kein festgeschriebener Betrag,
   // sondern ein Verweis: der Saldo des Ziels enthaelt immer den aktuellen
   // Endsaldo dieses Budgets. Ein Ziel darf nicht geloescht werden, sonst
@@ -213,36 +226,36 @@ model Budget {
   // (Vorgaenger + Ziel im selben Statement) blockieren; NoAction prueft
   // erst am Statement-Ende.
   carryoverToBudgetId String?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  carryoverTo  Budget?           @relation("BudgetCarryover", fields: [carryoverToBudgetId], references: [id], onDelete: NoAction)
-  predecessors Budget[]          @relation("BudgetCarryover")
-  versions     BudgetVersion[]
-  expenses     ExpenseTransaction[]
+  household        Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  carryoverTo      Budget?                @relation("BudgetCarryover", fields: [carryoverToBudgetId], references: [id], onDelete: NoAction)
+  predecessors     Budget[]               @relation("BudgetCarryover")
+  versions         BudgetVersion[]
+  expenses         ExpenseTransaction[]
   // ADR-0004: Umbuchungen Budget <-> Spartopf.
   savingsTransfers SavingsGoalExecution[]
   // Issue #59 polish: Rueckwaerts-Pointer auf Recurring-Plaene, die
   // dieses Budget als Default verwenden. Budget-Loeschen hebt die
   // Verknuepfung auf den Plaenen auf (setzt budgetId=null), die Plaene
   // bleiben aber aktiv.
-  fixedCostPlans FixedCostPlan[]
-  incomePlans   IncomePlan[]
+  fixedCostPlans   FixedCostPlan[]
+  incomePlans      IncomePlan[]
 
   @@unique([householdId, key])
   @@index([householdId, key])
 }
 
 model BudgetVersion {
-  id           String            @id @default(uuid())
-  budgetId     String
-  amount       Int               // Cent value
-  validFrom    DateTime
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id        String   @id @default(uuid())
+  budgetId  String
+  amount    Int // Cent value
+  validFrom DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  budget       Budget            @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  budget Budget @relation(fields: [budgetId], references: [id], onDelete: Cascade)
 
   @@unique([budgetId, validFrom])
   @@index([budgetId, validFrom])
@@ -250,17 +263,17 @@ model BudgetVersion {
 }
 
 model IncomePlan {
-  id           String            @id @default(uuid())
-  householdId  String
-  name         String
-  amount       Int               // Cent value
-  frequency    Frequency         @default(MONTHLY)
-  startDate    DateTime
-  endDate      DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id          String    @id @default(uuid())
+  householdId String
+  name        String
+  amount      Int // Cent value
+  frequency   Frequency @default(MONTHLY)
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household    Household           @relation(fields: [householdId], references: [id], onDelete: Cascade)
   // Issue #59: Rueckwaerts-Pointer auf zugeordnete Buchungen, damit
   // der monatliche Coverage-Status ("X von Y bezahlt") effizient
   // aggregiert werden kann, ohne Heuristik-Matching. onDelete: SetNull
@@ -275,67 +288,74 @@ model IncomePlan {
   // kein passendes Budget (z. B. Miete mit schwankendem Betrag
   // und bewusst keinem "Wohnen"-Bucket zugeordnet). onDelete: SetNull
   // aus gleichem Grund wie der Rueckwaerts-Pointer oben.
-  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  budget       Budget?             @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
   // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg).
-  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelope     Envelope?           @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
 }
 
 model FixedCostPlan {
-  id           String            @id @default(uuid())
-  householdId  String
-  name         String
-  amount       Int               // Cent value
-  frequency    Frequency         @default(MONTHLY)
-  startDate    DateTime
-  endDate      DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id          String    @id @default(uuid())
+  householdId String
+  name        String
+  amount      Int // Cent value
+  frequency   Frequency @default(MONTHLY)
+  startDate   DateTime
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household    Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
   // Issue #59: siehe IncomePlan. Rueckwaerts-Pointer fuer Coverage.
   transactions ExpenseTransaction[]
   // Issue #59 polish: siehe IncomePlan — Default-Budget fuer
   // Transaktionen aus diesem Plan. Hart gekoppelt (kein per-
   // Transaction-Override im Mark-Dialog), aber nachtraegliche
   // Aenderung im Transaction-Row-Editor bleibt moeglich.
-  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  budget       Budget?              @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   budgetId     String?
   // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg).
-  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelope     Envelope?            @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
 }
 
 model ExpenseTransaction {
-  id           String            @id @default(uuid())
-  householdId  String
-  budgetId     String?
-  userId       String
-  amount       Int               // Cent value
-  description  String?
-  date         DateTime
+  id          String    @id @default(uuid())
+  householdId String
+  budgetId    String?
+  userId      String
+  amount      Int // Cent value
+  description String?
+  date        DateTime
   // Soft-Delete (issue #58): DELETE setzt `deletedAt = now()`, Queries
   // filtern `deletedAt: null`. Audit-Trail bleibt in der DB erhalten,
   // eine "Wiederherstellung" via POST /restore setzt den Wert zurueck.
   // Variante A (soft-permanent) gewaehlt — kein Auto-Hard-Delete nach
   // Timeout, da DB-Groesse bei privater App irrelevant ist.
-  deletedAt    DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  budget       Budget?           @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  household       Household      @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  budget          Budget?        @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   // Issue #59: optionaler FK auf einen Fixkostenplan. Wird beim
   // "Als bezahlt markieren"-Flow auf der Recurring-Page gesetzt.
   // onDelete: SetNull, damit Plan-Loeschen die Verknuepfung aufhebt
   // ohne Buchung zu verlieren (analog zu Budget).
-  fixedCostPlan FixedCostPlan?   @relation(fields: [fixedCostPlanId], references: [id], onDelete: SetNull)
+  fixedCostPlan   FixedCostPlan? @relation(fields: [fixedCostPlanId], references: [id], onDelete: SetNull)
   fixedCostPlanId String?
   // ADR-0005: ersetzt budgetId (Altbestand bis nach dem Umstieg). null = "Zu verteilen".
-  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
-  envelopeId   String?
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  envelope        Envelope?      @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelopeId      String?
+  // ADR-0006: "Bezahlt mit". Pflicht ab ledgerSince, sobald der Haushalt
+  // Konten hat; davor und ohne Konten leer. Das prueft der Server
+  // (server/utils/transactions.ts), weil es vom Datum abhaengt. NoAction
+  // statt Restrict, damit das Loeschen eines Haushalts (Cascade auf beide
+  // Seiten) nicht an der Reihenfolge scheitert.
+  account         Account?       @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  accountId       String?
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Composite-Indizes fuer Hot-Path-Queries (Dashboard-Month-Window +
   // Budget-Overview). Beide haben `where: { householdId, date: { gte, lt } }`
@@ -349,6 +369,7 @@ model ExpenseTransaction {
   // diesem fixedCostPlanId in Monat X?"). FK-Lookups ueber den Plan
   // sind ohne Index Full-Table-Scan.
   @@index([fixedCostPlanId, date(sort: Desc)])
+  @@index([accountId, date(sort: Desc)])
   // Soft-Delete-Index: nach Soft-Delete wandert die ueberwiegende Mehrheit
   // der Queries in `where: { householdId, deletedAt: null, ... }`. Mit dem
   // existierenden `(householdId, date DESC)`-Index macht Postgres
@@ -360,30 +381,34 @@ model ExpenseTransaction {
 }
 
 model IncomeTransaction {
-  id           String            @id @default(uuid())
-  householdId  String
-  userId       String
-  amount       Int               // Cent value
-  description  String?
-  date         DateTime
+  id          String    @id @default(uuid())
+  householdId String
+  userId      String
+  amount      Int // Cent value
+  description String?
+  date        DateTime
   // Soft-Delete (issue #58): siehe ExpenseTransaction. Gleiche Semantik.
-  deletedAt    DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  household    Household   @relation(fields: [householdId], references: [id], onDelete: Cascade)
   // Issue #59: optionaler FK auf einen Einnahmenplan. Wird beim
   // "Als erhalten markieren"-Flow auf der Recurring-Page gesetzt.
   // onDelete: SetNull, damit Plan-Loeschen die Verknuepfung aufhebt
   // ohne Buchung zu verlieren.
-  incomePlan   IncomePlan?       @relation(fields: [incomePlanId], references: [id], onDelete: SetNull)
+  incomePlan   IncomePlan? @relation(fields: [incomePlanId], references: [id], onDelete: SetNull)
   incomePlanId String?
   // ADR-0005: Gutschrift auf einen Umschlag; null = "Zu verteilen".
-  envelope     Envelope?         @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
+  envelope     Envelope?   @relation(fields: [envelopeId], references: [id], onDelete: SetNull)
   envelopeId   String?
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // ADR-0006: "Bezahlt mit", siehe ExpenseTransaction.
+  account      Account?    @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  accountId    String?
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([householdId, date(sort: Desc)])
+  @@index([accountId, date(sort: Desc)])
   // Soft-Delete-Index: siehe ExpenseTransaction.
   @@index([householdId, deletedAt])
   // Issue #59: Index fuer Coverage-Queries, siehe ExpenseTransaction.
@@ -392,40 +417,87 @@ model IncomeTransaction {
 }
 
 model SavingsGoal {
-  id           String            @id @default(uuid())
+  id           String    @id @default(uuid())
   householdId  String
   name         String
-  targetAmount Int               // Cent value
-  monthlyRate  Int               // Planned savings per month in Cents
+  targetAmount Int // Cent value
+  monthlyRate  Int // Planned savings per month in Cents
   startDate    DateTime
   endDate      DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  household    Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
-  executions   SavingsGoalExecution[]
+  household  Household              @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  executions SavingsGoalExecution[]
 }
 
 model SavingsGoalExecution {
-  id            String            @id @default(uuid())
-  savingsGoalId String
-  amount        Int               // Cent value actually saved in this month/period
-  date          DateTime          // Represents which month/date this execution is for
+  id             String   @id @default(uuid())
+  savingsGoalId  String
+  amount         Int // Cent value actually saved in this month/period
+  date           DateTime // Represents which month/date this execution is for
   // Optionale Notiz, z. B. "Urlaubssparen Q3" oder "Sonderausgabe".
   // Wird beim Buchen im UI erfasst (issue #38) und ist im History-View
   // (issue #39) sichtbar. Nullable, damit bestehende Buchungen und
   // Quick-Booking ohne Notiz moeglich bleiben.
-  note          String?
+  note           String?
   // ADR-0004: Umbuchung Budget <-> Spartopf. Gesetzt = der Betrag kommt
   // aus dem Saldo dieses Budgets (positiv) bzw. geht dorthin (negativ).
   // Bewusst eine Zeile statt Doppelbuchung (kein Geldabfluss aus dem
   // Haushalt, darf nicht in Ausgaben-Reports auftauchen).
   sourceBudgetId String?
-  createdAt     DateTime          @default(now())
-  updatedAt     DateTime          @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  savingsGoal   SavingsGoal       @relation(fields: [savingsGoalId], references: [id], onDelete: Cascade)
-  sourceBudget  Budget?           @relation(fields: [sourceBudgetId], references: [id], onDelete: SetNull)
+  savingsGoal  SavingsGoal @relation(fields: [savingsGoalId], references: [id], onDelete: Cascade)
+  sourceBudget Budget?     @relation(fields: [sourceBudgetId], references: [id], onDelete: SetNull)
 
   @@index([sourceBudgetId, date])
+}
+
+// ADR-0006: reelles Konto, der Ort, an dem Geld liegt (Girokonto, Geldbeutel,
+// Sparkonto). Der Saldo wird wie bei Umschlaegen nie gespeichert, sondern
+// aus Anfangsbestand und Buchungen ab startDate berechnet
+// (server/utils/account-balance.ts).
+model Account {
+  id             String      @id @default(uuid())
+  householdId    String
+  name           String
+  type           AccountType
+  // Kontostand zu Beginn von startDate, vor den Buchungen dieses Tages.
+  openingBalance Int         @default(0)
+  // Nie vor Household.ledgerSince: Buchungen davor sieht "Zu verteilen"
+  // nicht, die Summe der Konten liefe sonst auseinander.
+  startDate      DateTime
+  // Stichtag exklusiv wie bei Umschlaegen: ab hier keine Buchungen mehr.
+  closedAt       DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  household           Household            @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  envelopes           EnvelopeAccount[]
+  primaryForEnvelopes Envelope[]           @relation("EnvelopePrimaryAccount")
+  defaultForMembers   HouseholdMember[]
+  expenses            ExpenseTransaction[]
+  incomes             IncomeTransaction[]
+
+  @@index([householdId])
+}
+
+// ADR-0006: Kontoart ist ein echter Typ und darf Verhalten steuern.
+enum AccountType {
+  CHECKING
+  CASH
+  SAVINGS
+}
+
+model EnvelopeAccount {
+  envelopeId String
+  accountId  String
+
+  envelope Envelope @relation(fields: [envelopeId], references: [id], onDelete: Cascade)
+  account  Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([envelopeId, accountId])
+  @@index([accountId])
 }

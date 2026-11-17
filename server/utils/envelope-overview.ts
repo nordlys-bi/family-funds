@@ -16,7 +16,7 @@ import {
   computeRemainingTimeShare,
   listReservedAllocations,
 } from './envelope-allocations'
-import { computeEnvelopeBalances, computeUnassignedBalance, type EnvelopeBalance } from './envelope-balance'
+import { computeEnvelopeBalances, computeUnassignedBalance, computeUnassignedOpening, type EnvelopeBalance } from './envelope-balance'
 import { isEnvelopeOpenOn } from './envelope-lifecycle'
 import { ensureAllocations, loadEnvelopeBalanceInputs, toAllocationEnvelope } from './envelope-store'
 
@@ -67,7 +67,10 @@ export type UnassignedOverview = {
   /** `balance − reserved`: was wirklich noch verteilt werden kann. */
   free: number
   ledgerSince: Date
+  /** Startwert; mit Konten abgeleitet statt eingegeben (ADR-0006). */
   openingBalance: number
+  /** ADR-0006: true = `openingBalance` ergibt sich aus den Konten. */
+  openingDerived: boolean
 }
 
 export type EnvelopeOverview = {
@@ -80,8 +83,9 @@ const TREND_WEEKS = 13
 export async function loadEnvelopeOverview(householdId: string, now: Date = new Date()): Promise<EnvelopeOverview> {
   await ensureAllocations(householdId, now)
 
-  const [household, envelopes] = await Promise.all([
+  const [household, accounts, envelopes] = await Promise.all([
     prisma.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true, openingBalance: true } }),
+    prisma.account.findMany({ where: { householdId }, select: { openingBalance: true, startDate: true } }),
     prisma.envelope.findMany({
       where: { householdId },
       orderBy: { createdAt: 'asc' },
@@ -116,7 +120,8 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
 
   const inputs = await loadEnvelopeBalanceInputs(householdId, envelopes, household.ledgerSince)
   const balances = computeEnvelopeBalances(envelopes, inputs, now)
-  const unassignedBalance = computeUnassignedBalance(household, envelopes, balances, inputs, now)
+  const ledger = { ...household, accounts }
+  const unassignedBalance = computeUnassignedBalance(ledger, envelopes, balances, inputs, now)
 
   const trendDates = Array.from({ length: TREND_WEEKS + 1 }, (_, index) => {
     const value = new Date(dayKey(now))
@@ -200,7 +205,8 @@ export async function loadEnvelopeOverview(householdId: string, now: Date = new 
       reserved: reservedTotal,
       free: unassignedBalance - reservedTotal,
       ledgerSince: household.ledgerSince,
-      openingBalance: household.openingBalance,
+      openingBalance: computeUnassignedOpening(ledger, envelopes, inputs),
+      openingDerived: accounts.length > 0,
     },
   }
 }
