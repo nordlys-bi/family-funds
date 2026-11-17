@@ -9,7 +9,8 @@
  *   allocationSource?: 'NONE' | 'FIXED' | 'PLANS' (Default je Gruppe),
  *   allocationAmount?: Betrag (Pflicht bei FIXED),
  *   targetAmount?: Betrag, targetDate?: 'YYYY-MM-DD',
- *   balanceSince?: 'YYYY-MM-DD' (Default: Beginn der laufenden Periode)
+ *   balanceSince?: 'YYYY-MM-DD' (Default: Beginn der laufenden Periode),
+ *   accountIds?: string[], primaryAccountId?: string | null (ADR-0006)
  * }
  *
  * `balanceSince` muss ein Periodenbeginn sein; liegt er in der
@@ -32,6 +33,7 @@ import {
   parseEnvelopeGroup,
   parseMoneyToCentsAllowZero,
 } from '../../../utils/envelope-lifecycle'
+import { checkEnvelopeAccounts, parseEnvelopeAccounts, setEnvelopeAccounts } from '../../../utils/accounts'
 
 type CreateEnvelopeBody = {
   name?: string
@@ -42,6 +44,8 @@ type CreateEnvelopeBody = {
   targetAmount?: string | number | null
   targetDate?: string | null
   balanceSince?: string | null
+  accountIds?: string[]
+  primaryAccountId?: string | null
 }
 
 export default defineEventHandler(async (event) => {
@@ -66,8 +70,12 @@ export default defineEventHandler(async (event) => {
   const balanceSince = body.balanceSince ? parseDateInput(body.balanceSince, 'Balance start') : startOfPeriod(new Date(), frequency)
   assertPeriodStart(balanceSince, frequency, 'balanceSince')
 
+  const binding = parseEnvelopeAccounts(body)
+  if (binding) await checkEnvelopeAccounts(householdId, binding.accountIds, binding.primaryAccountId)
+
   const item = await prisma.envelope.create({
     data: { householdId, name, group, frequency, allocationSource, allocationAmount, targetAmount, targetDate, balanceSince },
   })
+  if (binding) await setEnvelopeAccounts(householdId, item.id, binding.accountIds, binding.primaryAccountId)
   return defineApiResponse({ kind: 'envelope', item })
 })

@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Menu from 'primevue/menu'
 import { isFirstRun } from '~/utils/household-age'
-import { todayDateHelperText } from '~/utils/form-helpers'
+import { accountErrorText } from '~/utils/account-options'
+import type { TransactionEditPayload } from '~/components/TransactionRowEditor.vue'
 
 definePageMeta({ layout: 'default' })
 
@@ -29,8 +30,6 @@ const router = useRouter()
 const currentHousehold = ref<PlanningHousehold | null>(null)
 const notice = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 const editingTransactionId = ref<string | null>(null)
-const transactionDialogOpen = ref(false)
-const transactionLoading = ref(false)
 const actionLoadingKey = ref<string | null>(null)
 
 // Der mobile FAB ueberlappt bei kurzen Listen die rechtsbuendigen
@@ -53,10 +52,6 @@ const formatMoney = (value: number) => moneyFormatter.value.format(value / 100)
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'short', year: 'numeric' }).format(new Date(value))
 
-function formatDateInput(value: Date) {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
-
 // --- Month-Filter via Composable (issue #9) ---
 // Initial aus URL-Query ?month=YYYY-MM, sonst aktueller Monat.
 // WICHTIG: die Refs MÜSSEN top-level destructuriert werden, damit
@@ -68,9 +63,12 @@ const tx = useTransactionList({
   // Issue #55: Person-Filter fuer Income-Listen. Einen Umschlag-Filter bietet
   // die Seite nicht an, die Zeilen zeigen ihren Umschlag aber an (ADR-0005).
   initialUserIdFilter: typeof route.query.userId === 'string' && route.query.userId.length > 0 ? route.query.userId : null,
+  initialAccountIdFilter: typeof route.query.accountId === 'string' && route.query.accountId.length > 0 ? route.query.accountId : null,
 })
 const month = tx.month
 const userIdFilter = tx.userIdFilter
+const accountIdFilter = tx.accountIdFilter
+const setAccountIdFilter = tx.setAccountIdFilter
 const hasLocalFilters = tx.hasLocalFilters
 const monthLabel = tx.monthLabel
 const summary = tx.summary
@@ -95,28 +93,17 @@ const showFirstTimeEmpty = computed(
   () => visibleTransactions.value.length === 0 && isFirstRunHousehold.value,
 )
 
-const transactionForm = ref({
-  amount: null as number | null,
-  description: '',
-  date: new Date(),
-  envelopeId: '',
-})
-
 // ADR-0005: Eine Einnahme kann einem Umschlag gutgeschrieben werden, sonst
 // geht sie nach "Zu verteilen". Der Dialog bietet nur am Datum buchbare
 // Umschlaege an, der Inline-Editor filtert selbst nach seinem Entwurfs-Datum.
-const { envelopes: envelopeOptions, loaded: envelopesLoaded, load: loadEnvelopes } = useEnvelopeOptions()
-const envelopeSelectOptions = computed(() => [
-  { label: 'Zu verteilen', value: '' },
-  ...envelopesBookableOn(envelopeOptions.value, transactionForm.value.date)
-    .map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group })),
+const { envelopes: envelopeOptions, load: loadEnvelopes, bindingOf } = useEnvelopeOptions()
+// ADR-0006 (issue #190): Konto in Liste, Filter und Inline-Editor.
+const { accounts, load: loadAccounts } = useAccountOptions()
+const hasAccounts = computed(() => accounts.value.length > 0)
+const accountFilterOptions = computed(() => [
+  { label: 'Alle Konten', value: null as string | null },
+  ...accounts.value.map((account) => ({ label: account.name, value: account.id as string | null })),
 ])
-watch(envelopeSelectOptions, (options) => {
-  if (!envelopesLoaded.value) return
-  if (transactionForm.value.envelopeId && !options.some((option) => option.value === transactionForm.value.envelopeId)) {
-    transactionForm.value.envelopeId = ''
-  }
-})
 const rowEditorEnvelopeOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
   ...envelopeOptions.value.map((envelope) => ({ label: envelope.name, value: envelope.id, group: envelope.group, balanceSince: envelope.balanceSince, closedAt: envelope.closedAt ?? null })),
@@ -160,6 +147,7 @@ function buildRouteQuery(options: { monthOverride?: string } = {}): Record<strin
   const query: Record<string, string> = {}
   if (monthValue !== currentMonth) query.month = monthValue
   if (userIdFilter.value) query.userId = userIdFilter.value
+  if (accountIdFilter.value) query.accountId = accountIdFilter.value
   return query
 }
 
@@ -168,6 +156,13 @@ function buildRouteQuery(options: { monthOverride?: string } = {}): Record<strin
 // "Einnahmen" muss zur gefilterten Liste passen) und synct die URL.
 async function onUserIdFilterChange(value: string | null) {
   setUserIdFilter(value)
+  await loadTransactions(activeHouseholdId.value)
+  await router.replace({ query: buildRouteQuery() })
+}
+
+// Issue #190: Konto-Filter, gleiches Pattern.
+async function onAccountIdFilterChange(value: string | null) {
+  setAccountIdFilter(value)
   await loadTransactions(activeHouseholdId.value)
   await router.replace({ query: buildRouteQuery() })
 }
@@ -183,7 +178,7 @@ async function clearAllLocalFilters() {
 // Issue #95: Filter-Leiste hinter einem Toggle. Initial offen, wenn per
 // Deep-Link (?userId) schon gefiltert wird.
 const filtersOpen = ref(hasLocalFilters.value)
-const activeFilterCount = computed(() => (userIdFilter.value ? 1 : 0))
+const activeFilterCount = computed(() => (userIdFilter.value ? 1 : 0) + (accountIdFilter.value ? 1 : 0))
 
 /**
  * Issue #55: Menschen-lesbares Etikett des aktiven Filters fuer die
@@ -192,9 +187,16 @@ const activeFilterCount = computed(() => (userIdFilter.value ? 1 : 0))
  * gesetzt ist (Caller prueft hasLocalFilters).
  */
 const activeFilterLabel = computed(() => {
-  if (!userIdFilter.value) return ''
-  const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
-  return member?.displayName || member?.email || 'diese Person'
+  const parts: string[] = []
+  if (userIdFilter.value) {
+    const member = memberOptions.value.find((m) => m.id === userIdFilter.value)
+    parts.push(member?.displayName || member?.email || 'diese Person')
+  }
+  if (accountIdFilter.value) {
+    const account = accounts.value.find((item) => item.id === accountIdFilter.value)
+    parts.push(account ? `auf ${account.name}` : 'auf diesem Konto')
+  }
+  return parts.join(' ')
 })
 
 /**
@@ -214,6 +216,10 @@ const activeFilterChips = computed<FilterChip[]>(() => {
       onRemove: () => onUserIdFilterChange(null),
     })
   }
+  if (accountIdFilter.value) {
+    const account = accounts.value.find((item) => item.id === accountIdFilter.value)
+    chips.push({ key: 'account', label: account?.name ?? 'Konto', icon: 'pi pi-credit-card', onRemove: () => onAccountIdFilterChange(null) })
+  }
   return chips
 })
 
@@ -227,6 +233,17 @@ watch(
     const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
     if (next !== userIdFilter.value) {
       setUserIdFilter(next)
+      await loadTransactions(activeHouseholdId.value)
+    }
+  },
+)
+
+watch(
+  () => route.query.accountId,
+  async (newValue) => {
+    const next = typeof newValue === 'string' && newValue.length > 0 ? newValue : null
+    if (next !== accountIdFilter.value) {
+      setAccountIdFilter(next)
       await loadTransactions(activeHouseholdId.value)
     }
   },
@@ -259,18 +276,18 @@ async function loadAll() {
   await Promise.all([
     loadCurrentHousehold(),
     loadEnvelopes(activeHouseholdId.value),
+    loadAccounts(activeHouseholdId.value),
     loadTransactions(activeHouseholdId.value),
   ])
 }
 
-const resetForm = () => {
-  transactionForm.value = { amount: null, description: '', date: new Date(), envelopeId: '' }
+// issue #190: Anlegen laeuft ueber den globalen Erfassen-Dialog, damit
+// "Bezahlt mit" und die Umschlag-Logik nur an einer Stelle leben.
+const quickCapture = useQuickCapture()
+const openCreateTransactionDialog = () => {
   editingTransactionId.value = null
+  quickCapture.open('income')
 }
-
-const openCreateTransactionDialog = () => { resetForm(); transactionDialogOpen.value = true }
-
-const closeTransactionDialog = () => { transactionDialogOpen.value = false; resetForm() }
 
 // === FAB Quick-Add (issue #29) ====================================
 // Pattern identisch zu expenses.vue: ?new=1 öffnet den Dialog direkt
@@ -290,7 +307,7 @@ const inlineEditError = ref<string | null>(null)
 
 async function saveInlineEdit(
   transactionId: string,
-  payload: { amount: number | null; description: string; date: string; envelopeId: string | null },
+  payload: TransactionEditPayload,
 ) {
   if (!activeHouseholdId.value) return
   if (payload.amount == null || payload.amount <= 0) {
@@ -310,6 +327,7 @@ async function saveInlineEdit(
     description: payload.description,
     date: payload.date,
     envelopeId: payload.envelopeId,
+    ...(payload.accountId !== undefined ? { accountId: payload.accountId } : {}),
   })
   if (!original) {
     actionLoadingKey.value = null
@@ -326,6 +344,7 @@ async function saveInlineEdit(
         description: payload.description,
         date: payload.date,
         envelopeId: payload.envelopeId || null,
+        ...(payload.accountId !== undefined ? { accountId: payload.accountId } : {}),
       },
     })
     editingTransactionId.value = null
@@ -336,7 +355,7 @@ async function saveInlineEdit(
   } catch (error: any) {
     // Rollback auf den Original-Wert (issue #15 Acceptance Criteria).
     restoreTransactionLocal(transactionId, original)
-    inlineEditError.value = error?.statusMessage || error?.message || 'Speichern fehlgeschlagen.'
+    inlineEditError.value = accountErrorText(error)
   } finally {
     actionLoadingKey.value = null
   }
@@ -347,34 +366,6 @@ function onEscapeKey(event: KeyboardEvent) {
   if (event.key === 'Escape' && editingTransactionId.value) {
     event.preventDefault()
     cancelInlineEdit()
-  }
-}
-
-const saveTransaction = async () => {
-  if (!activeHouseholdId.value) return
-  transactionLoading.value = true
-  notice.value = null
-  try {
-    const isEdit = Boolean(editingTransactionId.value)
-    const payload = {
-      kind: 'income' as const,
-      ...(editingTransactionId.value ? { id: editingTransactionId.value } : {}),
-      amount: transactionForm.value.amount ?? undefined,
-      description: transactionForm.value.description,
-      date: transactionForm.value.date ? formatDateInput(transactionForm.value.date) : undefined,
-      envelopeId: transactionForm.value.envelopeId || null,
-    }
-    await $fetch(`/api/households/${activeHouseholdId.value}/transactions`, {
-      method: editingTransactionId.value ? 'PATCH' : 'POST',
-      body: payload,
-    })
-    await loadAll()
-    closeTransactionDialog()
-    notice.value = { severity: 'success', text: isEdit ? 'Einnahme wurde aktualisiert.' : 'Einnahme wurde angelegt.' }
-  } catch (error: any) {
-    notice.value = { severity: 'error', text: 'Einnahme konnte nicht gespeichert werden: ' + (error.statusMessage || error.message) }
-  } finally {
-    transactionLoading.value = false
   }
 }
 
@@ -521,7 +512,7 @@ watch(activeHouseholdId, async () => { await loadAll() })
 // Issue #91: globaler Erfassen-Dialog kann von ueberall eine Einnahme
 // anlegen. savedTick steigt nach jedem erfolgreichen POST — dann die
 // sichtbare Liste neu laden.
-const { savedTick: quickCaptureSavedTick } = useQuickCapture()
+const quickCaptureSavedTick = quickCapture.savedTick
 watch(quickCaptureSavedTick, async () => { await loadAll() })
 </script>
 
@@ -580,6 +571,18 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
         aria-label="Buchungen nach Person filtern"
         class="toolbar-filter"
         @update:model-value="onUserIdFilterChange"
+      />
+      <Select
+        v-if="hasAccounts"
+        :model-value="accountIdFilter"
+        :options="accountFilterOptions"
+        option-label="label"
+        option-value="value"
+        placeholder="Alle Konten"
+        :loading="txLoading"
+        aria-label="Buchungen nach Konto filtern"
+        class="toolbar-filter"
+        @update:model-value="onAccountIdFilterChange"
       />
       <Button
         v-if="activeFilterCount > 0"
@@ -652,6 +655,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                 <TransactionRowEditor
                   :transaction="transaction"
                   :envelope-options="rowEditorEnvelopeOptions"
+                  :accounts="accounts"
+                  :binding-of="bindingOf"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `income:${transaction.id}`"
                   :error="inlineEditError"
@@ -665,6 +670,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
               <td class="name">
                 {{ transaction.description || 'Einnahme' }}
                 <span v-if="transaction.envelopeName" class="income-envelope">{{ transaction.envelopeName }}</span>
+                <span v-if="transaction.accountName" class="sub">{{ transaction.accountName }}</span>
               </td>
               <td class="muted">{{ transaction.user.displayName || transaction.user.email }}</td>
               <td class="num income-amount">+{{ formatMoney(transaction.amount) }}</td>
@@ -716,6 +722,8 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   v-if="editingTransactionId === transaction.id"
                   :transaction="transaction"
                   :envelope-options="rowEditorEnvelopeOptions"
+                  :accounts="accounts"
+                  :binding-of="bindingOf"
                   :currency="currencyCode"
                   :saving="actionLoadingKey === `income:${transaction.id}`"
                   :error="inlineEditError"
@@ -751,6 +759,7 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
                   </div>
                   <div class="data-table__card-meta">
                     <span class="data-table__card-user">
+                      <template v-if="transaction.accountName">{{ transaction.accountName }} · </template>
                       {{ transaction.user.displayName || transaction.user.email }}
                       <i class="pi pi-ellipsis-v data-table__card-hint" aria-hidden="true" />
                     </span>
@@ -766,46 +775,6 @@ watch(quickCaptureSavedTick, async () => { await loadAll() })
 
     <!-- Floating Options-Menu fuer die Mobile-Kartenliste (siehe expenses.vue). -->
     <Menu ref="cardMenu" :model="cardMenuItems" popup />
-
-    <FormDialog
-      v-model:visible="transactionDialogOpen"
-      :header="editingTransactionId ? 'Einnahme bearbeiten' : 'Neue Einnahme'"
-      :submit-label="editingTransactionId ? 'Einnahme aktualisieren' : 'Einnahme anlegen'"
-      :saving="transactionLoading"
-      @save="saveTransaction"
-      @cancel="closeTransactionDialog"
-    >
-      <FormFieldRow label="Betrag" html-for="transaction-amount">
-        <InputNumber
-          id="transaction-amount"
-          v-model="transactionForm.amount"
-          mode="currency"
-          :currency="currencyCode"
-          locale="de-DE"
-          inputClass="w-full"
-          :minFractionDigits="2"
-          :maxFractionDigits="2"
-          placeholder="0,00"
-        />
-      </FormFieldRow>
-      <FormFieldRow label="Datum" html-for="transaction-date">
-        <DatePicker id="transaction-date" v-model="transactionForm.date" dateFormat="dd.mm.yy" showIcon inputClass="w-full" />
-        <small class="form-field-helper">{{ todayDateHelperText }}</small>
-      </FormFieldRow>
-      <FormFieldRow label="Umschlag" html-for="transaction-envelope" wide>
-        <EnvelopeSelect
-          id="transaction-envelope"
-          v-model="transactionForm.envelopeId"
-          :options="envelopeSelectOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Zu verteilen"
-        />
-      </FormFieldRow>
-      <FormFieldRow label="Beschreibung" html-for="transaction-description" wide>
-        <InputText id="transaction-description" v-model="transactionForm.description" placeholder="z. B. Gehalt September" />
-      </FormFieldRow>
-    </FormDialog>
 
     <!-- ADR-0005: Einnahmen-Plaene, aus denen die Buchung entsteht. Frueher auf
          der Seite "Wiederkehrend". -->

@@ -15,6 +15,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import type { Frequency } from '~/types/planning'
 import { todayDateHelperText } from '~/utils/form-helpers'
+import { accountErrorText } from '~/utils/account-options'
 
 type PlanCoverage = { due: number; paid: number; percent: number }
 
@@ -42,7 +43,10 @@ const { activeHousehold, canManageHousehold } = useHousehold()
 // Swipe (rechts = bearbeiten, links = loeschen) nur mobil und nur fuer Owner (issue #132).
 const { swipeDisabled } = useListSwipe()
 const confirm = useAskConfirm()
-const { envelopes, load: loadEnvelopes } = useEnvelopeOptions()
+const { envelopes, load: loadEnvelopes, bindingOf } = useEnvelopeOptions()
+// ADR-0006: "Bezahlt mit" beim Markieren; die Buchung erbt den Umschlag des
+// Plans, also gilt dessen Bindung.
+const { accounts, memberDefaultId, load: loadAccounts } = useAccountOptions()
 
 const isFixedCost = computed(() => props.kind === 'fixedCost')
 const copy = computed(() => (isFixedCost.value
@@ -64,7 +68,7 @@ async function load() {
   try {
     const data = await $fetch<{ household: { fixedCosts: PlanItem[]; incomePlans: PlanItem[] } | null }>('/api/households/current')
     plans.value = (isFixedCost.value ? data.household?.fixedCosts : data.household?.incomePlans) ?? []
-    await loadEnvelopes(householdId.value)
+    await Promise.all([loadEnvelopes(householdId.value), loadAccounts(householdId.value)])
   } catch (error: any) {
     notice.value = { severity: 'error', text: 'Pläne konnten nicht geladen werden: ' + (error.statusMessage || error.message) }
   }
@@ -230,7 +234,8 @@ async function removePlan(plan: PlanItem) {
 const markPlan = ref<PlanItem | null>(null)
 const markSaving = ref(false)
 const markError = ref<string | null>(null)
-const markForm = ref({ amount: null as number | null, date: new Date() as Date | null, description: '' })
+const markForm = ref({ amount: null as number | null, date: new Date() as Date | null, description: '', accountId: null as string | null })
+const markBinding = computed(() => bindingOf(markPlan.value?.envelopeId))
 const markDialogOpen = computed({
   get: () => markPlan.value !== null,
   set: (open) => { if (!open) markPlan.value = null },
@@ -239,7 +244,7 @@ const markDialogOpen = computed({
 function openMark(plan: PlanItem) {
   markPlan.value = plan
   // Notiz mit dem Plannamen vorbelegen, damit die Buchung wiedererkennbar ist.
-  markForm.value = { amount: plan.amount / 100, date: new Date(), description: plan.name }
+  markForm.value = { amount: plan.amount / 100, date: new Date(), description: plan.name, accountId: null }
   markError.value = null
 }
 
@@ -260,13 +265,14 @@ async function submitMark() {
         amount: markForm.value.amount,
         date: formatDateToInputString(markForm.value.date ?? new Date()),
         description: markForm.value.description.trim() || null,
+        accountId: markForm.value.accountId,
         ...(isFixedCost.value ? { fixedCostPlanId: plan.id } : { incomePlanId: plan.id }),
       },
     })
     markPlan.value = null
     await afterChange(`${plan.name} wurde als ${copy.value.markedVerb}.`)
   } catch (error: any) {
-    markError.value = error?.statusMessage || error?.message || 'Speichern fehlgeschlagen.'
+    markError.value = accountErrorText(error)
   } finally {
     markSaving.value = false
   }
@@ -399,6 +405,19 @@ async function submitMark() {
       <FormFieldRow label="Datum" html-for="mark-date">
         <DatePicker id="mark-date" v-model="markForm.date" showIcon dateFormat="dd.mm.yy" />
         <small class="form-field-helper">{{ todayDateHelperText }}</small>
+      </FormFieldRow>
+      <FormFieldRow v-if="accounts.length > 0" :label="isFixedCost ? 'Bezahlt mit' : 'Eingang auf'" html-for="mark-account" wide>
+        <!-- `key`: je Plan neu, damit die Vorauswahl wieder greift. -->
+        <PaidWithSelect
+          :key="markPlan?.id"
+          v-model="markForm.accountId"
+          input-id="mark-account"
+          :accounts="accounts"
+          :date="markForm.date"
+          :binding="markBinding"
+          :member-default-id="memberDefaultId"
+          auto-default
+        />
       </FormFieldRow>
       <FormFieldRow label="Notiz (optional)" html-for="mark-note" wide>
         <InputText id="mark-note" v-model="markForm.description" placeholder="z. B. Miete + Nebenkosten" maxlength="500" />

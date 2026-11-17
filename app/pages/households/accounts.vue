@@ -7,6 +7,9 @@
  * Bestaetigen den bisherigen und den neuen Startwert; die Differenz ist das,
  * was bisher nicht erfasst war. Danach: Liste mit Salden, weitere Konten,
  * Bearbeiten, Schliessen, Loeschen.
+ *
+ * Dazu "Mein Standardkonto" (issue #190): jedes Mitglied, nicht nur der Owner,
+ * stellt hier ein, was bei Umschlaegen ohne Kontobindung vorausgewaehlt ist.
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import {
@@ -42,6 +45,8 @@ const typeOptions = ACCOUNT_TYPES.map(({ value, label }) => ({ value, label }))
 
 const accounts = ref<Account[]>([])
 const ledgerSince = ref<string | null>(null)
+const defaultAccountId = ref<string | null>(null)
+const defaultSaving = ref(false)
 const loading = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
 
@@ -56,13 +61,39 @@ const load = async () => {
   if (!activeHouseholdId.value) return
   loading.value = true
   try {
-    const data = await $fetch<{ accounts: Account[]; ledgerSince: string }>(`/api/households/${activeHouseholdId.value}/accounts`)
+    const data = await $fetch<{ accounts: Account[]; ledgerSince: string; defaultAccountId: string | null }>(`/api/households/${activeHouseholdId.value}/accounts`)
     accounts.value = data.accounts
     ledgerSince.value = data.ledgerSince
+    defaultAccountId.value = data.defaultAccountId
   } catch (error: any) {
     message.value = { severity: 'error', text: 'Konten konnten nicht geladen werden: ' + accountErrorText(error) }
   } finally {
     loading.value = false
+  }
+}
+
+// === Mein Standardkonto =====================================================
+
+const defaultOptions = computed(() => [
+  { label: 'Keins', value: null as string | null },
+  ...accounts.value
+    .filter((account) => !account.closedAt || account.id === defaultAccountId.value)
+    .map((account) => ({ label: account.name, value: account.id as string | null })),
+])
+
+async function saveDefault(accountId: string | null) {
+  if (!activeHouseholdId.value) return
+  const previous = defaultAccountId.value
+  defaultAccountId.value = accountId
+  defaultSaving.value = true
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/accounts/default`, { method: 'PATCH', body: { accountId } })
+    message.value = { severity: 'success', text: 'Standardkonto gespeichert.' }
+  } catch (error: any) {
+    defaultAccountId.value = previous
+    message.value = { severity: 'error', text: 'Standardkonto konnte nicht gespeichert werden: ' + accountErrorText(error) }
+  } finally {
+    defaultSaving.value = false
   }
 }
 
@@ -357,6 +388,25 @@ watch(activeHouseholdId, load)
       </ListTable>
     </ListPanel>
 
+    <ListPanel v-if="!loading && accounts.length" title="Mein Standardkonto" compact>
+      <div class="default-account">
+        <Select
+          input-id="default-account"
+          :model-value="defaultAccountId"
+          :options="defaultOptions"
+          option-label="label"
+          option-value="value"
+          :loading="defaultSaving"
+          aria-label="Mein Standardkonto"
+          class="default-account__select"
+          @update:model-value="saveDefault"
+        />
+        <small class="default-account__hint">
+          Bei der Erfassung vorausgewählt, wenn der Umschlag an kein Konto gebunden ist. Gilt nur für dich.
+        </small>
+      </div>
+    </ListPanel>
+
     <FormDialog
       v-model:visible="introOpen"
       header="Konten einführen"
@@ -495,6 +545,22 @@ watch(activeHouseholdId, load)
 .data-table__card-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.default-account {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+}
+
+.default-account__select {
+  max-width: 20rem;
+}
+
+.default-account__hint {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
 }
 
 .account-cell {

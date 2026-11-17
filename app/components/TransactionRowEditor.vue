@@ -9,6 +9,8 @@
   <TransactionRowEditor
     :transaction="row"
     :envelope-options="envelopeOptions"
+    :accounts="accounts"
+    :binding-of="bindingOf"
     :currency="currencyCode"
     :saving="isSaving"
     @save="(payload) => saveRow(row.id, payload)"
@@ -28,12 +30,15 @@ import { computed, ref, watch } from 'vue'
 import type { TransactionItem } from '~/composables/useTransactionList'
 import { fromDateInputValue, toDateInputValue } from '~/utils/form-helpers'
 import { isEnvelopeBookableOn, type EnvelopeGroup } from '~/utils/envelope-options'
+import type { AccountBinding, PaidWithAccount } from '~/utils/account-options'
 
 export type TransactionEditPayload = {
   amount: number | null
   description: string
   date: string // YYYY-MM-DD
   envelopeId: string | null
+  /** Nur gesetzt, wenn der Editor das Konto-Feld zeigt (`accounts`). */
+  accountId?: string | null
 }
 
 const props = defineProps<{
@@ -41,6 +46,10 @@ const props = defineProps<{
   /** Optionen fuer das Umschlag-Dropdown. Ohne diese Prop rendert der Editor
    *  das Feld nicht. */
   envelopeOptions?: Array<{ label: string; value: string; group?: EnvelopeGroup; balanceSince?: string | Date; closedAt?: string | Date | null }>
+  /** ADR-0006: Konten fuer "Bezahlt mit"; leer oder fehlend = kein Feld. */
+  accounts?: PaidWithAccount[]
+  /** Kontobindung eines Umschlags (Eingabefilter). */
+  bindingOf?: (envelopeId: string | null) => AccountBinding | null
   /** Waehrungscode fuer den MoneyInput. */
   currency: string
   /** Saving-State — true waehrend PATCH läuft, disablest Inputs + Save. */
@@ -71,11 +80,18 @@ function initialDraft(t: TransactionItem): EditDraft {
     description: t.description ?? '',
     date: fromDateInputValue(t.date),
     envelopeId: t.envelopeId ?? null,
+    accountId: t.accountId ?? null,
   }
 }
 
+const showAccount = computed(() => (props.accounts?.length ?? 0) > 0)
+const binding = computed(() => props.bindingOf?.(draft.value.envelopeId) ?? null)
+
 function toPayload(value: EditDraft): TransactionEditPayload {
-  return { ...value, date: toDateInputValue(value.date) }
+  const { accountId, ...rest } = value
+  // Ohne Feld kein `accountId` im PATCH: Der Server laesst das Konto dann,
+  // wie es ist, statt es zu leeren.
+  return { ...rest, date: toDateInputValue(value.date), ...(showAccount.value ? { accountId: accountId ?? null } : {}) }
 }
 
 // ADR-0005: Umschlaege nur anbieten, wenn das Entwurfs-Datum in ihre Laufzeit
@@ -120,7 +136,7 @@ function handleCancel() {
 </script>
 
 <template>
-  <div class="row-editor" :class="{ 'row-editor--saving': saving }">
+  <div class="row-editor" :class="{ 'row-editor--saving': saving, 'row-editor--account': showAccount }">
     <div class="row-editor__field row-editor__field--amount">
       <label :for="`tx-edit-amount-${transaction.id}`" class="row-editor__label">Betrag</label>
       <InputNumber
@@ -178,6 +194,20 @@ function handleCancel() {
       />
     </div>
 
+    <div v-if="showAccount" class="row-editor__field row-editor__field--account">
+      <label :for="`tx-edit-account-${transaction.id}`" class="row-editor__label">
+        {{ transaction.kind === 'income' ? 'Eingang auf' : 'Bezahlt mit' }}
+      </label>
+      <PaidWithSelect
+        v-model="draft.accountId"
+        :input-id="`tx-edit-account-${transaction.id}`"
+        :accounts="accounts ?? []"
+        :date="draft.date"
+        :binding="binding"
+        :disabled="saving"
+      />
+    </div>
+
     <p v-if="error" class="row-editor__error" role="alert">{{ error }}</p>
 
     <div class="row-editor__actions">
@@ -212,6 +242,10 @@ function handleCancel() {
   background: rgba(59, 130, 246, 0.08);
   border-left: 3px solid #60a5fa;
   border-radius: 0 12px 12px 0;
+}
+
+.row-editor--account {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) auto;
 }
 
 .row-editor--saving {
@@ -250,7 +284,8 @@ function handleCancel() {
 /* Mobile: stapelt die Felder vertikal, weil 5-spaltiges Grid auf
    < 768px zu eng wird. Cards haben dann volle Touch-Target-Höhe. */
 @media (max-width: 767px) {
-  .row-editor {
+  .row-editor,
+  .row-editor--account {
     grid-template-columns: 1fr;
     gap: 10px;
   }

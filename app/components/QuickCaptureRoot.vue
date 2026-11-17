@@ -17,6 +17,7 @@
 import { computed, ref, watch } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { todayDateHelperText } from '~/utils/form-helpers'
+import { accountErrorText } from '~/utils/account-options'
 
 const { isOpen, kind, envelopeId: prefillEnvelopeId, close, setKind, markSaved } = useQuickCapture()
 const { activeHousehold } = useHousehold()
@@ -54,11 +55,19 @@ const form = ref({
   envelopeId: '' as string,
   fromEnvelopeId: '' as string,
   toEnvelopeId: '' as string,
+  accountId: null as string | null,
 })
 const saving = ref(false)
 const errorMessage = ref<string | null>(null)
 
-const { envelopes, unassignedFree, ledgerSince, loaded: envelopesLoaded, failed: envelopesFailed, load: loadEnvelopes } = useEnvelopeOptions()
+const { envelopes, unassignedFree, ledgerSince, loaded: envelopesLoaded, failed: envelopesFailed, load: loadEnvelopes, bindingOf } = useEnvelopeOptions()
+// ADR-0006: "Bezahlt mit", sobald der Haushalt Konten hat.
+const { accounts, memberDefaultId, load: loadAccounts } = useAccountOptions()
+const hasAccounts = computed(() => accounts.value.length > 0)
+const binding = computed(() => bindingOf(form.value.envelopeId))
+// Neu je Oeffnen: Die Vorauswahl soll wieder greifen, auch wenn beim letzten
+// Mal jemand selbst gewaehlt hat.
+const paidWithKey = ref(0)
 // ADR-0005: Nur Umschlaege anbieten, die am Buchungsdatum Buchungen annehmen.
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
@@ -101,8 +110,9 @@ const transferBeforeLedger = computed(() =>
 const bookingBeforeLedger = computed(() => !isTransfer.value && beforeLedger.value && !form.value.envelopeId)
 
 function resetForm() {
-  form.value = { amount: null, description: '', date: new Date(), envelopeId: '', fromEnvelopeId: '', toEnvelopeId: '' }
+  form.value = { amount: null, description: '', date: new Date(), envelopeId: '', fromEnvelopeId: '', toEnvelopeId: '', accountId: null }
   errorMessage.value = null
+  paidWithKey.value += 1
 }
 
 watch(isOpen, (open) => {
@@ -112,6 +122,7 @@ watch(isOpen, (open) => {
     // Reset setzen, sonst wird er sofort wieder auf '' geleert.
     if (prefillEnvelopeId.value) form.value.envelopeId = prefillEnvelopeId.value
     loadEnvelopes(activeHouseholdId.value)
+    loadAccounts(activeHouseholdId.value)
   }
 })
 
@@ -146,6 +157,7 @@ function bookingRequest() {
       description: form.value.description,
       date: formatDateToInputString(form.value.date),
       envelopeId: form.value.envelopeId || null,
+      accountId: form.value.accountId,
     },
   }
 }
@@ -183,8 +195,7 @@ async function save() {
     close()
     resetForm()
   } catch (error: any) {
-    errorMessage.value =
-      error?.statusMessage || error?.message || 'Buchung konnte nicht gespeichert werden.'
+    errorMessage.value = accountErrorText(error) || 'Buchung konnte nicht gespeichert werden.'
   } finally {
     saving.value = false
   }
@@ -265,6 +276,24 @@ async function save() {
         option-label="label"
         option-value="value"
         placeholder="Zu verteilen"
+      />
+    </FormFieldRow>
+
+    <FormFieldRow
+      v-if="!isTransfer && hasAccounts"
+      :label="isExpense ? 'Bezahlt mit' : 'Eingang auf'"
+      html-for="quick-capture-account"
+      wide
+    >
+      <PaidWithSelect
+        :key="paidWithKey"
+        v-model="form.accountId"
+        input-id="quick-capture-account"
+        :accounts="accounts"
+        :date="form.date"
+        :binding="binding"
+        :member-default-id="memberDefaultId"
+        auto-default
       />
     </FormFieldRow>
 

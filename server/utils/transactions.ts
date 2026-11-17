@@ -125,7 +125,7 @@ async function assertBookingAccount(db: TransactionDb, householdId: string, acco
 /** Stichtag exklusiv wie bei Umschlaegen. */
 function assertAccountOpenOn(account: { closedAt: Date | null }, date: Date) {
   if (account.closedAt && dayKey(date) >= dayKey(account.closedAt)) {
-    throw createError({ statusCode: 400, statusMessage: 'Account is closed on this date.' })
+    throw createError({ statusCode: 400, statusMessage: 'Account is closed on this date.', data: { reason: 'account-closed' } })
   }
 }
 
