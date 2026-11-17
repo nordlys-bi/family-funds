@@ -117,6 +117,11 @@ export function createInMemoryDb(seed: Partial<InMemoryTables> = {}) {
         Object.assign(row, withoutUndefined(data))
         return { ...row }
       },
+      updateMany: async ({ where, data }: { where?: Row; data: Row }) => {
+        const matching = tables[name].filter((row) => matches(row, where))
+        for (const row of matching) Object.assign(row, withoutUndefined(data))
+        return { count: matching.length }
+      },
       delete: async ({ where }: { where: Row }) => {
         const index = tables[name].findIndex((item) => matches(item, where))
         if (index < 0) throw new Error(`in-memory-db: ${name} not found`)

@@ -219,6 +219,10 @@ onBeforeUnmount(() => {
           <i class="pi pi-user-plus nav-icon"></i>
           <span>Mitglieder</span>
         </NuxtLink>
+        <NuxtLink to="/households/accounts" class="nav-item nav-item--muted" active-class="nav-item-active">
+          <i class="pi pi-credit-card nav-icon"></i>
+          <span>Konten</span>
+        </NuxtLink>
         <NuxtLink to="/households/settings" class="nav-item nav-item--muted" active-class="nav-item-active">
           <i class="pi pi-cog nav-icon"></i>
           <span>Einstellungen</span>
