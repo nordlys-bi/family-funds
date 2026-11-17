@@ -4,10 +4,13 @@
  *
  *   saldo(k, t) = k.openingBalance, sobald t ≥ k.startDate
  *               + Σ Einnahmen (accountId = k) − Σ Ausgaben (accountId = k)
+ *               + Σ Uebertraege nach k − Σ Uebertraege von k
  *               jeweils mit Datum in [k.startDate, t]
  *
- * Kontouebertraege (#191) und Korrekturen (#192) kommen hier dazu, sobald es
- * sie gibt. Vergleiche laufen tagesgenau ueber `dayKey`.
+ * Ein Uebertrag (#191) aendert zwei Kontosalden und keinen Umschlag; die
+ * Summe aller Konten bleibt gleich, solange beide Konten am Tag laufen (das
+ * prueft `account-transfers.ts`). Korrekturen (#192) kommen hier dazu, sobald
+ * es sie gibt. Vergleiche laufen tagesgenau ueber `dayKey`.
  */
 import { dayKey } from './period'
 
@@ -25,11 +28,21 @@ export type AccountBooking = {
   date: Date
 }
 
+/** Kontouebertrag; hart geloescht, also nie gefiltert. */
+export type AccountTransferMovement = {
+  fromAccountId: string
+  toAccountId: string
+  amount: number
+  date: Date
+}
+
 export type AccountBalanceInputs = {
   /** Bereits auf `deletedAt: null` gefiltert. */
   expenses: AccountBooking[]
   /** Bereits auf `deletedAt: null` gefiltert. */
   incomes: AccountBooking[]
+  /** Eigener Name, damit Umschlag-Eingaben (`transfers`) nicht still passen. */
+  accountTransfers?: AccountTransferMovement[]
 }
 
 /**
@@ -54,5 +67,9 @@ export function computeAccountBalances(
   }
   for (const income of inputs.incomes) add(income, 1)
   for (const expense of inputs.expenses) add(expense, -1)
+  for (const transfer of inputs.accountTransfers ?? []) {
+    add({ accountId: transfer.toAccountId, amount: transfer.amount, date: transfer.date }, 1)
+    add({ accountId: transfer.fromAccountId, amount: transfer.amount, date: transfer.date }, -1)
+  }
   return balances
 }

@@ -10,7 +10,8 @@ import { computeEnvelopeBalances, computeUnassignedBalance, sumEnvelopeBalances 
 
 vi.mock('../prisma', () => ({ prisma: {} }))
 
-const { createAccount, deleteAccount, introduceAccounts, listAccounts, previewIntroduction, setDefaultAccount, setEnvelopeAccounts, updateAccount } = await import('../accounts')
+const { createAccount, deleteAccount, introduceAccounts, listAccounts, loadAccountHistory, previewIntroduction, setDefaultAccount, setEnvelopeAccounts, updateAccount } = await import('../accounts')
+const { createAccountTransfer, deleteAccountTransfer, updateAccountTransfer } = await import('../account-transfers')
 
 /** Lokales Datum, 12:00 — wie `parseDateInput`. */
 function day(year: number, month: number, date: number) {
@@ -60,7 +61,8 @@ function sides(tables: InMemoryTables, at: Date) {
   const ledger = { ledgerSince: household.ledgerSince, openingBalance: household.openingBalance, accounts: tables.account as never }
   const balances = computeEnvelopeBalances(tables.envelope as never, inputs, at)
   const unassigned = computeUnassignedBalance(ledger, tables.envelope as never, balances, inputs, at)
-  const accounts = [...computeAccountBalances(tables.account as never, inputs, at).values()].reduce((sum, value) => sum + value, 0)
+  const accountInputs = { expenses: active(tables.expenseTransaction), incomes: active(tables.incomeTransaction), accountTransfers: tables.accountTransfer } as never
+  const accounts = [...computeAccountBalances(tables.account as never, accountInputs, at).values()].reduce((sum, value) => sum + value, 0)
   return { envelopes: sumEnvelopeBalances(tables.envelope as never, balances, household.ledgerSince, at), unassigned, accounts }
 }
 
@@ -327,5 +329,91 @@ describe('setDefaultAccount', () => {
 
     await expect(setDefaultAccount(HH, 'sarah', 'old', ctx)).rejects.toMatchObject({ statusCode: 400, data: { reason: 'closed' } })
     await expect(setDefaultAccount(HH, 'sarah', 'nope', ctx)).rejects.toMatchObject({ statusCode: 404 })
+  })
+})
+
+/*
+ * Kontouebertraege (issue #191): zwei Kontosalden aendern sich, kein
+ * Umschlag, und die Invariante bleibt.
+ */
+describe('account transfers', () => {
+  async function introduced() {
+    const { tables, ctx } = setup()
+    await introduceAccounts(HH, NOV_20, [giro, cash], null, ctx)
+    const [giroId, cashId] = tables.account.map((row) => row.id as string)
+    return { tables, ctx, giroId: giroId!, cashId: cashId! }
+  }
+  const NOV_22 = day(2026, 11, 22)
+
+  it('changes two account balances and no envelope', async () => {
+    const { tables, ctx, giroId, cashId } = await introduced()
+    const before = sides(tables, NOV_22)
+
+    await createAccountTransfer(HH, 'jan', { fromAccountId: giroId, toAccountId: cashId, amount: 10000, date: NOV_22, note: 'Geld abheben' }, ctx)
+
+    expect(sides(tables, NOV_22)).toEqual(before)
+    const listed = await listAccounts(HH, { ...ctx, today: NOV_22 })
+    expect(listed.map((account) => [account.name, account.balance, account.hasBookings])).toEqual([
+      ['Girokonto', 400000 - 10000, true],
+      ['Geldbeutel', 5000 + 10000, true],
+    ])
+  })
+
+  it('rejects the same account, foreign accounts and days the accounts do not run', async () => {
+    const { tables, ctx, giroId, cashId } = await introduced()
+    tables.account.push({ id: 'old', householdId: HH, name: 'Alt', type: 'SAVINGS', openingBalance: 0, startDate: NOV_20, closedAt: NOV_22 })
+    const transfer = (from: string, to: string, date: Date) => createAccountTransfer(HH, 'jan', { fromAccountId: from, toAccountId: to, amount: 100, date, note: null }, ctx)
+
+    await expect(transfer(giroId, giroId, NOV_22)).rejects.toMatchObject({ statusCode: 400, data: { reason: 'same-account' } })
+    await expect(transfer(giroId, 'nope', NOV_22)).rejects.toMatchObject({ statusCode: 404 })
+    await expect(transfer(giroId, cashId, day(2026, 11, 19))).rejects.toMatchObject({ data: { reason: 'before-account-start' } })
+    await expect(transfer(giroId, 'old', NOV_22)).rejects.toMatchObject({ data: { reason: 'account-closed' } })
+    expect(tables.accountTransfer).toEqual([])
+  })
+
+  it('updates amount, date and note, checks the new date, and deletes', async () => {
+    const { tables, ctx, giroId, cashId } = await introduced()
+    const created = await createAccountTransfer(HH, 'jan', { fromAccountId: giroId, toAccountId: cashId, amount: 10000, date: NOV_22, note: null }, ctx)
+
+    await updateAccountTransfer(HH, created.id, { amount: 5000, note: 'weniger' }, ctx)
+    expect(tables.accountTransfer[0]).toMatchObject({ amount: 5000, note: 'weniger', date: NOV_22 })
+    await expect(updateAccountTransfer(HH, created.id, { date: day(2026, 11, 19) }, ctx)).rejects.toMatchObject({ data: { reason: 'before-account-start' } })
+
+    await deleteAccountTransfer(HH, created.id, ctx)
+    expect(tables.accountTransfer).toEqual([])
+    await expect(deleteAccountTransfer(HH, created.id, ctx)).rejects.toMatchObject({ statusCode: 404 })
+  })
+
+  it('keeps accounts with transfers from being deleted or closed before them', async () => {
+    const { ctx, giroId, cashId } = await introduced()
+    await createAccountTransfer(HH, 'jan', { fromAccountId: giroId, toAccountId: cashId, amount: 100, date: NOV_22, note: null }, ctx)
+
+    await expect(deleteAccount(HH, cashId, ctx)).rejects.toMatchObject({ data: { reason: 'has-bookings' } })
+    await expect(updateAccount(HH, cashId, { closedAt: NOV_22 }, ctx)).rejects.toMatchObject({ data: { reason: 'bookings-after-close' } })
+    await expect(updateAccount(HH, cashId, { closedAt: day(2026, 11, 23) }, ctx)).resolves.toMatchObject({ closedAt: day(2026, 11, 23) })
+  })
+})
+
+describe('loadAccountHistory', () => {
+  it('lists opening balance, bookings and transfers with the balance after each, newest first', async () => {
+    const { tables, ctx } = setup()
+    await introduceAccounts(HH, NOV_20, [giro, cash], null, ctx)
+    const [giroId, cashId] = tables.account.map((row) => row.id as string)
+    tables.expenseTransaction.push(
+      { id: 'rewe', householdId: HH, envelopeId: 'kids', accountId: cashId, amount: 2000, date: day(2026, 11, 21), deletedAt: null, createdAt: day(2026, 11, 21), description: 'Rewe' },
+      { id: 'gone', householdId: HH, envelopeId: null, accountId: cashId, amount: 999, date: day(2026, 11, 21), deletedAt: day(2026, 11, 21), createdAt: day(2026, 11, 21), description: 'weg' },
+    )
+    tables.accountTransfer.push({ id: 't1', householdId: HH, fromAccountId: giroId, toAccountId: cashId, amount: 10000, date: day(2026, 11, 22), note: 'abheben', createdAt: day(2026, 11, 22) })
+
+    const { account, entries } = await loadAccountHistory(HH, cashId!, { ...ctx, today: day(2026, 11, 22) })
+
+    expect(account.balance).toBe(5000 - 2000 + 10000)
+    expect(entries.map((entry) => [entry.type, entry.id, entry.amount, entry.balance, entry.counterpartId])).toEqual([
+      ['transfer', 't1', 10000, 13000, giroId],
+      ['expense', 'rewe', -2000, 3000, null],
+      ['opening', null, 5000, 5000, null],
+    ])
+    const giroHistory = await loadAccountHistory(HH, giroId!, { ...ctx, today: day(2026, 11, 22) })
+    expect(giroHistory.entries[0]).toMatchObject({ type: 'transfer', amount: -10000, balance: 390000, counterpartId: cashId })
   })
 })

@@ -15,11 +15,12 @@
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { QuickCaptureKind } from '~/composables/useQuickCapture'
 import { useToast } from 'primevue/usetoast'
 import { todayDateHelperText } from '~/utils/form-helpers'
-import { accountErrorText } from '~/utils/account-options'
+import { accountErrorText, isAccountBookableOn } from '~/utils/account-options'
 
-const { isOpen, kind, envelopeId: prefillEnvelopeId, close, setKind, markSaved } = useQuickCapture()
+const { isOpen, kind, envelopeId: prefillEnvelopeId, accountId: prefillAccountId, close, setKind, markSaved } = useQuickCapture()
 const { activeHousehold } = useHousehold()
 
 // PrimeVue useToast wirft ohne ToastService-Provide (SSR / Tests). Der
@@ -37,15 +38,20 @@ const currencyCode = computed(() => activeHousehold.value?.currency ?? 'EUR')
 
 const isExpense = computed(() => kind.value === 'expense')
 const isTransfer = computed(() => kind.value === 'transfer')
-const header = computed(() => ({ expense: 'Neue Ausgabe', income: 'Neue Einnahme', transfer: 'Neue Umbuchung' })[kind.value])
-const submitLabel = computed(() => ({ expense: 'Ausgabe anlegen', income: 'Einnahme anlegen', transfer: 'Umbuchen' })[kind.value])
+const isAccountTransfer = computed(() => kind.value === 'accountTransfer')
+// Ausgabe und Einnahme: die Felder fuer Umschlag und "Bezahlt mit".
+const isBooking = computed(() => kind.value === 'expense' || kind.value === 'income')
+const header = computed(() => ({ expense: 'Neue Ausgabe', income: 'Neue Einnahme', transfer: 'Neue Umbuchung', accountTransfer: 'Neuer Kontoübertrag' })[kind.value])
+const submitLabel = computed(() => ({ expense: 'Ausgabe anlegen', income: 'Einnahme anlegen', transfer: 'Umbuchen', accountTransfer: 'Übertragen' })[kind.value])
 const submitSeverity = computed<'success'>(() => 'success')
 
-const kindOptions = [
+// "Kontoübertrag" erst mit Konten (ADR-0006).
+const kindOptions = computed(() => [
   { label: 'Ausgabe', value: 'expense' as const },
   { label: 'Einnahme', value: 'income' as const },
   { label: 'Umbuchung', value: 'transfer' as const },
-]
+  ...(hasAccounts.value ? [{ label: 'Kontoübertrag', value: 'accountTransfer' as const }] : []),
+])
 
 // '' ist in allen drei Umschlag-Feldern "Zu verteilen".
 const form = ref({
@@ -56,18 +62,35 @@ const form = ref({
   fromEnvelopeId: '' as string,
   toEnvelopeId: '' as string,
   accountId: null as string | null,
+  fromAccountId: null as string | null,
+  toAccountId: null as string | null,
 })
 const saving = ref(false)
 const errorMessage = ref<string | null>(null)
 
 const { envelopes, unassignedFree, ledgerSince, loaded: envelopesLoaded, failed: envelopesFailed, load: loadEnvelopes, bindingOf } = useEnvelopeOptions()
 // ADR-0006: "Bezahlt mit", sobald der Haushalt Konten hat.
-const { accounts, memberDefaultId, load: loadAccounts } = useAccountOptions()
+const { accounts, memberDefaultId, loaded: accountsLoaded, load: loadAccounts } = useAccountOptions()
 const hasAccounts = computed(() => accounts.value.length > 0)
 const binding = computed(() => bindingOf(form.value.envelopeId))
 // Neu je Oeffnen: Die Vorauswahl soll wieder greifen, auch wenn beim letzten
 // Mal jemand selbst gewaehlt hat.
 const paidWithKey = ref(0)
+
+// Kontoübertrag (issue #191): beide Konten muessen am Tag laufen.
+const transferAccountOptions = computed(() =>
+  accounts.value
+    .filter((account) => !form.value.date || isAccountBookableOn(account, form.value.date))
+    .map((account) => ({ label: account.name, value: account.id })),
+)
+// Erst nach dem Laden: Vorher ist die Liste leer, und ein vorbelegtes
+// Von-Konto (Kontoseite) wuerde sofort wieder geleert.
+watch(transferAccountOptions, (options) => {
+  if (!accountsLoaded.value) return
+  const isOffered = (id: string | null) => !id || options.some((option) => option.value === id)
+  if (!isOffered(form.value.fromAccountId)) form.value.fromAccountId = null
+  if (!isOffered(form.value.toAccountId)) form.value.toAccountId = null
+})
 // ADR-0005: Nur Umschlaege anbieten, die am Buchungsdatum Buchungen annehmen.
 const envelopeSelectOptions = computed(() => [
   { label: 'Zu verteilen', value: '' },
@@ -107,10 +130,10 @@ const ledgerStartLabel = computed(() => formatPlanningDate(ledgerSince.value))
 const transferBeforeLedger = computed(() =>
   isTransfer.value && beforeLedger.value && (!form.value.fromEnvelopeId || !form.value.toEnvelopeId),
 )
-const bookingBeforeLedger = computed(() => !isTransfer.value && beforeLedger.value && !form.value.envelopeId)
+const bookingBeforeLedger = computed(() => isBooking.value && beforeLedger.value && !form.value.envelopeId)
 
 function resetForm() {
-  form.value = { amount: null, description: '', date: new Date(), envelopeId: '', fromEnvelopeId: '', toEnvelopeId: '', accountId: null }
+  form.value = { amount: null, description: '', date: new Date(), envelopeId: '', fromEnvelopeId: '', toEnvelopeId: '', accountId: null, fromAccountId: null, toAccountId: null }
   errorMessage.value = null
   paidWithKey.value += 1
 }
@@ -121,12 +144,13 @@ watch(isOpen, (open) => {
     // Vorausgewaehlter Umschlag (z. B. von einer Dashboard-Karte) NACH dem
     // Reset setzen, sonst wird er sofort wieder auf '' geleert.
     if (prefillEnvelopeId.value) form.value.envelopeId = prefillEnvelopeId.value
+    if (prefillAccountId.value) form.value.fromAccountId = prefillAccountId.value
     loadEnvelopes(activeHouseholdId.value)
     loadAccounts(activeHouseholdId.value)
   }
 })
 
-function onKindChange(value: 'expense' | 'income' | 'transfer' | null) {
+function onKindChange(value: QuickCaptureKind | null) {
   if (!value) return
   setKind(value)
 }
@@ -137,6 +161,18 @@ function onDialogVisible(value: boolean) {
 
 function bookingRequest() {
   const householdPath = `/api/households/${activeHouseholdId.value}`
+  if (isAccountTransfer.value) {
+    return {
+      url: `${householdPath}/account-transfers`,
+      body: {
+        fromAccountId: form.value.fromAccountId,
+        toAccountId: form.value.toAccountId,
+        amount: form.value.amount,
+        note: form.value.description,
+        date: formatDateToInputString(form.value.date),
+      },
+    }
+  }
   if (isTransfer.value) {
     return {
       url: `${householdPath}/transfers`,
@@ -164,6 +200,7 @@ function bookingRequest() {
 
 function savedToast() {
   if (isTransfer.value) return { summary: 'Umbuchung erfasst', detail: 'Umbuchung gespeichert.' }
+  if (isAccountTransfer.value) return { summary: 'Kontoübertrag erfasst', detail: 'Übertrag gespeichert.' }
   const label = isExpense.value ? 'Ausgabe' : 'Einnahme'
   return { summary: `${label} erfasst`, detail: `${form.value.description || label} gespeichert.` }
 }
@@ -180,6 +217,16 @@ async function save() {
   if (isTransfer.value && form.value.fromEnvelopeId === form.value.toEnvelopeId) {
     errorMessage.value = 'Quelle und Ziel müssen sich unterscheiden.'
     return
+  }
+  if (isAccountTransfer.value) {
+    if (!form.value.fromAccountId || !form.value.toAccountId) {
+      errorMessage.value = 'Bitte beide Konten wählen.'
+      return
+    }
+    if (form.value.fromAccountId === form.value.toAccountId) {
+      errorMessage.value = 'Von- und Nach-Konto müssen sich unterscheiden.'
+      return
+    }
   }
   if (transferBeforeLedger.value) {
     errorMessage.value = `„Zu verteilen“ startet am ${ledgerStartLabel.value}. Bitte ein späteres Datum wählen.`
@@ -240,7 +287,32 @@ async function save() {
       />
     </FormFieldRow>
 
-    <template v-if="isTransfer">
+    <template v-if="isAccountTransfer">
+      <FormFieldRow label="Von" html-for="quick-capture-from-account" wide>
+        <Select
+          input-id="quick-capture-from-account"
+          v-model="form.fromAccountId"
+          :options="transferAccountOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Konto wählen"
+          fluid
+        />
+      </FormFieldRow>
+      <FormFieldRow label="Nach" html-for="quick-capture-to-account" wide>
+        <Select
+          input-id="quick-capture-to-account"
+          v-model="form.toAccountId"
+          :options="transferAccountOptions"
+          option-label="label"
+          option-value="value"
+          placeholder="Konto wählen"
+          fluid
+        />
+      </FormFieldRow>
+      <small class="form-field-helper">Ändert nur, wo das Geld liegt. Umschläge bleiben, wie sie sind.</small>
+    </template>
+    <template v-else-if="isTransfer">
       <FormFieldRow label="Von" html-for="quick-capture-from" wide>
         <EnvelopeSelect
           id="quick-capture-from"
@@ -280,7 +352,7 @@ async function save() {
     </FormFieldRow>
 
     <FormFieldRow
-      v-if="!isTransfer && hasAccounts"
+      v-if="isBooking && hasAccounts"
       :label="isExpense ? 'Bezahlt mit' : 'Eingang auf'"
       html-for="quick-capture-account"
       wide
@@ -304,11 +376,11 @@ async function save() {
       „Zu verteilen“ startet am {{ ledgerStartLabel }}. Diese Buchung zählt nur in den Auswertungen.
     </Message>
 
-    <FormFieldRow :label="isTransfer ? 'Notiz' : 'Beschreibung'" html-for="quick-capture-description" wide>
+    <FormFieldRow :label="isBooking ? 'Beschreibung' : 'Notiz'" html-for="quick-capture-description" wide>
       <InputText
         id="quick-capture-description"
         v-model="form.description"
-        :placeholder="{ expense: 'z. B. Einkauf bei Rewe', income: 'z. B. Gehalt', transfer: 'z. B. Rest vom Monat' }[kind]"
+        :placeholder="{ expense: 'z. B. Einkauf bei Rewe', income: 'z. B. Gehalt', transfer: 'z. B. Rest vom Monat', accountTransfer: 'z. B. Geld abheben' }[kind]"
       />
     </FormFieldRow>
 
@@ -330,6 +402,16 @@ async function save() {
   display: flex;
   justify-content: center;
   margin-bottom: 0.25rem;
+}
+
+/* Mit "Kontoübertrag" sind es vier Arten; nebeneinander passen sie auf dem
+   Handy nicht in den Dialog. Dort zwei mal zwei. */
+@media (max-width: 520px) {
+  .quick-capture__kind :deep(.p-selectbutton) {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
 }
 
 .quick-capture__error {

@@ -52,4 +52,17 @@ describe('computeAccountBalances', () => {
     const balances = computeAccountBalances([account('giro')], { incomes: [{ accountId: 'other', amount: 500, date: day(2026, 12, 2) }], expenses: [] }, day(2026, 12, 31))
     expect(balances.get('giro')).toBe(0)
   })
+
+  it('moves a transfer between two accounts without changing their sum (#191)', () => {
+    const accounts = [account('giro', { openingBalance: 240000 }), account('cash', { openingBalance: 8000 })]
+    const transfers = [
+      { fromAccountId: 'giro', toAccountId: 'cash', amount: 10000, date: day(2026, 12, 5) },
+      { fromAccountId: 'cash', toAccountId: 'giro', amount: 500, date: day(2027, 1, 2) },
+    ]
+    const at = (date: Date) => computeAccountBalances(accounts, { incomes: [], expenses: [], accountTransfers: transfers }, date)
+
+    expect(at(day(2026, 12, 4))).toEqual(new Map([['giro', 240000], ['cash', 8000]]))
+    expect(at(day(2026, 12, 31))).toEqual(new Map([['giro', 230000], ['cash', 18000]]))
+    expect([...at(day(2027, 1, 31)).values()].reduce((sum, value) => sum + value, 0)).toBe(248000)
+  })
 })

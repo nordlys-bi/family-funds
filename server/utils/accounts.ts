@@ -23,6 +23,7 @@ import { parseSignedMoney } from './envelope-lifecycle'
 type AccountsDb = Pick<
   PrismaClient,
   | 'account'
+  | 'accountTransfer'
   | 'envelopeAccount'
   | 'householdMember'
   | 'household'
@@ -141,13 +142,17 @@ export async function listAccounts(householdId: string, { db = prisma, today = n
   // Der Fremdschluessel haelt sie fest, Loeschen ginge sonst schief.
   const select = { accountId: true, amount: true, date: true, deletedAt: true } as const
   const where = { householdId, accountId: { not: null }, date: { gte: from } }
-  const [expenses, incomes] = await Promise.all([
+  const [expenses, incomes, transfers] = await Promise.all([
     db.expenseTransaction.findMany({ where, select }),
     db.incomeTransaction.findMany({ where, select }),
+    db.accountTransfer.findMany({ where: { householdId }, select: { fromAccountId: true, toAccountId: true, amount: true, date: true } }),
   ])
   const active = <T extends { deletedAt: Date | null }>(rows: T[]) => rows.filter((row) => row.deletedAt === null)
-  const balances = computeAccountBalances(accounts, { expenses: active(expenses), incomes: active(incomes) }, today)
-  const withBookings = new Set([...expenses, ...incomes].map((row) => row.accountId))
+  const balances = computeAccountBalances(accounts, { expenses: active(expenses), incomes: active(incomes), accountTransfers: transfers }, today)
+  const withBookings = new Set([
+    ...[...expenses, ...incomes].map((row) => row.accountId),
+    ...transfers.flatMap((transfer) => [transfer.fromAccountId, transfer.toAccountId]),
+  ])
 
   return accounts.map((account) => ({
     ...account,
@@ -274,8 +279,11 @@ export async function updateAccount(householdId: string, id: string, changes: Ac
     if (dayKey(changes.closedAt) <= dayKey(account.startDate)) {
       throw createError({ statusCode: 400, statusMessage: 'Closing date must be after the start of the account.', data: { reason: 'close-before-start' } })
     }
-    const where = { householdId, accountId: id, deletedAt: null, date: { gte: startOfDay(changes.closedAt) } }
-    const later = (await db.expenseTransaction.count({ where })) + (await db.incomeTransaction.count({ where }))
+    const since = { gte: startOfDay(changes.closedAt) }
+    const where = { householdId, accountId: id, deletedAt: null, date: since }
+    const later = (await db.expenseTransaction.count({ where }))
+      + (await db.incomeTransaction.count({ where }))
+      + (await db.accountTransfer.count({ where: { householdId, OR: [{ fromAccountId: id }, { toAccountId: id }], date: since } }))
     if (later > 0) {
       throw createError({ statusCode: 409, statusMessage: 'The account has bookings from this date on.', data: { reason: 'bookings-after-close', count: later } })
     }
@@ -359,6 +367,90 @@ export async function setDefaultAccount(
   return { defaultAccountId: accountId }
 }
 
+export type AccountHistoryEntry = {
+  type: 'opening' | 'income' | 'expense' | 'transfer'
+  /** Buchung oder Uebertrag; null beim Anfangsbestand. */
+  id: string | null
+  date: Date
+  /** Wirkung auf den Saldo: + erhoeht, − senkt. */
+  amount: number
+  /** Beschreibung der Buchung oder Notiz des Uebertrags. */
+  text: string | null
+  envelopeName: string | null
+  /** Gegenkonto eines Uebertrags. */
+  counterpartId: string | null
+  counterpartName: string | null
+  userName: string | null
+  /** Saldo nach dieser Bewegung. */
+  balance: number
+}
+
+type PersonRef = { displayName: string | null; email: string } | null | undefined
+const personName = (user: PersonRef) => (user ? user.displayName || user.email : null)
+
+/**
+ * Kontoverlauf (issue #191): Anfangsbestand, Einnahmen, Ausgaben und
+ * Uebertraege mit dem Saldo danach, neueste zuerst. Gleiche Regeln wie
+ * `computeAccountBalances`: nur aktive Buchungen ab dem Start des Kontos.
+ * Am selben Tag zaehlt die Reihenfolge der Erfassung.
+ */
+export async function loadAccountHistory(householdId: string, accountId: string, { db = prisma, today = new Date() }: AccountsContext = {}) {
+  const account = await findAccount(db, householdId, accountId)
+  const from = startOfDay(account.startDate)
+  const bookingSelect = {
+    id: true, amount: true, date: true, description: true, createdAt: true,
+    envelope: { select: { name: true } },
+    user: { select: { displayName: true, email: true } },
+  } as const
+  const bookingWhere = { householdId, accountId, deletedAt: null, date: { gte: from } }
+  const [expenses, incomes, transfers] = await Promise.all([
+    db.expenseTransaction.findMany({ where: bookingWhere, select: bookingSelect }),
+    db.incomeTransaction.findMany({ where: bookingWhere, select: bookingSelect }),
+    db.accountTransfer.findMany({
+      where: { householdId, OR: [{ fromAccountId: accountId }, { toAccountId: accountId }], date: { gte: from } },
+      include: {
+        fromAccount: { select: { name: true } },
+        toAccount: { select: { name: true } },
+        user: { select: { displayName: true, email: true } },
+      },
+    }),
+  ])
+
+  type Movement = Omit<AccountHistoryEntry, 'balance'> & { createdAt: Date }
+  const booking = (type: 'income' | 'expense', sign: 1 | -1) => (row: (typeof expenses)[number]): Movement => ({
+    type, id: row.id, date: row.date, amount: sign * row.amount, text: row.description,
+    envelopeName: row.envelope?.name ?? null, counterpartId: null, counterpartName: null,
+    userName: personName(row.user), createdAt: row.createdAt,
+  })
+  const movements: Movement[] = [
+    ...incomes.map(booking('income', 1)),
+    ...expenses.map(booking('expense', -1)),
+    ...transfers.map((row): Movement => {
+      const outgoing = row.fromAccountId === accountId
+      return {
+        type: 'transfer', id: row.id, date: row.date, amount: outgoing ? -row.amount : row.amount, text: row.note,
+        envelopeName: null,
+        counterpartId: outgoing ? row.toAccountId : row.fromAccountId,
+        counterpartName: (outgoing ? row.toAccount?.name : row.fromAccount?.name) ?? null,
+        userName: personName(row.user), createdAt: row.createdAt,
+      }
+    }),
+  ].sort((left, right) => dayKey(left.date) - dayKey(right.date) || left.createdAt.getTime() - right.createdAt.getTime())
+
+  let balance = account.openingBalance
+  const entries: AccountHistoryEntry[] = [{
+    type: 'opening', id: null, date: account.startDate, amount: account.openingBalance, text: null,
+    envelopeName: null, counterpartId: null, counterpartName: null, userName: null, balance,
+  }]
+  for (const { createdAt: _createdAt, ...movement } of movements) {
+    balance += movement.amount
+    entries.push({ ...movement, balance })
+  }
+  const todayKey = dayKey(today)
+  const current = [...entries].reverse().find((entry) => dayKey(entry.date) <= todayKey)?.balance ?? 0
+  return { account: { ...account, balance: current }, entries: entries.reverse() }
+}
+
 /**
  * Nur ein Konto ohne Buchungen, auch ohne geloeschte (der Fremdschluessel
  * haelt sie fest). Das letzte Konto bleibt: Ohne Konten rechnete der
@@ -367,7 +459,9 @@ export async function setDefaultAccount(
 export async function deleteAccount(householdId: string, id: string, { db = prisma }: AccountsContext = {}) {
   await findAccount(db, householdId, id)
   const where = { householdId, accountId: id }
-  const bookings = (await db.expenseTransaction.count({ where })) + (await db.incomeTransaction.count({ where }))
+  const bookings = (await db.expenseTransaction.count({ where }))
+    + (await db.incomeTransaction.count({ where }))
+    + (await db.accountTransfer.count({ where: { householdId, OR: [{ fromAccountId: id }, { toAccountId: id }] } }))
   if (bookings > 0) {
     throw createError({ statusCode: 409, statusMessage: 'The account has bookings.', data: { reason: 'has-bookings' } })
   }
