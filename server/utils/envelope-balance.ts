@@ -12,12 +12,17 @@
  *                 sobald t ≥ max(v.closedAt, u.balanceSince)
  *               jeweils mit Datum in [u.balanceSince, t]
  *
- *   saldo(Zu verteilen, t) = openingBalance
+ *   saldo(Zu verteilen, t) = Startwert
+ *               + Σ Anfangsbestaende spaeter gestarteter Konten (ADR-0006)
  *               + Σ Einnahmen ohne Umschlag − Σ Ausgaben ohne Umschlag
  *               + Σ Umbuchungen nach "Zu verteilen" − Σ Umbuchungen daraus
  *               + Σ saldo(v, t) aller in "Zu verteilen" geschlossenen v,
  *                 sobald t ≥ max(v.closedAt, ledgerSince)
  *               jeweils mit Datum in [ledgerSince, t]
+ *
+ * Startwert ist ohne Konten `openingBalance` (ADR-0005). Mit Konten wird er
+ * abgeleitet (ADR-0006): Σ Anfangsbestaende der Konten ab `ledgerSince` −
+ * Σ Umschlaege zum Stichtag. Dann gilt Σ Umschlaege + Zu verteilen = Σ Konten.
  *
  * Vergleiche laufen tagesgenau ueber `dayKey`.
  */
@@ -34,6 +39,8 @@ export type BalanceEnvelope = {
 /** Ausgabe oder Einnahme; `envelopeId` null = "Zu verteilen". */
 export type EnvelopeBooking = {
   envelopeId: string | null
+  /** ADR-0006, nur fuer Kontosalden (`account-balance.ts`). */
+  accountId?: string | null
   amount: number
   date: Date
 }
@@ -66,9 +73,17 @@ export type EnvelopeBalance = {
   carriedOver: number
 }
 
+export type LedgerAccount = {
+  openingBalance: number
+  startDate: Date
+}
+
 export type LedgerStart = {
   ledgerSince: Date
+  /** Nur ohne Konten gelesen. */
   openingBalance: number
+  /** ADR-0006: alle Konten des Haushalts, auch geschlossene. */
+  accounts?: LedgerAccount[]
 }
 
 function emptyBalance(): EnvelopeBalance {
@@ -171,6 +186,64 @@ export function computeEnvelopeBalances(
 }
 
 /**
+ * Summe der Umschlagsalden zum Zeitpunkt `at`, ohne Doppelzaehlung: Ein
+ * geschlossener Umschlag zaehlt nur, solange sein Endsaldo noch nicht in sein
+ * Ziel geflossen ist (ADR-0005, Invariante). Ein Ziel, das nicht in
+ * `envelopes` steht, gilt als nicht erreicht.
+ */
+export function sumEnvelopeBalances(
+  envelopes: BalanceEnvelope[],
+  balances: Map<string, EnvelopeBalance>,
+  ledgerSince: Date,
+  at: Date,
+): number {
+  const atKey = dayKey(at)
+  const byId = new Map(envelopes.map((envelope) => [envelope.id, envelope]))
+  let total = 0
+  for (const envelope of envelopes) {
+    if (envelope.closedAt) {
+      const target = envelope.carryoverToEnvelopeId === null ? null : byId.get(envelope.carryoverToEnvelopeId)
+      const flowed = target === null
+        ? atKey >= carryoverInflowKey(envelope, ledgerSince)
+        : target !== undefined && atKey >= carryoverInflowKey(envelope, target.balanceSince)
+      if (flowed) continue
+    }
+    total += balances.get(envelope.id)?.balance ?? 0
+  }
+  return total
+}
+
+/** Letzter Tag vor `date` (lokal, 12:00). */
+function dayBefore(date: Date) {
+  const value = new Date(date)
+  value.setDate(value.getDate() - 1)
+  value.setHours(12, 0, 0, 0)
+  return value
+}
+
+/**
+ * Startwert von "Zu verteilen" am Stichtag. Ohne Konten der eingegebene
+ * `openingBalance`. Mit Konten abgeleitet (ADR-0006): das Geld der Konten,
+ * die bis `ledgerSince` starten, abzueglich dessen, was zum Ende des Vortags
+ * schon in Umschlaegen steckt. Ist mehr verteilt, als auf den Konten liegt,
+ * ist der Wert negativ — gewollt, das ist der tatsaechliche Stand.
+ */
+export function computeUnassignedOpening(
+  ledger: LedgerStart,
+  envelopes: BalanceEnvelope[],
+  inputs: EnvelopeBalanceInputs,
+): number {
+  if (!ledger.accounts?.length) return ledger.openingBalance
+  const sinceKey = dayKey(ledger.ledgerSince)
+  const accountsAtStart = ledger.accounts
+    .filter((account) => dayKey(account.startDate) <= sinceKey)
+    .reduce((sum, account) => sum + account.openingBalance, 0)
+  const before = dayBefore(ledger.ledgerSince)
+  const envelopesAtStart = sumEnvelopeBalances(envelopes, computeEnvelopeBalances(envelopes, inputs, before), ledger.ledgerSince, before)
+  return accountsAtStart - envelopesAtStart
+}
+
+/**
  * Saldo von "Zu verteilen" zum Zeitpunkt `at`. `envelopes` und `balances`
  * werden fuer die in "Zu verteilen" geschlossenen Umschlaege gebraucht.
  */
@@ -188,7 +261,13 @@ export function computeUnassignedBalance(
     return key >= sinceKey && key <= atKey
   }
 
-  let balance = ledger.openingBalance
+  let balance = computeUnassignedOpening(ledger, envelopes, inputs)
+  // ADR-0006: Ein spaeter gestartetes Konto bringt Geld mit, von dem der
+  // Haushalt bisher nichts wusste; es ist frei, bis es verteilt wird.
+  for (const account of ledger.accounts ?? []) {
+    const startKey = dayKey(account.startDate)
+    if (startKey > sinceKey && startKey <= atKey) balance += account.openingBalance
+  }
   for (const income of inputs.incomes) {
     if (income.envelopeId === null && inWindow(income.date)) balance += income.amount
   }

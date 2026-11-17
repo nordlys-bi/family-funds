@@ -73,7 +73,7 @@ beforeEach(() => {
 describe('POST /transactions', () => {
   it('parst Betrag, Datum und Texte und antwortet im Envelope', async () => {
     const response = await postHandler(bodyEvent('POST', {
-      kind: 'income', amount: '25,50', date: '2026-11-03', description: '  Gehalt ', envelopeId: ' env-1 ',
+      kind: 'income', amount: '25,50', date: '2026-11-03', description: '  Gehalt ', envelopeId: ' env-1 ', accountId: ' giro ',
     }))
 
     expect(writeMocks.createTransaction).toHaveBeenCalledWith(HH_ID, 'user-1', 'income', {
@@ -82,14 +82,15 @@ describe('POST /transactions', () => {
       description: 'Gehalt',
       envelopeId: 'env-1',
       planId: null,
+      accountId: 'giro',
     })
     expect(response).toEqual({ data: { kind: 'income', item: { id: 'tx-new' } } })
   })
 
   it('leere Felder werden null ("Zu verteilen", keine Notiz)', async () => {
-    await postHandler(bodyEvent('POST', { kind: 'expense', amount: 10, date: '2026-11-03', description: ' ', envelopeId: '' }))
+    await postHandler(bodyEvent('POST', { kind: 'expense', amount: 10, date: '2026-11-03', description: ' ', envelopeId: '', accountId: '' }))
 
-    expect(writeMocks.createTransaction.mock.lastCall![3]).toMatchObject({ description: null, envelopeId: null, planId: null })
+    expect(writeMocks.createTransaction.mock.lastCall![3]).toMatchObject({ description: null, envelopeId: null, planId: null, accountId: null })
   })
 
   it.each([
@@ -134,6 +135,7 @@ describe('PATCH /transactions', () => {
       date: undefined,
       description: undefined,
       envelopeId: undefined,
+      accountId: undefined,
     })
     expect(response).toEqual({ data: { kind: 'expense', item: { id: TX_ID } } })
   })
@@ -142,6 +144,14 @@ describe('PATCH /transactions', () => {
     await patchHandler(bodyEvent('PATCH', { kind: 'income', id: TX_ID, envelopeId: null, description: null }))
 
     expect(writeMocks.updateTransaction.mock.lastCall![3]).toMatchObject({ envelopeId: null, description: null })
+  })
+
+  it('unterscheidet "Konto nicht geaendert" von "kein Konto"', async () => {
+    await patchHandler(bodyEvent('PATCH', { kind: 'expense', id: TX_ID, accountId: ' cash ' }))
+    expect(writeMocks.updateTransaction.mock.lastCall![3]).toMatchObject({ accountId: 'cash' })
+
+    await patchHandler(bodyEvent('PATCH', { kind: 'expense', id: TX_ID, accountId: null }))
+    expect(writeMocks.updateTransaction.mock.lastCall![3]).toMatchObject({ accountId: null })
   })
 
   it.each([

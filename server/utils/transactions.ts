@@ -7,8 +7,8 @@
  * Umbuchungen gehoeren bewusst nicht hierher. Sie teilen mit Buchungen nur die
  * Laufzeit-Pruefung des Umschlags (`assertEnvelopeAcceptsBooking`).
  *
- * Stufe 2 (reelle Konten) aendert dann nur diese Datei: Jede Buchung nennt
- * ein Konto, gleich auf welchem Weg sie entsteht.
+ * Stufe 2 (ADR-0006): Jede Buchung ab `ledgerSince` nennt ein Konto, sobald
+ * der Haushalt Konten hat, gleich auf welchem Weg sie entsteht.
  */
 import { createError } from 'h3'
 import type { PrismaClient } from '@prisma/client'
@@ -30,7 +30,7 @@ export function assertTransactionKind(value: unknown): TransactionKind {
   })
 }
 
-type TransactionDb = Pick<PrismaClient, 'envelope' | 'expenseTransaction' | 'incomeTransaction' | 'fixedCostPlan' | 'incomePlan'>
+type TransactionDb = Pick<PrismaClient, 'envelope' | 'account' | 'household' | 'expenseTransaction' | 'incomeTransaction' | 'fixedCostPlan' | 'incomePlan'>
 
 export type TransactionContext = {
   db?: TransactionDb
@@ -45,6 +45,8 @@ export type TransactionValues = {
   envelopeId: string | null
   /** Fixkosten- bzw. Einnahmenplan, je nach `kind`. */
   planId: string | null
+  /** ADR-0006: "Bezahlt mit". */
+  accountId: string | null
 }
 
 /** `undefined` = nicht geaendert, bei `envelopeId` ist `null` "Zu verteilen". */
@@ -53,6 +55,7 @@ export type TransactionChanges = {
   date?: Date
   description?: string | null
   envelopeId?: string | null
+  accountId?: string | null
 }
 
 const notFoundMessage: Record<TransactionKind, string> = {
@@ -99,6 +102,34 @@ async function assertBookingEnvelope(db: TransactionDb, householdId: string, env
 }
 
 /**
+ * ADR-0006: Ein Konto muss zum Haushalt gehoeren und am Buchungstag laufen
+ * (ab `startDate`, vor `closedAt`). Ohne Konto ist eine Buchung nur erlaubt,
+ * solange der Haushalt keine Konten hat oder sie vor `ledgerSince` liegt:
+ * Davor sieht sie "Zu verteilen" nicht, und alte Belege bleiben nacherfassbar.
+ */
+async function assertBookingAccount(db: TransactionDb, householdId: string, accountId: string | null, date: Date) {
+  if (!accountId) {
+    if (await db.account.count({ where: { householdId } }) === 0) return
+    const { ledgerSince } = await db.household.findUniqueOrThrow({ where: { id: householdId }, select: { ledgerSince: true } })
+    if (dayKey(date) < dayKey(ledgerSince)) return
+    throw createError({ statusCode: 400, statusMessage: 'Account is required.', data: { reason: 'account-required' } })
+  }
+  const account = await db.account.findFirst({ where: { id: accountId, householdId }, select: { startDate: true, closedAt: true } })
+  if (!account) throw createError({ statusCode: 404, statusMessage: 'Account not found.' })
+  if (dayKey(date) < dayKey(account.startDate)) {
+    throw createError({ statusCode: 400, statusMessage: 'Date is before the start of the account.', data: { reason: 'before-account-start' } })
+  }
+  assertAccountOpenOn(account, date)
+}
+
+/** Stichtag exklusiv wie bei Umschlaegen. */
+function assertAccountOpenOn(account: { closedAt: Date | null }, date: Date) {
+  if (account.closedAt && dayKey(date) >= dayKey(account.closedAt)) {
+    throw createError({ statusCode: 400, statusMessage: 'Account is closed on this date.' })
+  }
+}
+
+/**
  * Soft-Delete (issue #58): PATCH und DELETE wirken nur auf aktive Zeilen.
  * Geloeschte kommen nur ueber Restore zurueck, damit das UI nicht still eine
  * "geloeschte" Buchung mit neuen Werten ueberschreibt.
@@ -129,6 +160,7 @@ export async function createTransaction(
   // ADR-0005: keine Buchungen ab dem Stichtag eines geschlossenen Umschlags
   // und keine vor seinem Startpunkt.
   await assertBookingEnvelope(db, householdId, envelopeId, values.date)
+  await assertBookingAccount(db, householdId, values.accountId, values.date)
 
   return rows(db, kind).create({
     data: {
@@ -138,19 +170,28 @@ export async function createTransaction(
       description: values.description,
       date: values.date,
       envelopeId,
+      accountId: values.accountId,
       ...planData(kind, values.planId),
     },
   })
 }
 
 /**
- * Umschlag und Datum nur pruefen, wenn sich eines davon aendert: Altbestand
- * vor dem Startpunkt eines Umschlags muss sich weiter korrigieren lassen
- * (Betrag, Beschreibung), und das Formular schickt das Datum immer mit.
+ * Umschlag, Konto und Datum nur pruefen, wenn sich eines davon aendert:
+ * Altbestand vor dem Startpunkt eines Umschlags oder ohne Konto muss sich
+ * weiter korrigieren lassen (Betrag, Beschreibung), und das Formular schickt
+ * das Datum immer mit.
  */
-function changesBooking(existing: { envelopeId: string | null; date: Date }, changes: TransactionChanges) {
-  return (changes.envelopeId !== undefined && changes.envelopeId !== existing.envelopeId)
-    || (changes.date !== undefined && dayKey(changes.date) !== dayKey(existing.date))
+function changesDate(existing: { date: Date }, changes: TransactionChanges) {
+  return changes.date !== undefined && dayKey(changes.date) !== dayKey(existing.date)
+}
+
+function changesEnvelope(existing: { envelopeId: string | null; date: Date }, changes: TransactionChanges) {
+  return (changes.envelopeId !== undefined && changes.envelopeId !== existing.envelopeId) || changesDate(existing, changes)
+}
+
+function changesAccount(existing: { accountId: string | null; date: Date }, changes: TransactionChanges) {
+  return (changes.accountId !== undefined && changes.accountId !== existing.accountId) || changesDate(existing, changes)
 }
 
 export async function updateTransaction(
@@ -165,11 +206,19 @@ export async function updateTransaction(
   // ADR-0005: gegen den resultierenden Umschlag und das resultierende Datum.
   // Auch ein reines Datums-Update darf eine Buchung nicht hinter den Stichtag
   // eines geschlossenen Umschlags schieben.
-  if (changesBooking(existing, changes)) {
+  if (changesEnvelope(existing, changes)) {
     await assertBookingEnvelope(
       db,
       householdId,
       changes.envelopeId === undefined ? existing.envelopeId : changes.envelopeId,
+      changes.date ?? existing.date,
+    )
+  }
+  if (changesAccount(existing, changes)) {
+    await assertBookingAccount(
+      db,
+      householdId,
+      changes.accountId === undefined ? existing.accountId : changes.accountId,
       changes.date ?? existing.date,
     )
   }
@@ -181,6 +230,7 @@ export async function updateTransaction(
       ...(changes.description !== undefined ? { description: changes.description } : {}),
       ...(changes.date !== undefined ? { date: changes.date } : {}),
       ...(changes.envelopeId !== undefined ? { envelopeId: changes.envelopeId } : {}),
+      ...(changes.accountId !== undefined ? { accountId: changes.accountId } : {}),
     },
   })
 }
@@ -206,7 +256,8 @@ export async function deleteTransaction(
  * ADR-0005: Wiederherstellen wirkt wie eine neue Buchung, deshalb gilt der
  * Stichtag des Umschlags; ab dann gehoert die Buchung zum Nachfolger. Der
  * Startpunkt zaehlt bewusst nicht: Die Buchung existierte schon, Altbestand
- * vor dem Start bliebe sonst fuer immer geloescht.
+ * vor dem Start bliebe sonst fuer immer geloescht. Fuer das Konto (ADR-0006)
+ * gilt dasselbe, und eine Buchung ohne Konto bleibt wiederherstellbar.
  */
 export async function restoreTransaction(
   householdId: string,
@@ -222,6 +273,10 @@ export async function restoreTransaction(
   if (existing.envelopeId) {
     const envelope = await db.envelope.findFirst({ where: { id: existing.envelopeId, householdId }, select: { closedAt: true } })
     if (envelope) assertEnvelopeOpenOn(envelope, existing.date)
+  }
+  if (existing.accountId) {
+    const account = await db.account.findFirst({ where: { id: existing.accountId, householdId }, select: { closedAt: true } })
+    if (account) assertAccountOpenOn(account, existing.date)
   }
 
   await rows(db, kind).update({ where: { id }, data: { deletedAt: null } })

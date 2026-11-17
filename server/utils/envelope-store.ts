@@ -134,11 +134,11 @@ export async function loadEnvelopeBalanceInputs(
   const [expenses, incomes, transfers] = await Promise.all([
     db.expenseTransaction.findMany({
       where: { householdId, date: { gte: from }, deletedAt: null },
-      select: { envelopeId: true, amount: true, date: true },
+      select: { envelopeId: true, accountId: true, amount: true, date: true },
     }),
     db.incomeTransaction.findMany({
       where: { householdId, date: { gte: from }, deletedAt: null },
-      select: { envelopeId: true, amount: true, date: true },
+      select: { envelopeId: true, accountId: true, amount: true, date: true },
     }),
     db.envelopeTransfer.findMany({
       where: { householdId, date: { gte: from } },

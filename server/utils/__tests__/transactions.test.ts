@@ -46,7 +46,7 @@ function plan(overrides: Record<string, unknown> = {}) {
   return { id: 'plan', householdId: HH, name: 'Miete', envelopeId: 'env-plan', ...overrides }
 }
 
-const values = { amount: 5000, date: day(2026, 11, 3), description: 'Schuhe', envelopeId: 'env', planId: null }
+const values = { amount: 5000, date: day(2026, 11, 3), description: 'Schuhe', envelopeId: 'env', planId: null, accountId: null as string | null }
 
 function setup(kind: TransactionKind, seed: Partial<InMemoryTables> = {}) {
   const { db, tables } = createInMemoryDb({
@@ -246,6 +246,126 @@ describe.each(kinds)('restoreTransaction (%s)', (kind) => {
     await restoreTransaction(HH, kind, 'tx', ctx)
 
     expect(rowsOf()[0]).toMatchObject({ deletedAt: null })
+  })
+})
+
+/*
+ * ADR-0006 (issue #188): Konto der Buchung. Konten starten am Stichtag
+ * (1.11.); der Haushalt "ohne Konten" ist der Stand vor ihrer Einfuehrung.
+ */
+const LEDGER = day(2026, 11, 1)
+
+function account(overrides: Record<string, unknown> = {}) {
+  return { id: 'giro', householdId: HH, name: 'Girokonto', type: 'CHECKING', openingBalance: 0, startDate: LEDGER, closedAt: null, ...overrides }
+}
+
+function withAccounts(kind: TransactionKind, seed: Partial<InMemoryTables> = {}) {
+  return setup(kind, {
+    household: [{ id: HH, ledgerSince: LEDGER, openingBalance: 0 }],
+    account: [account(), account({ id: 'cash', name: 'Geldbeutel', type: 'CASH' })],
+    ...seed,
+  })
+}
+
+describe.each(kinds)('Konto der Buchung (%s)', (kind) => {
+  it('speichert das Konto', async () => {
+    const { rowsOf, ctx } = withAccounts(kind)
+
+    await createTransaction(HH, 'u1', kind, { ...values, accountId: 'cash' }, ctx)
+
+    expect(rowsOf()[0]).toMatchObject({ accountId: 'cash' })
+  })
+
+  it('braucht kein Konto, solange der Haushalt keine hat', async () => {
+    const { rowsOf, ctx } = setup(kind)
+
+    await createTransaction(HH, 'u1', kind, values, ctx)
+
+    expect(rowsOf()[0]).toMatchObject({ accountId: null })
+  })
+
+  it('verlangt ab dem Stichtag ein Konto, sobald es Konten gibt', async () => {
+    const { rowsOf, ctx } = withAccounts(kind)
+
+    await expect(createTransaction(HH, 'u1', kind, { ...values, date: LEDGER }, ctx))
+      .rejects.toMatchObject({ statusCode: 400, data: { reason: 'account-required' } })
+    expect(rowsOf()).toEqual([])
+  })
+
+  it('erlaubt vor dem Stichtag eine Buchung ohne Konto (Nacherfassen)', async () => {
+    const { rowsOf, ctx } = withAccounts(kind)
+
+    await createTransaction(HH, 'u1', kind, { ...values, envelopeId: null, date: day(2026, 10, 31) }, ctx)
+
+    expect(rowsOf()).toHaveLength(1)
+  })
+
+  it('kennt kein Konto eines anderen Haushalts', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, { account: [account({ householdId: OTHER_HH })] })
+
+    await expect(createTransaction(HH, 'u1', kind, { ...values, accountId: 'giro' }, ctx)).rejects.toMatchObject({ statusCode: 404 })
+    expect(rowsOf()).toEqual([])
+  })
+
+  it('lehnt eine Buchung vor dem Start des Kontos ab', async () => {
+    const { ctx } = withAccounts(kind, { account: [account({ startDate: day(2026, 11, 10) })] })
+
+    await expect(createTransaction(HH, 'u1', kind, { ...values, accountId: 'giro', date: day(2026, 11, 9) }, ctx))
+      .rejects.toMatchObject({ statusCode: 400, data: { reason: 'before-account-start' } })
+    await expect(createTransaction(HH, 'u1', kind, { ...values, accountId: 'giro', date: day(2026, 11, 10) }, ctx)).resolves.toBeTruthy()
+  })
+
+  it('lehnt eine Buchung ab dem Stichtag eines geschlossenen Kontos ab, davor geht sie noch', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, { account: [account({ closedAt: day(2026, 11, 10) })] })
+
+    await expect(createTransaction(HH, 'u1', kind, { ...values, accountId: 'giro', date: day(2026, 11, 10) }, ctx)).rejects.toMatchObject({ statusCode: 400 })
+    await createTransaction(HH, 'u1', kind, { ...values, accountId: 'giro', date: day(2026, 11, 9) }, ctx)
+    expect(rowsOf()).toHaveLength(1)
+  })
+
+  it('aendert das Konto und prueft das neue', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, { [tableOf[kind]]: [booking({ accountId: 'giro' })] })
+
+    await updateTransaction(HH, kind, 'tx', { accountId: 'cash' }, ctx)
+    expect(rowsOf()[0]).toMatchObject({ accountId: 'cash' })
+
+    await expect(updateTransaction(HH, kind, 'tx', { accountId: null }, ctx)).rejects.toMatchObject({ statusCode: 400 })
+    expect(rowsOf()[0]).toMatchObject({ accountId: 'cash' })
+  })
+
+  it('laesst eine Buchung ohne Konto korrigieren, solange Konto und Tag bleiben', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, { [tableOf[kind]]: [booking({ accountId: null })] })
+
+    await updateTransaction(HH, kind, 'tx', { amount: 7000, date: day(2026, 11, 3) }, ctx)
+
+    expect(rowsOf()[0]).toMatchObject({ amount: 7000, accountId: null })
+  })
+
+  it('prueft das bisherige Konto, wenn sich nur das Datum aendert', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, {
+      account: [account({ closedAt: day(2026, 11, 10) })],
+      [tableOf[kind]]: [booking({ accountId: 'giro' })],
+    })
+
+    await expect(updateTransaction(HH, kind, 'tx', { date: day(2026, 11, 12) }, ctx)).rejects.toMatchObject({ statusCode: 400 })
+    expect(rowsOf()[0]!.date).toEqual(day(2026, 11, 3))
+  })
+
+  it('holt keine Buchung ab dem Stichtag ihres Kontos zurueck', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, {
+      account: [account({ closedAt: day(2026, 11, 3) })],
+      [tableOf[kind]]: [booking({ accountId: 'giro', deletedAt: day(2026, 11, 5) })],
+    })
+
+    await expect(restoreTransaction(HH, kind, 'tx', ctx)).rejects.toMatchObject({ statusCode: 400 })
+    expect(rowsOf()[0]!.deletedAt).not.toBeNull()
+  })
+
+  it('holt eine Buchung ohne Konto zurueck, auch wenn es inzwischen Konten gibt', async () => {
+    const { rowsOf, ctx } = withAccounts(kind, { [tableOf[kind]]: [booking({ accountId: null, deletedAt: day(2026, 11, 5) })] })
+
+    await expect(restoreTransaction(HH, kind, 'tx', ctx)).resolves.toEqual({ alreadyActive: false })
+    expect(rowsOf()[0]!.deletedAt).toBeNull()
   })
 })
 

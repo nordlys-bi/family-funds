@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { computeAccountBalances } from '../account-balance'
 import {
   computeEnvelopeBalances,
   computeUnassignedBalance,
+  computeUnassignedOpening,
   getEarliestRelevantDate,
+  sumEnvelopeBalances,
   type BalanceEnvelope,
   type EnvelopeBalanceInputs,
 } from '../envelope-balance'
@@ -152,6 +155,102 @@ describe('computeUnassignedBalance', () => {
     const total = [...balances.values()].reduce((sum, balance) => sum + balance.balance, 0)
       + computeUnassignedBalance(ledger, envelopes, balances, data, at)
     expect(total).toBe(80000 + 300000 + 2000 - 12000 - 70000)
+  })
+})
+
+describe('sumEnvelopeBalances', () => {
+  const ledgerSince = day(2026, 11, 2)
+
+  it('counts a closed envelope only until its balance has flowed on', () => {
+    const goal = envelope('goal', { closedAt: day(2026, 11, 10), carryoverToEnvelopeId: 'holiday' })
+    const holiday = envelope('holiday')
+    const envelopes = [goal, holiday]
+    const data = inputs({ transfers: [allocation('goal', 50000, day(2026, 9, 1)), allocation('holiday', 20000, day(2026, 9, 1))] })
+    const total = (at: Date) => sumEnvelopeBalances(envelopes, computeEnvelopeBalances(envelopes, data, at), ledgerSince, at)
+    expect(total(day(2026, 11, 9))).toBe(70000)
+    expect(total(day(2026, 11, 10))).toBe(70000)
+  })
+
+  it('stops counting an envelope closed into "Zu verteilen" once it flowed there', () => {
+    const goal = envelope('goal', { closedAt: day(2026, 11, 10), carryoverToEnvelopeId: null })
+    const data = inputs({ transfers: [allocation('goal', 50000, day(2026, 9, 1))] })
+    const total = (at: Date) => sumEnvelopeBalances([goal], computeEnvelopeBalances([goal], data, at), ledgerSince, at)
+    expect(total(day(2026, 11, 9))).toBe(50000)
+    expect(total(day(2026, 11, 10))).toBe(0)
+  })
+})
+
+/*
+ * ADR-0006 (issue #188): Mit Konten wird der Startwert von "Zu verteilen"
+ * aus den Kontoanfangsbestaenden abgeleitet.
+ */
+describe('Zu verteilen mit Konten', () => {
+  const ledgerSince = day(2026, 12, 1)
+  const giro = { id: 'giro', openingBalance: 240000, startDate: ledgerSince }
+  const cash = { id: 'cash', openingBalance: 8000, startDate: ledgerSince }
+  // Vor dem Stichtag gefuellt: 2.000 € in Umschlaegen, nie aus "Zu verteilen".
+  const envelopes = [envelope('kids'), envelope('holiday')]
+  const before = [allocation('kids', 120000, day(2026, 10, 1)), allocation('holiday', 80000, day(2026, 11, 1))]
+
+  it('ignores the stored opening balance and derives it: accounts − envelopes at the start', () => {
+    const ledger = { ledgerSince, openingBalance: 99999, accounts: [giro, cash] }
+    expect(computeUnassignedOpening(ledger, envelopes, inputs({ transfers: before }))).toBe(248000 - 200000)
+  })
+
+  it('keeps the stored opening balance without accounts', () => {
+    expect(computeUnassignedOpening({ ledgerSince, openingBalance: 5000, accounts: [] }, envelopes, inputs({ transfers: before }))).toBe(5000)
+  })
+
+  it('does not count bookings on the start day as already in envelopes', () => {
+    const ledger = { ledgerSince, openingBalance: 0, accounts: [giro] }
+    const data = inputs({ transfers: [...before, allocation('kids', 25000, ledgerSince)] })
+    expect(computeUnassignedOpening(ledger, envelopes, data)).toBe(240000 - 200000)
+  })
+
+  it('may start negative when more is assigned than the accounts hold', () => {
+    const ledger = { ledgerSince, openingBalance: 0, accounts: [{ ...cash, openingBalance: 50000 }] }
+    expect(computeUnassignedOpening(ledger, envelopes, inputs({ transfers: before }))).toBe(-150000)
+  })
+
+  it('credits a later account on its start date', () => {
+    const piggy = { id: 'piggy', openingBalance: 3500, startDate: day(2027, 2, 1) }
+    const ledger = { ledgerSince, openingBalance: 0, accounts: [giro, piggy] }
+    const data = inputs({ transfers: before })
+    const balances = computeEnvelopeBalances(envelopes, data, day(2027, 2, 1))
+    expect(computeUnassignedBalance(ledger, envelopes, balances, data, day(2027, 1, 31))).toBe(40000)
+    expect(computeUnassignedBalance(ledger, envelopes, balances, data, day(2027, 2, 1))).toBe(43500)
+  })
+
+  it('keeps the invariant: envelopes + unassigned = accounts', () => {
+    const piggy = { id: 'piggy', openingBalance: 3500, startDate: day(2026, 12, 20) }
+    const accounts = [giro, cash, piggy]
+    const ledger = { ledgerSince, openingBalance: 0, accounts }
+    const goal = envelope('goal', { closedAt: day(2026, 12, 15), carryoverToEnvelopeId: null })
+    const all = [...envelopes, goal]
+    const data = inputs({
+      incomes: [
+        { envelopeId: null, accountId: 'giro', amount: 300000, date: ledgerSince },
+        { envelopeId: 'kids', accountId: 'cash', amount: 2000, date: day(2026, 12, 6) },
+      ],
+      expenses: [
+        { envelopeId: 'kids', accountId: 'giro', amount: 12000, date: day(2026, 12, 5) },
+        { envelopeId: null, accountId: 'cash', amount: 7000, date: day(2026, 12, 3) },
+        { envelopeId: 'holiday', accountId: 'piggy', amount: 500, date: day(2026, 12, 21) },
+      ],
+      transfers: [
+        ...before,
+        allocation('goal', 30000, day(2026, 11, 1)),
+        allocation('kids', 25000, ledgerSince),
+        { fromEnvelopeId: null, toEnvelopeId: 'holiday', amount: 20000, date: day(2026, 12, 4) },
+        { fromEnvelopeId: 'kids', toEnvelopeId: 'holiday', amount: 3000, date: day(2026, 12, 7) },
+      ],
+    })
+    for (const at of [ledgerSince, day(2026, 12, 14), day(2026, 12, 15), day(2026, 12, 19), day(2026, 12, 31)]) {
+      const balances = computeEnvelopeBalances(all, data, at)
+      const left = sumEnvelopeBalances(all, balances, ledgerSince, at) + computeUnassignedBalance(ledger, all, balances, data, at)
+      const right = [...computeAccountBalances(accounts, data, at).values()].reduce((sum, value) => sum + value, 0)
+      expect(left, at.toDateString()).toBe(right)
+    }
   })
 })
 
