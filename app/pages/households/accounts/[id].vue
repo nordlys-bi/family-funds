@@ -37,6 +37,7 @@ type AccountDetail = {
   id: string
   name: string
   type: AccountType
+  openingBalance: number
   startDate: string
   closedAt: string | null
   balance: number
@@ -45,7 +46,8 @@ type AccountDetail = {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const route = useRoute()
-const { activeHousehold, activeHouseholdId, fetchHouseholds } = useHousehold()
+const router = useRouter()
+const { activeHousehold, activeHouseholdId, canManageHousehold, fetchHouseholds } = useHousehold()
 const confirm = useAskConfirm()
 const quickCapture = useQuickCapture()
 
@@ -86,6 +88,12 @@ async function load() {
 onMounted(async () => {
   await fetchHouseholds()
   await load()
+  // Aus der Statuskarte der Konten-Seite (#198): Abgleich direkt oeffnen und
+  // den Parameter entfernen, damit ein Neuladen ihn nicht erneut oeffnet.
+  if (route.query.abgleich === '1' && account.value && !account.value.closedAt) {
+    openReconcile()
+    await router.replace({ query: {} })
+  }
 })
 watch([activeHouseholdId, accountId], load)
 watch(quickCapture.savedTick, load)
@@ -253,6 +261,32 @@ async function removeAdjustment(entry: HistoryEntry) {
   }
 }
 
+// === Konto bearbeiten und loeschen (#198: aus der Uebersicht hierher) =======
+const editAccountOpen = ref(false)
+/** Loeschen nur ohne Bewegungen; der Server prueft auch geloeschte Buchungen. */
+const deletable = computed(() => entries.value.every((entry) => entry.type === 'opening'))
+
+async function onAccountSaved(text: string) {
+  message.value = { severity: 'success', text }
+  await load()
+}
+
+async function removeAccount() {
+  if (!account.value || !activeHouseholdId.value) return
+  const ok = await confirm.ask({
+    title: `${account.value.name} löschen?`,
+    message: 'Der Anfangsbestand fällt aus „Zu verteilen“ heraus.',
+    tone: 'danger',
+  })
+  if (!ok) return
+  try {
+    await $fetch(`/api/households/${activeHouseholdId.value}/accounts/${account.value.id}`, { method: 'DELETE' })
+    await router.push('/households/accounts')
+  } catch (error: any) {
+    message.value = { severity: 'error', text: accountErrorText(error) }
+  }
+}
+
 async function removeTransfer(entry: HistoryEntry) {
   if (entry.type !== 'transfer' || !entry.id || !activeHouseholdId.value) return
   const ok = await confirm.ask({
@@ -301,6 +335,22 @@ async function removeTransfer(entry: HistoryEntry) {
           seit {{ formatPlanningDate(account.startDate) }}
           <template v-if="account.closedAt"> · geschlossen ab {{ formatPlanningDate(account.closedAt) }}</template>
         </span>
+        <Button
+          v-if="canManageHousehold"
+          icon="pi pi-pen-to-square"
+          severity="secondary"
+          text
+          aria-label="Konto bearbeiten"
+          @click="editAccountOpen = true"
+        />
+        <Button
+          v-if="canManageHousehold && deletable"
+          icon="pi pi-trash"
+          severity="danger"
+          text
+          aria-label="Konto löschen"
+          @click="removeAccount"
+        />
         <Button
           v-if="!account.closedAt"
           label="Abgleichen"
@@ -386,6 +436,15 @@ async function removeTransfer(entry: HistoryEntry) {
         </ListTable>
       </ListPanel>
     </ListPageShell>
+
+    <AccountFormDialog
+      v-if="account && activeHouseholdId"
+      v-model:visible="editAccountOpen"
+      :household-id="activeHouseholdId"
+      :currency="currency"
+      :account="account"
+      @saved="onAccountSaved"
+    />
 
     <FormDialog
       v-model:visible="reconcileOpen"

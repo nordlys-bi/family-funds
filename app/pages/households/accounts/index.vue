@@ -8,6 +8,12 @@
  * was bisher nicht erfasst war. Danach: Liste mit Salden, weitere Konten,
  * Bearbeiten, Schliessen, Loeschen.
  *
+ * Status zuerst (issue #198): Oben steht, was zu tun ist (fehlt Geld, liegt
+ * Geld unverplant auf dem Sparkonto, ist ein Abgleich ueberfaellig), jeweils
+ * mit Aktion. Die Konten darunter sind nach Gruppen gegliedert, die ueber
+ * Bindungen zusammenhaengen; der Gruppenkopf zeigt ihre Deckung
+ * (`account-coverage.ts`).
+ *
  * Dazu "Mein Standardkonto" (issue #190): jedes Mitglied, nicht nur der Owner,
  * stellt hier ein, was bei Umschlaegen ohne Kontobindung vorausgewaehlt ist.
  */
@@ -16,11 +22,13 @@ import {
   ACCOUNT_TYPES,
   accountErrorText,
   accountTypeIcon,
-  accountTypeLabel,
   introductionTotals,
   type AccountType,
   type IntroductionPreview,
 } from '~/utils/account-options'
+import { buildBalanceSheet, computeAccountStatus, type StatusAccount } from '~/utils/account-coverage'
+import { isEnvelopeOpenOn } from '~/utils/envelope-options'
+import type { EnvelopeItem, UnassignedOverview } from '~/types/envelope'
 
 definePageMeta({ layout: 'default' })
 
@@ -40,7 +48,6 @@ type Account = {
 type Preview = IntroductionPreview & { ledgerSince: string; bookingsWithoutAccount: number }
 
 const { activeHousehold, activeHouseholdId, canManageHousehold, fetchHouseholds } = useHousehold()
-const confirm = useAskConfirm()
 const currency = computed(() => activeHousehold.value?.currency ?? 'EUR')
 const money = (cents: number) => formatMoneyFromCents(cents, currency.value)
 const typeOptions = ACCOUNT_TYPES.map(({ value, label }) => ({ value, label }))
@@ -48,6 +55,8 @@ const typeOptions = ACCOUNT_TYPES.map(({ value, label }) => ({ value, label }))
 const accounts = ref<Account[]>([])
 const ledgerSince = ref<string | null>(null)
 const defaultAccountId = ref<string | null>(null)
+const envelopes = ref<EnvelopeItem[]>([])
+const unassigned = ref<UnassignedOverview | null>(null)
 const defaultSaving = ref(false)
 const loading = ref(false)
 const message = ref<{ severity: 'success' | 'warn' | 'error'; text: string } | null>(null)
@@ -63,16 +72,75 @@ const load = async () => {
   if (!activeHouseholdId.value) return
   loading.value = true
   try {
-    const data = await $fetch<{ accounts: Account[]; ledgerSince: string; defaultAccountId: string | null }>(`/api/households/${activeHouseholdId.value}/accounts`)
+    const [data, overview] = await Promise.all([
+      $fetch<{ accounts: Account[]; ledgerSince: string; defaultAccountId: string | null }>(`/api/households/${activeHouseholdId.value}/accounts`),
+      // Fuer die Deckung; schlaegt das fehl, fehlt nur dieser Block.
+      $fetch<{ envelopes: EnvelopeItem[]; unassigned: UnassignedOverview }>(`/api/households/${activeHouseholdId.value}/envelopes`).catch(() => null),
+    ])
     accounts.value = data.accounts
     ledgerSince.value = data.ledgerSince
     defaultAccountId.value = data.defaultAccountId
+    envelopes.value = overview?.envelopes ?? []
+    unassigned.value = overview?.unassigned ?? null
   } catch (error: any) {
     message.value = { severity: 'error', text: 'Konten konnten nicht geladen werden: ' + accountErrorText(error) }
   } finally {
     loading.value = false
   }
 }
+
+// === Status und Gruppen (issue #198) =======================================
+// Geschlossene Umschlaege zaehlen nicht: Ihr Saldo steckt im Ziel.
+const status = computed(() =>
+  computeAccountStatus(
+    accounts.value as StatusAccount[],
+    envelopes.value
+      .filter((envelope) => isEnvelopeOpenOn(envelope))
+      .map((envelope) => ({
+        id: envelope.id,
+        name: envelope.name,
+        balance: envelope.balance.balance,
+        reserved: envelope.reserved,
+        accountIds: envelope.accountIds ?? [],
+        group: envelope.group,
+      })),
+    today(),
+  ),
+)
+const accountNames = computed(() => Object.fromEntries(accounts.value.map((account) => [account.id, account.name])))
+
+/**
+ * Bilanz je Gruppe (#198): links Konten, rechts Umschlaege, unten gleiche
+ * Summe. Ohne Bindungen gibt es keine Gruppen, die etwas sagen; dann eine
+ * schlichte Kontenliste.
+ */
+const sheets = computed(() => {
+  const byId = new Map(accounts.value.map((account) => [account.id, account]))
+  const { coverage, findings, groupLabels, groupStatus, homeIndex } = status.value
+  return coverage.groups.map((group, index) => {
+    const accountIds = new Set(group.accounts.map((account) => account.id))
+    const missing = findings.find((finding) =>
+      finding.kind === 'missing' && finding.transfer && accountIds.has(finding.transfer.toAccountId))
+    return {
+      key: group.accounts[0]!.id,
+      label: groupLabels[index]!,
+      state: groupStatus[index]!,
+      sheet: buildBalanceSheet(group, index === homeIndex),
+      accounts: group.accounts.map((account) => byId.get(account.id)!),
+      transfer: missing?.kind === 'missing' ? missing.transfer : null,
+      includesUnbound: index === homeIndex && coverage.unbound.envelopes.length > 0,
+    }
+  })
+})
+const showSheets = computed(() => Boolean(unassigned.value) && status.value.coverage.hasBindings)
+// Konten in keiner gezeigten Gruppe (leer und geschlossen).
+const accountsOutsideSheets = computed(() => {
+  const shown = new Set(sheets.value.flatMap((sheet) => sheet.accounts.map((account) => account.id)))
+  return accounts.value.filter((account) => !shown.has(account.id))
+})
+const overdueIds = computed(() =>
+  status.value.findings.flatMap((finding) => (finding.kind === 'reconcile' ? [finding.accountId] : [])),
+)
 
 // === Mein Standardkonto =====================================================
 
@@ -175,99 +243,14 @@ const saveIntro = async () => {
   }
 }
 
-// === Weiteres Konto / Bearbeiten ==========================================
-
-type AccountForm = { name: string; type: AccountType; balance: number | null; startDate: Date; closed: boolean; closedAt: Date }
-
+// === Weiteres Konto ==========================================================
+// Bearbeiten, Schliessen und Loeschen sind auf der Kontoseite (#198).
 const formOpen = ref(false)
-const formSaving = ref(false)
-const formError = ref<string | null>(null)
-const editId = ref<string | null>(null)
-const form = ref<AccountForm>({ name: '', type: 'CASH', balance: null, startDate: today(), closed: false, closedAt: today() })
-const editing = computed(() => accounts.value.find((account) => account.id === editId.value) ?? null)
-/** Schliessen geht fruehestens am Tag nach dem Start (Stichtag exklusiv). */
-const minCloseDate = computed(() => {
-  if (!editing.value) return undefined
-  const value = new Date(editing.value.startDate)
-  value.setDate(value.getDate() + 1)
-  value.setHours(12, 0, 0, 0)
-  return value
-})
+const openCreate = () => { formOpen.value = true }
 
-const openCreate = () => {
-  editId.value = null
-  form.value = { name: '', type: 'CASH', balance: null, startDate: today(), closed: false, closedAt: today() }
-  formError.value = null
-  formOpen.value = true
-}
-
-const openEdit = (account: Account) => {
-  editId.value = account.id
-  form.value = {
-    name: account.name,
-    type: account.type,
-    balance: account.openingBalance / 100,
-    startDate: new Date(account.startDate),
-    closed: account.closedAt !== null,
-    closedAt: account.closedAt ? new Date(account.closedAt) : today(),
-  }
-  if (minCloseDate.value && form.value.closedAt < minCloseDate.value) form.value.closedAt = minCloseDate.value
-  formError.value = null
-  formOpen.value = true
-}
-
-const saveForm = async () => {
-  if (!activeHouseholdId.value) return
-  formSaving.value = true
-  formError.value = null
-  const base = `/api/households/${activeHouseholdId.value}/accounts`
-  try {
-    if (editing.value) {
-      await $fetch(`${base}/${editing.value.id}`, {
-        method: 'PATCH',
-        body: {
-          name: form.value.name,
-          type: form.value.type,
-          openingBalance: form.value.balance ?? 0,
-          closedAt: form.value.closed ? formatDateToInputString(form.value.closedAt) : null,
-        },
-      })
-    } else {
-      await $fetch(base, {
-        method: 'POST',
-        body: {
-          name: form.value.name,
-          type: form.value.type,
-          openingBalance: form.value.balance ?? 0,
-          startDate: formatDateToInputString(form.value.startDate),
-        },
-      })
-    }
-    formOpen.value = false
-    message.value = { severity: 'success', text: editing.value ? 'Konto wurde gespeichert.' : 'Konto wurde angelegt.' }
-    await load()
-  } catch (error: any) {
-    formError.value = accountErrorText(error)
-  } finally {
-    formSaving.value = false
-  }
-}
-
-const removeAccount = async (account: Account) => {
-  if (!activeHouseholdId.value) return
-  const ok = await confirm.ask({
-    title: `${account.name} löschen?`,
-    message: 'Der Anfangsbestand fällt aus „Zu verteilen“ heraus.',
-    tone: 'danger',
-  })
-  if (!ok) return
-  try {
-    await $fetch(`/api/households/${activeHouseholdId.value}/accounts/${account.id}`, { method: 'DELETE' })
-    message.value = { severity: 'success', text: 'Konto wurde gelöscht.' }
-    await load()
-  } catch (error: any) {
-    message.value = { severity: 'error', text: accountErrorText(error) }
-  }
+async function onAccountSaved(text: string) {
+  message.value = { severity: 'success', text }
+  await load()
 }
 
 onMounted(async () => {
@@ -324,89 +307,66 @@ watch(quickCapture.savedTick, load)
       Nur Owner können Konten einführen.
     </Message>
 
-    <ListPanel v-if="!loading && accounts.length" title="Konten" compact :badge="`${accounts.length}`">
-      <ListTable dense accent="primary">
-        <template #head>
-          <th>Konto</th>
-          <th class="muted">Art</th>
-          <th class="muted">Seit</th>
-          <th class="num">Saldo</th>
-          <th class="actions"></th>
-        </template>
+    <AccountStatusCard
+      v-if="!loading && accounts.length && unassigned"
+      :status="status"
+      :account-names="accountNames"
+      :currency="currency"
+    />
 
-        <tr v-for="account in accounts" :key="account.id" :class="{ 'account-row--closed': account.closedAt }">
-          <td class="name">
+    <template v-if="!loading && accounts.length">
+      <div v-if="showSheets" class="sheets">
+        <p class="sheets__intro">Beide Seiten zeigen dasselbe Geld, nur anders sortiert: links, wo es liegt, rechts, wofür es gedacht ist.</p>
+        <AccountBalanceSheet
+          v-for="item in sheets"
+          :key="item.key"
+          :label="item.label"
+          :state="item.state"
+          :sheet="item.sheet"
+          :accounts="item.accounts"
+          :overdue-ids="overdueIds"
+          :transfer="item.transfer"
+          :account-names="accountNames"
+          :currency="currency"
+          :includes-unbound="item.includesUnbound"
+        />
+        <div class="sheets__footer">
+          <span v-if="status.coverage.unbound.envelopes.length">
+            Ohne Kontobindung: {{ status.coverage.unbound.envelopes.length }} Umschläge {{ money(status.coverage.unbound.total) }}.
+            Ihr Geld steckt in „Zu verteilen“ bzw. „unverplant“ oben.
+          </span>
+          <details class="sheets__how">
+            <summary>Wie gerechnet?</summary>
+            <p>
+              Konten, die über gebundene Umschläge zusammenhängen, bilden eine Gruppe. Je Gruppe stehen links die
+              Kontostände, rechts die Umschläge. Freies Geld („Zu verteilen“) gehört zu
+              {{ status.homeIndex >= 0 ? status.groupLabels[status.homeIndex] : 'den Alltagskonten' }}; liegt anderswo
+              mehr, als die Umschläge brauchen, ist es „unverplant“. Fehlt Geld, steht das links. Welcher Euro eines
+              Umschlags auf welchem Konto liegt, rechnet die App bewusst nicht aus.
+            </p>
+          </details>
+        </div>
+      </div>
+
+      <ListPanel
+        v-if="!showSheets || accountsOutsideSheets.length"
+        :title="showSheets ? 'Weitere Konten' : 'Konten'"
+        compact
+        :badge="`${showSheets ? accountsOutsideSheets.length : accounts.length}`"
+      >
+        <ul class="plain-accounts">
+          <li v-for="account in showSheets ? accountsOutsideSheets : accounts" :key="account.id" :class="{ 'account-row--closed': account.closedAt }">
             <span class="account-cell">
               <i :class="accountTypeIcon(account.type)" aria-hidden="true"></i>
               <NuxtLink :to="`/households/accounts/${account.id}`" class="account-link">{{ account.name }}</NuxtLink>
+              <span v-if="account.closedAt" class="plain-accounts__meta">geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
+              <span v-else-if="overdueIds.includes(account.id)" class="plain-accounts__tag">Abgleich fällig</span>
             </span>
-            <span v-if="account.closedAt" class="sub">geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
-            <span v-else-if="account.lastReconciledAt" class="sub">abgeglichen am {{ formatPlanningDate(account.lastReconciledAt) }}</span>
-          </td>
-          <td class="muted">{{ accountTypeLabel(account.type) }}</td>
-          <td class="muted account-date">{{ formatPlanningDate(account.startDate) }}</td>
-          <td class="num" :class="{ 'account-negative': account.balance < 0 }">{{ money(account.balance) }}</td>
-          <td class="actions">
-            <Button
-              icon="pi pi-pen-to-square"
-              severity="secondary"
-              text
-              size="small"
-              aria-label="Konto bearbeiten"
-              :disabled="!canManageHousehold"
-              @click="openEdit(account)"
-            />
-            <Button
-              v-if="!account.hasBookings"
-              icon="pi pi-trash"
-              severity="danger"
-              text
-              size="small"
-              aria-label="Konto löschen"
-              :disabled="!canManageHousehold"
-              @click="removeAccount(account)"
-            />
-          </td>
-        </tr>
-
-        <template #mobile>
-          <div v-for="account in accounts" :key="`m-${account.id}`" class="data-table__card">
-            <div class="data-table__card-line">
-              <span class="data-table__card-name account-cell">
-                <i :class="accountTypeIcon(account.type)" aria-hidden="true"></i>
-                <NuxtLink :to="`/households/accounts/${account.id}`" class="account-link">{{ account.name }}</NuxtLink>
-              </span>
-              <span :class="{ 'account-negative': account.balance < 0 }">{{ money(account.balance) }}</span>
-            </div>
-            <div class="data-table__card-meta">
-              <span>{{ accountTypeLabel(account.type) }}</span>
-              <span>·</span>
-              <span>seit {{ formatPlanningDate(account.startDate) }}</span>
-              <template v-if="account.closedAt">
-                <span>·</span>
-                <span>geschlossen ab {{ formatPlanningDate(account.closedAt) }}</span>
-              </template>
-              <template v-else-if="account.lastReconciledAt">
-                <span>·</span>
-                <span>abgeglichen am {{ formatPlanningDate(account.lastReconciledAt) }}</span>
-              </template>
-            </div>
-            <div v-if="canManageHousehold" class="data-table__card-actions">
-              <Button icon="pi pi-pen-to-square" severity="secondary" text size="small" aria-label="Konto bearbeiten" @click="openEdit(account)" />
-              <Button
-                v-if="!account.hasBookings"
-                icon="pi pi-trash"
-                severity="danger"
-                text
-                size="small"
-                aria-label="Konto löschen"
-                @click="removeAccount(account)"
-              />
-            </div>
-          </div>
-        </template>
-      </ListTable>
-    </ListPanel>
+            <span :class="['plain-accounts__amount', { 'account-negative': account.balance < 0 }]">{{ money(account.balance) }}</span>
+          </li>
+        </ul>
+      </ListPanel>
+    </template>
 
     <ListPanel v-if="!loading && accounts.length" title="Mein Standardkonto" compact>
       <div class="default-account">
@@ -507,65 +467,86 @@ watch(quickCapture.savedTick, load)
       <Message v-if="introError" severity="error" variant="simple">{{ introError }}</Message>
     </FormDialog>
 
-    <FormDialog
+    <AccountFormDialog
+      v-if="activeHouseholdId"
       v-model:visible="formOpen"
-      :header="editing ? 'Konto bearbeiten' : 'Konto anlegen'"
-      :submit-label="editing ? 'Speichern' : 'Anlegen'"
-      :saving="formSaving"
-      @save="saveForm"
-      @cancel="formOpen = false"
-      width="min(34rem, 94vw)"
-    >
-      <FormFieldRow label="Name" html-for="account-name" wide>
-        <InputText id="account-name" v-model="form.name" placeholder="z. B. Sparschwein" />
-      </FormFieldRow>
-      <FormFieldRow label="Art" html-for="account-type" wide>
-        <Select id="account-type" v-model="form.type" :options="typeOptions" option-label="label" option-value="value" />
-      </FormFieldRow>
-      <FormFieldRow :label="editing ? 'Anfangsbestand' : 'Stand zu Beginn'" html-for="account-balance">
-        <MoneyInput id="account-balance" v-model="form.balance" :currency="currency" />
-        <small class="account-hint">
-          <template v-if="editing">Eine Korrektur verschiebt „Zu verteilen“ um denselben Betrag.</template>
-          <template v-else>Dieses Geld kommt zu „Zu verteilen“ hinzu.</template>
-        </small>
-      </FormFieldRow>
-      <FormFieldRow v-if="!editing" label="Seit" html-for="account-start">
-        <DatePicker
-          id="account-start"
-          v-model="form.startDate"
-          show-icon
-          date-format="dd.mm.yy"
-          :max-date="today()"
-          :min-date="minIntroDate"
-        />
-      </FormFieldRow>
-      <template v-if="editing">
-        <FormFieldRow label="Geschlossen" html-for="account-closed" wide>
-          <ToggleSwitch input-id="account-closed" v-model="form.closed" />
-        </FormFieldRow>
-        <FormFieldRow v-if="form.closed" label="Ab" html-for="account-closed-at">
-          <DatePicker id="account-closed-at" v-model="form.closedAt" show-icon date-format="dd.mm.yy" :min-date="minCloseDate" />
-          <small class="account-hint">Ab diesem Tag nimmt das Konto keine Buchungen mehr an.</small>
-        </FormFieldRow>
-      </template>
-      <Message v-if="formError" severity="error" variant="simple">{{ formError }}</Message>
-    </FormDialog>
+      :household-id="activeHouseholdId"
+      :currency="currency"
+      :min-start-date="minIntroDate"
+      @saved="onAccountSaved"
+    />
   </ListPageShell>
 </template>
 
 <style scoped>
-/* Mobile-Karten wie auf der Mitgliederseite (issue #132): flach, aber mit
-   Innenpadding, sonst kleben Icon und Saldo am Bildschirmrand. */
-.data-table__card {
+.sheets {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px;
+  gap: 0.75rem;
 }
 
-.data-table__card-actions {
+.sheets__intro {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.sheets__footer {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.sheets__how summary {
+  cursor: pointer;
+}
+
+.sheets__how p {
+  max-width: 42rem;
+  margin: 6px 0 0;
+}
+
+.plain-accounts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plain-accounts li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.plain-accounts li:first-child {
+  border-top: 0;
+}
+
+.plain-accounts__meta {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.plain-accounts__tag {
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--color-accent-warning-soft);
+  color: var(--color-accent-warning-text);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.plain-accounts__amount {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .default-account {
@@ -604,11 +585,7 @@ watch(quickCapture.savedTick, load)
   color: var(--color-text-muted);
 }
 
-.account-date {
-  white-space: nowrap;
-}
-
-.account-row--closed td {
+.account-row--closed {
   opacity: 0.6;
 }
 

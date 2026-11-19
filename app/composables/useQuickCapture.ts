@@ -41,6 +41,18 @@ type QuickCaptureState = {
    * "Bezahlt mit" einer Buchung, ohne Vorauswahl aus dem Umschlag.
    */
   accountId: string | null
+  /** Vorschlag aus der Deckung (#198): Ziel-Konto, Betrag in Cent, Notiz. */
+  toAccountId: string | null
+  amountCents: number | null
+  note: string | null
+}
+
+export type QuickCaptureOptions = {
+  envelopeId?: string | null
+  accountId?: string | null
+  toAccountId?: string | null
+  amountCents?: number | null
+  note?: string | null
 }
 
 export function useQuickCapture() {
@@ -49,6 +61,9 @@ export function useQuickCapture() {
     kind: 'expense',
     envelopeId: null,
     accountId: null,
+    toAccountId: null,
+    amountCents: null,
+    note: null,
   }))
 
   // Monoton steigender Zaehler, den <QuickCaptureRoot> nach jedem
@@ -60,14 +75,23 @@ export function useQuickCapture() {
   const kind = computed(() => state.value.kind)
   const envelopeId = computed(() => state.value.envelopeId)
   const accountId = computed(() => state.value.accountId)
+  const prefill = computed(() => ({ toAccountId: state.value.toAccountId, amountCents: state.value.amountCents, note: state.value.note }))
 
   /**
    * Oeffnet den Erfassen-Dialog. Default-Art: Ausgabe. `envelopeId`
    * (optional) fuellt das Umschlag-Feld vor — z. B. beim Klick auf die
    * "+"-Aktion einer Dashboard-Karte.
    */
-  function open(nextKind: QuickCaptureKind = 'expense', options?: { envelopeId?: string | null; accountId?: string | null }) {
-    state.value = { open: true, kind: nextKind, envelopeId: options?.envelopeId ?? null, accountId: options?.accountId ?? null }
+  function open(nextKind: QuickCaptureKind = 'expense', options?: QuickCaptureOptions) {
+    state.value = {
+      open: true,
+      kind: nextKind,
+      envelopeId: options?.envelopeId ?? null,
+      accountId: options?.accountId ?? null,
+      toAccountId: options?.toAccountId ?? null,
+      amountCents: options?.amountCents ?? null,
+      note: options?.note ?? null,
+    }
   }
 
   function close() {
@@ -84,5 +108,5 @@ export function useQuickCapture() {
     savedTick.value += 1
   }
 
-  return { isOpen, kind, envelopeId, accountId, savedTick, open, close, setKind, markSaved }
+  return { isOpen, kind, envelopeId, accountId, prefill, savedTick, open, close, setKind, markSaved }
 }

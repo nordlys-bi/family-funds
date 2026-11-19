@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import type { EnvelopeItem, UnassignedOverview } from '~/types/envelope'
+import { computeAccountStatus, type StatusAccount } from '~/utils/account-coverage'
 
 definePageMeta({ layout: 'default' })
 
@@ -81,6 +82,28 @@ const savingsGoals = computed(() =>
     .sort((left, right) => right.percentToTarget - left.percentToTarget),
 )
 const recentActivity = computed(() => snapshot.value?.recentActivity ?? [])
+
+// Issue #198: Status der Konten auch hier, damit ein vergessener Uebertrag
+// auffaellt, ohne auf die Konten-Seite zu wechseln. Nur mit Konten, und die
+// Zeile erscheint nur, wenn etwas ansteht.
+const statusAccounts = ref<StatusAccount[]>([])
+const accountStatus = computed(() =>
+  statusAccounts.value.length === 0
+    ? null
+    : computeAccountStatus(
+        statusAccounts.value,
+        envelopes.value
+          .filter((envelope) => isOpen(envelope))
+          .map((envelope) => ({
+            id: envelope.id,
+            name: envelope.name,
+            balance: envelope.balance.balance,
+            reserved: envelope.reserved,
+            accountIds: envelope.accountIds ?? [],
+          })),
+      ),
+)
+const accountNames = computed(() => Object.fromEntries(statusAccounts.value.map((account) => [account.id, account.name])))
 // Issue #97: der Schnellzugriff auf die letzte Buchung ist aus dem
 // "Handlungsbedarf"-Block in den "Letzte Buchungen"-Panel-Header gewandert.
 const latestEntry = computed(() => recentActivity.value[0] ?? null)
@@ -103,11 +126,13 @@ async function loadDashboard() {
   errorMessage.value = null
   try {
     const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
-    const data = await $fetch<DashboardData>(
-      `/api/households/${activeHousehold.value.id}/dashboard`,
-      { headers },
-    )
+    const [data, accountData] = await Promise.all([
+      $fetch<DashboardData>(`/api/households/${activeHousehold.value.id}/dashboard`, { headers }),
+      // Fehlt das, fehlt nur die Statuszeile der Konten.
+      $fetch<{ accounts: StatusAccount[] }>(`/api/households/${activeHousehold.value.id}/accounts`, { headers }).catch(() => null),
+    ])
     snapshot.value = data
+    statusAccounts.value = accountData?.accounts ?? []
   } catch (err: any) {
     errorMessage.value =
       err.statusMessage || err.message || 'Dashboard konnte nicht geladen werden.'
@@ -187,6 +212,14 @@ watch(quickCapture.savedTick, loadDashboard)
         :unassigned-free="unassigned.free"
         :recurring-due="snapshot.recurringDue ?? null"
         :format-money="formatMoney"
+      />
+
+      <AccountStatusCard
+        v-if="accountStatus"
+        compact
+        :status="accountStatus"
+        :account-names="accountNames"
+        :currency="currencyCode"
       />
 
       <!-- ADR-0005: "Wie viel kann ich noch verteilen?" zwischen Handlungsbedarf

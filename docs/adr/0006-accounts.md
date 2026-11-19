@@ -64,6 +64,7 @@ Ohne diesen Schritt würden die Anfangsbestände neuer Konten "Zu verteilen" zus
 - Die Invariante aus ADR-0005 wird überprüfbar: Die rechte Seite ist ab jetzt Σ Konten.
 - Neue Buchungsarten: `AccountTransfer` (Konto → Konto) und `AccountAdjustment` (Konto ↔ "Zu verteilen"). Auswertungen von Einnahmen und Ausgaben berücksichtigen beide nicht.
 - Für die Umsetzung entstehen eigene Issues.
+- Wo das Geld eines einzelnen Umschlags liegt, bleibt offen. Prüfbar ist die **Deckung je Kontengruppe** (#198): Konten, die über Bindungen zusammenhängen, gegen die an sie gebundenen Umschläge. Das ist eine abgeleitete Anzeige, keine Buchungsregel; die Reste aller Gruppen ergeben zusammen "Zu verteilen" plus die Umschläge ohne Bindung. Freies Geld gehört zur Gruppe des Girokontos: Ein Überschuss in einer anderen Gruppe (Sparkonto) ist ein Hinweis, dort zuzuteilen oder aufs Girokonto zu übertragen. So fällt ein vergessener Kontoübertrag auch dann auf, wenn rechnerisch alles gedeckt ist.
 
 ## Verworfene Alternativen
 
