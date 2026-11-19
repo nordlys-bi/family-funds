@@ -20,7 +20,7 @@ import { useToast } from 'primevue/usetoast'
 import { todayDateHelperText } from '~/utils/form-helpers'
 import { accountErrorText, isAccountBookableOn } from '~/utils/account-options'
 
-const { isOpen, kind, envelopeId: prefillEnvelopeId, accountId: prefillAccountId, close, setKind, markSaved } = useQuickCapture()
+const { isOpen, kind, envelopeId: prefillEnvelopeId, accountId: prefillAccountId, prefill, close, setKind, markSaved } = useQuickCapture()
 const { activeHousehold } = useHousehold()
 
 // PrimeVue useToast wirft ohne ToastService-Provide (SSR / Tests). Der
@@ -150,6 +150,10 @@ watch(isOpen, (open) => {
       form.value.fromAccountId = prefillAccountId.value
       form.value.accountId = prefillAccountId.value
     }
+    // Vorschlag aus der Deckung (#198): Uebertrag mit Betrag und Notiz.
+    if (prefill.value.toAccountId) form.value.toAccountId = prefill.value.toAccountId
+    if (prefill.value.amountCents != null) form.value.amount = prefill.value.amountCents / 100
+    if (prefill.value.note) form.value.description = prefill.value.note
     loadEnvelopes(activeHouseholdId.value)
     loadAccounts(activeHouseholdId.value)
   }
